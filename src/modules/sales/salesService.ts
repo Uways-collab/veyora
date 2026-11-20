@@ -767,16 +767,27 @@ export async function fetchSalesModuleData(
       const subtotalAmount = roundMoney(readNumber(row.subtotal_amount, row.subtotal) ?? 0);
       const orderDiscountAmount = roundMoney(readNumber(row.order_discount_amount) ?? 0);
       const lineDiscountTotalAmount = roundMoney(
-        readNumber(row.line_discount_total_amount, row.line_discount_amount) ??
+        readNumber(
+          row.line_discount_total_amount,
+          row.line_discount_total,
+          row.line_discount_amount
+        ) ??
           (saleItemsBySaleId.get(id) ?? []).reduce((sum, i) => sum + i.lineDiscountAmount, 0)
       );
       const discountTotalAmount = roundMoney(
-        readNumber(row.discount_total_amount, row.total_discount_amount, row.discount_amount) ??
-          lineDiscountTotalAmount + orderDiscountAmount
+        readNumber(
+          row.discount_total_amount,
+          row.total_discount_amount,
+          row.discount_amount,
+          row.total_discount
+        ) ?? lineDiscountTotalAmount + orderDiscountAmount
       );
       const taxRate = Number(readNumber(row.tax_rate) ?? 0);
       const taxAmount = roundMoney(readNumber(row.tax_amount) ?? 0);
-      const totalAmount = roundMoney(readNumber(row.total_amount) ?? 0);
+      const totalAmount = roundMoney(
+        readNumber(row.total_amount, row.final_total_amount, row.final_amount) ??
+          Math.max(0, subtotalAmount - discountTotalAmount + taxAmount)
+      );
       const paidAmount = roundMoney(readNumber(row.paid_amount) ?? 0);
       const returnedAmount = roundMoney(readNumber(row.returned_amount) ?? 0);
       const debtReducedAmount = roundMoney(readNumber(row.debt_reduced_amount) ?? 0);
@@ -915,7 +926,7 @@ export async function checkoutSale(
     p_items: input.items.map((item) => ({
       variant_id: item.variantId,
       quantity: roundQuantity(item.quantity),
-      line_discount_amount: roundMoney(item.lineDiscountAmount),
+      discount_amount: roundMoney(item.discountAmount),
     })),
     p_payments: input.payments.map((payment) => ({
       payment_method_id: payment.paymentMethodId,

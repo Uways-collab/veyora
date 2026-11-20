@@ -235,7 +235,7 @@ export interface SalesCheckoutInput {
   items: Array<{
     variantId: string;
     quantity: number;
-    lineDiscountAmount: number;
+    discountAmount: number;
   }>;
   payments: Array<{
     paymentMethodId: string;

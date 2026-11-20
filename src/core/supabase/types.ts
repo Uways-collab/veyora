@@ -603,7 +603,7 @@ export interface Database {
           p_items: Array<{
             variant_id: string;
             quantity: number;
-            line_discount_amount: number;
+            discount_amount: number;
           }>;
           p_payments: Array<{
             payment_method_id: string;

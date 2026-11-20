@@ -284,13 +284,35 @@ export function ReceiptDocument({
           </div>
         )}
 
-        {settings.showDiscounts && sale.discountTotalAmount > 0 && (
-          <div className="flex justify-between gap-2">
-            <span className={subtleTextClass}>Discounts</span>
-            <span className="font-mono tabular-nums">
-              -{formatMoneyAmount(sale.discountTotalAmount, currency)}
-            </span>
-          </div>
+        {settings.showDiscounts && sale.lineDiscountTotalAmount > 0 && sale.orderDiscountAmount > 0 ? (
+          <>
+            <div className="flex justify-between gap-2">
+              <span className={subtleTextClass}>Line Discounts</span>
+              <span className="font-mono tabular-nums">
+                -{formatMoneyAmount(sale.lineDiscountTotalAmount, currency)}
+              </span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span className={subtleTextClass}>Order Discount</span>
+              <span className="font-mono tabular-nums">
+                -{formatMoneyAmount(sale.orderDiscountAmount, currency)}
+              </span>
+            </div>
+          </>
+        ) : (
+          settings.showDiscounts &&
+          sale.discountTotalAmount > 0 && (
+            <div className="flex justify-between gap-2">
+              <span className={subtleTextClass}>
+                {sale.orderDiscountAmount > 0 && sale.lineDiscountTotalAmount === 0
+                  ? 'Order Discount'
+                  : 'Discounts'}
+              </span>
+              <span className="font-mono tabular-nums">
+                -{formatMoneyAmount(sale.discountTotalAmount, currency)}
+              </span>
+            </div>
+          )
         )}
 
         <div

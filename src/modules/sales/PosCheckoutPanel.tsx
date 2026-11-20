@@ -195,9 +195,15 @@ export function PosCheckoutPanel({
   }, [cart, allowDiscounts]);
 
   const maxOrderDiscount = roundMoney(Math.max(0, subtotalAmount - lineDiscountTotal));
-  const parsedOrderDiscount = allowDiscounts
-    ? roundMoney(Math.max(0, Number(orderDiscountInput) || 0))
-    : 0;
+  const trimmedOrderDiscount = orderDiscountInput.trim();
+  const rawOrderDiscountNum = trimmedOrderDiscount === '' ? 0 : Number(trimmedOrderDiscount);
+  const hasInvalidOrderDiscount =
+    allowDiscounts && (!Number.isFinite(rawOrderDiscountNum) || rawOrderDiscountNum < 0);
+  const parsedOrderDiscount =
+    allowDiscounts && Number.isFinite(rawOrderDiscountNum) && rawOrderDiscountNum > 0
+      ? roundMoney(rawOrderDiscountNum)
+      : 0;
+  const orderDiscountExceedsMax = allowDiscounts && parsedOrderDiscount > maxOrderDiscount;
   const effectiveOrderDiscount = Math.min(parsedOrderDiscount, maxOrderDiscount);
   const totalDiscounts = roundMoney(lineDiscountTotal + effectiveOrderDiscount);
   const finalTotal = roundMoney(Math.max(0, subtotalAmount - totalDiscounts));
@@ -427,7 +433,10 @@ export function PosCheckoutPanel({
     if (cartIssues.length > 0) {
       return cartIssues[0];
     }
-    if (allowDiscounts && parsedOrderDiscount > maxOrderDiscount) {
+    if (hasInvalidOrderDiscount) {
+      return 'Order discount must be zero or a positive amount.';
+    }
+    if (orderDiscountExceedsMax) {
       return 'Order discount exceeds the remaining subtotal after line discounts.';
     }
     if (isOverpaid) {
@@ -478,7 +487,7 @@ export function PosCheckoutPanel({
     const payloadItems = cart.map((line) => ({
       variantId: line.variantId,
       quantity: roundQuantity(line.quantity),
-      lineDiscountAmount: allowDiscounts ? roundMoney(line.lineDiscountAmount) : 0,
+      discountAmount: allowDiscounts ? roundMoney(line.lineDiscountAmount) : 0,
     }));
     const payloadPayments = activePaymentRows.map((row) => ({
       paymentMethodId: row.paymentMethodId,
@@ -987,24 +996,37 @@ export function PosCheckoutPanel({
             </div>
 
             {allowDiscounts && (
-              <div className="flex items-center justify-between gap-3">
-                <label htmlFor="pos-order-discount" className="text-slate-600">
-                  Order Discount ({currencyCode})
-                </label>
-                <input
-                  id="pos-order-discount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  max={maxOrderDiscount}
-                  value={orderDiscountInput}
-                  onChange={(e) => {
-                    setOrderDiscountInput(e.target.value);
-                    setFormError(null);
-                  }}
-                  disabled={cart.length === 0}
-                  className="w-28 px-2.5 py-1 rounded-md border border-slate-200 bg-white text-right text-xs font-mono tabular-nums text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                />
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="pos-order-discount" className="text-slate-600">
+                    Order Discount ({currencyCode})
+                  </label>
+                  <input
+                    id="pos-order-discount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    max={maxOrderDiscount}
+                    value={orderDiscountInput}
+                    onChange={(e) => {
+                      setOrderDiscountInput(e.target.value);
+                      setFormError(null);
+                    }}
+                    disabled={cart.length === 0}
+                    className={`w-28 px-2.5 py-1 rounded-md border bg-white text-right text-xs font-mono tabular-nums text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                      hasInvalidOrderDiscount || orderDiscountExceedsMax
+                        ? 'border-red-400'
+                        : 'border-slate-200'
+                    }`}
+                  />
+                </div>
+                {(hasInvalidOrderDiscount || orderDiscountExceedsMax) && (
+                  <p className="text-[11px] text-red-700 text-right">
+                    {hasInvalidOrderDiscount
+                      ? 'Order discount cannot be negative or invalid.'
+                      : `Exceeds remaining subtotal (${formatMoneyAmount(maxOrderDiscount, currencyCode)}).`}
+                  </p>
+                )}
               </div>
             )}
 
@@ -1242,6 +1264,8 @@ export function PosCheckoutPanel({
                 cart.length === 0 ||
                 !selectedLocationId ||
                 cartIssues.length > 0 ||
+                hasInvalidOrderDiscount ||
+                orderDiscountExceedsMax ||
                 isOverpaid ||
                 isStaffBlockedFromCredit ||
                 submitting
@@ -1283,11 +1307,25 @@ export function PosCheckoutPanel({
                 <span className="text-slate-500">Cart Items</span>
                 <span className="font-mono text-slate-900">{cart.length} line(s)</span>
               </div>
-              {totalDiscounts > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Subtotal</span>
+                <span className="font-mono tabular-nums text-slate-900">
+                  {formatMoneyAmount(subtotalAmount, currencyCode)}
+                </span>
+              </div>
+              {lineDiscountTotal > 0 && (
                 <div className="flex justify-between text-amber-700">
-                  <span>Total Discounts</span>
+                  <span>Line Discounts</span>
                   <span className="font-mono tabular-nums">
-                    -{formatMoneyAmount(totalDiscounts, currencyCode)}
+                    -{formatMoneyAmount(lineDiscountTotal, currencyCode)}
+                  </span>
+                </div>
+              )}
+              {effectiveOrderDiscount > 0 && (
+                <div className="flex justify-between text-amber-700">
+                  <span>Order Discount</span>
+                  <span className="font-mono tabular-nums">
+                    -{formatMoneyAmount(effectiveOrderDiscount, currencyCode)}
                   </span>
                 </div>
               )}
