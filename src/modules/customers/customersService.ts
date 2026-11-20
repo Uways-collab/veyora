@@ -20,10 +20,6 @@ function readString(...values: unknown[]): string | null {
   return null;
 }
 
-function readBoolean(value: unknown, fallback: boolean): boolean {
-  if (typeof value === 'boolean') return value;
-  return fallback;
-}
 
 function normalizeCustomerRow(
   raw: Record<string, unknown>,
@@ -40,7 +36,9 @@ function normalizeCustomerRow(
   const archivedAt = readString(raw.archived_at);
   const statusText = (readString(raw.status) ?? '').toLowerCase();
   const isActive =
-    readBoolean(raw.is_active, true) && statusText !== 'archived' && !archivedAt;
+    typeof raw.is_active === 'boolean'
+      ? raw.is_active
+      : statusText !== 'archived' && !archivedAt;
 
   return {
     id,
@@ -101,6 +99,17 @@ function extractSingleCustomerRecord(
   return { customer: null, customerId: null };
 }
 
+function isMissingRpcSignatureError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === 'PGRST202' || error.code === '42883') return true;
+  const lower = (error.message ?? '').toLowerCase();
+  return (
+    lower.includes('could not find the function') ||
+    lower.includes('schema cache') ||
+    (lower.includes('function') && lower.includes('does not exist'))
+  );
+}
+
 export function formatCustomerRpcError(
   rawMessage: string | undefined | null,
   fallback: string
@@ -115,7 +124,7 @@ export function formatCustomerRpcError(
     lower.includes('row-level security') ||
     lower.includes('policy')
   ) {
-    return 'Permission denied. Only Organization Owners, Admins, and Managers can create, edit, or archive customers.';
+    return 'Permission denied. Only Organization Owners, Admins, and Managers can create, edit, archive, or restore customers.';
   }
 
   if (lower.includes('duplicate') || lower.includes('unique')) {
@@ -242,6 +251,99 @@ export async function searchCustomers(
   };
 }
 
+export async function searchArchivedCustomers(
+  organisationId: string,
+  searchQuery = '',
+  limit = MAX_CUSTOMER_SEARCH_LIMIT
+): Promise<CustomerSearchResult> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { customers: [], hitLimit: false, error: 'Supabase client is not configured.' };
+  }
+
+  const verified = await verifyActiveWorkspaceContext(organisationId, 'none');
+  if (!verified.ok) {
+    return { customers: [], hitLimit: false, error: verified.error };
+  }
+
+  const clampedLimit = Math.min(
+    MAX_CUSTOMER_SEARCH_LIMIT,
+    Math.max(1, Math.trunc(Number.isFinite(limit) ? limit : MAX_CUSTOMER_SEARCH_LIMIT))
+  );
+  const trimmedSearch = searchQuery.trim();
+
+  const { data, error } = await supabase.rpc('customers_v1_search', {
+    p_organization_id: verified.organizationId,
+    p_search: trimmedSearch ? trimmedSearch : null,
+    p_limit: clampedLimit,
+    p_is_active: false,
+  });
+
+  if (!error) {
+    const rawRows = extractCustomerRows(data);
+    const customers = rawRows
+      .map((row) => normalizeCustomerRow(row, verified.organizationId))
+      .filter((row): row is CustomerRecord => Boolean(row))
+      .filter((row) => !row.isActive);
+
+    return {
+      customers,
+      hitLimit: rawRows.length >= clampedLimit,
+      error: null,
+    };
+  }
+
+  // Fallback read-only query if live DB has not yet applied the 4-arg customers_v1_search migration
+  if (isMissingRpcSignatureError(error)) {
+    let query = supabase
+      .from('customers')
+      .select('*')
+      .eq('organization_id', verified.organizationId)
+      .eq('is_active', false)
+      .order('name', { ascending: true })
+      .limit(clampedLimit);
+
+    if (trimmedSearch) {
+      const safePattern = trimmedSearch.replace(/[,()]/g, ' ').trim();
+      if (safePattern) {
+        query = query.or(
+          `name.ilike.%${safePattern}%,phone.ilike.%${safePattern}%,email.ilike.%${safePattern}%`
+        );
+      }
+    }
+
+    const fallbackRes = await query;
+    if (fallbackRes.error) {
+      return {
+        customers: [],
+        hitLimit: false,
+        error: formatCustomerRpcError(
+          fallbackRes.error.message,
+          'Unable to load archived customers.'
+        ),
+      };
+    }
+
+    const rawRows = extractCustomerRows(fallbackRes.data);
+    const customers = rawRows
+      .map((row) => normalizeCustomerRow(row, verified.organizationId))
+      .filter((row): row is CustomerRecord => Boolean(row))
+      .filter((row) => !row.isActive);
+
+    return {
+      customers,
+      hitLimit: rawRows.length >= clampedLimit,
+      error: null,
+    };
+  }
+
+  return {
+    customers: [],
+    hitLimit: false,
+    error: formatCustomerRpcError(error.message, 'Unable to load archived customers.'),
+  };
+}
+
 async function verifyCustomerWriteMembership(
   organisationId: string
 ): Promise<{ ok: true; organizationId: string } | { ok: false; error: string }> {
@@ -281,7 +383,7 @@ async function verifyCustomerWriteMembership(
     return {
       ok: false,
       error:
-        'Only Organization Owners, Admins, and Managers can create, edit, or archive customers.',
+        'Only Organization Owners, Admins, and Managers can create, edit, archive, or restore customers.',
     };
   }
 
@@ -412,4 +514,51 @@ export async function archiveCustomer(
   }
 
   return { error: null };
+}
+
+export async function restoreCustomer(
+  organisationId: string,
+  customerId: string
+): Promise<CustomerMutationResult> {
+  if (!customerId || !customerId.trim()) {
+    return { customer: null, customerId: null, error: 'Customer ID is required.' };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { customer: null, customerId: null, error: 'Supabase client is not configured.' };
+  }
+
+  const verified = await verifyCustomerWriteMembership(organisationId);
+  if (!verified.ok) {
+    return { customer: null, customerId: null, error: verified.error };
+  }
+
+  const { data, error } = await supabase.rpc('customers_v1_restore', {
+    p_organization_id: verified.organizationId,
+    p_customer_id: customerId.trim(),
+  });
+
+  if (error) {
+    if (isMissingRpcSignatureError(error)) {
+      return {
+        customer: null,
+        customerId: null,
+        error:
+          'The customers_v1_restore database RPC is not yet deployed. Apply migration 0003_customers_archive_and_restore.sql in Supabase first.',
+      };
+    }
+    return {
+      customer: null,
+      customerId: null,
+      error: formatCustomerRpcError(error.message, 'Unable to restore customer.'),
+    };
+  }
+
+  const parsed = extractSingleCustomerRecord(data, verified.organizationId);
+  return {
+    customer: parsed.customer,
+    customerId: parsed.customerId ?? customerId.trim(),
+    error: null,
+  };
 }

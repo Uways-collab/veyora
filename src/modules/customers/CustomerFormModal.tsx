@@ -81,6 +81,10 @@ export function CustomerFormModal({
 
     try {
       if (customer) {
+        if (!customer.isActive) {
+          setFormError('Archived customers cannot be edited until restored.');
+          return;
+        }
         const result = await updateCustomer(organisationId, customer.id, form);
         if (result.error) {
           setFormError(result.error);

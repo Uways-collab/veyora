@@ -10,6 +10,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldCheck,
   Users,
@@ -18,8 +19,15 @@ import {
 import { useAuth } from '../../core/auth/AuthContext';
 import { CustomerDetailModal } from './CustomerDetailModal';
 import { CustomerFormModal } from './CustomerFormModal';
-import { archiveCustomer, searchCustomers } from './customersService';
+import {
+  archiveCustomer,
+  restoreCustomer,
+  searchArchivedCustomers,
+  searchCustomers,
+} from './customersService';
 import { canManageCustomers, type CustomerRecord } from './customersTypes';
+
+type CustomerDirectoryTab = 'active' | 'archived';
 
 export function CustomersView() {
   const { status, activeOrganisation, activeRole } = useAuth();
@@ -27,13 +35,17 @@ export function CustomersView() {
   const timeZone = activeOrganisation?.timezone;
   const canManage = canManageCustomers(activeRole);
 
+  const [directoryTab, setDirectoryTab] = useState<CustomerDirectoryTab>('active');
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
-  const [totalActiveCount, setTotalActiveCount] = useState<number>(0);
-  const [totalHitLimit, setTotalHitLimit] = useState<boolean>(false);
+  const [activeTotalCount, setActiveTotalCount] = useState<number>(0);
+  const [activeHitLimit, setActiveHitLimit] = useState<boolean>(false);
+  const [archivedTotalCount, setArchivedTotalCount] = useState<number>(0);
+  const [archivedHitLimit, setArchivedHitLimit] = useState<boolean>(false);
   const [searchHitLimit, setSearchHitLimit] = useState<boolean>(false);
 
   const [searchInput, setSearchInput] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
+  const [loadedTab, setLoadedTab] = useState<CustomerDirectoryTab>('active');
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -48,15 +60,19 @@ export function CustomersView() {
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null);
   const [archivingCustomer, setArchivingCustomer] = useState<CustomerRecord | null>(null);
   const [archivingSubmitting, setArchivingSubmitting] = useState(false);
+  const [restoringCustomer, setRestoringCustomer] = useState<CustomerRecord | null>(null);
+  const [restoringSubmitting, setRestoringSubmitting] = useState(false);
 
   const requestSeqRef = useRef(0);
   const archiveLockRef = useRef(false);
+  const restoreLockRef = useRef(false);
 
-  const loadCustomers = useCallback(
+  const loadDirectory = useCallback(
     async (
       orgId: string,
+      tab: CustomerDirectoryTab,
       query: string,
-      options?: { isManualRefresh?: boolean; refreshTotalIfFiltered?: boolean }
+      options?: { isManualRefresh?: boolean; refreshBothCounts?: boolean }
     ) => {
       const seq = ++requestSeqRef.current;
       if (options?.isManualRefresh) {
@@ -68,36 +84,56 @@ export function CustomersView() {
 
       try {
         const trimmed = query.trim();
-        const searchPromise = searchCustomers(orgId, trimmed, 100);
-        const totalPromise =
-          trimmed && options?.refreshTotalIfFiltered
-            ? searchCustomers(orgId, '', 100)
-            : null;
+        const primaryPromise =
+          tab === 'active'
+            ? searchCustomers(orgId, trimmed, 100)
+            : searchArchivedCustomers(orgId, trimmed, 100);
 
-        const [result, totalResult] = await Promise.all([
-          searchPromise,
-          totalPromise ?? Promise.resolve(null),
+        const shouldRefreshActiveTotal =
+          options?.refreshBothCounts && (tab !== 'active' || trimmed.length > 0);
+        const shouldRefreshArchivedTotal =
+          options?.refreshBothCounts && (tab !== 'archived' || trimmed.length > 0);
+
+        const [primaryRes, activeTotalRes, archivedTotalRes] = await Promise.all([
+          primaryPromise,
+          shouldRefreshActiveTotal ? searchCustomers(orgId, '', 100) : Promise.resolve(null),
+          shouldRefreshArchivedTotal
+            ? searchArchivedCustomers(orgId, '', 100)
+            : Promise.resolve(null),
         ]);
 
         if (seq !== requestSeqRef.current) return;
 
-        if (result.error) {
-          setLoadError(result.error);
-          setCustomers([]);
-          setSearchHitLimit(false);
-          return;
-        }
-
-        setCustomers(result.customers);
-        setSearchHitLimit(result.hitLimit);
+        setLoadedTab(tab);
         setAppliedSearch(trimmed);
 
-        if (!trimmed) {
-          setTotalActiveCount(result.customers.length);
-          setTotalHitLimit(result.hitLimit);
-        } else if (totalResult && !totalResult.error) {
-          setTotalActiveCount(totalResult.customers.length);
-          setTotalHitLimit(totalResult.hitLimit);
+        if (primaryRes.error) {
+          setLoadError(primaryRes.error);
+          setCustomers([]);
+          setSearchHitLimit(false);
+        } else {
+          setCustomers(primaryRes.customers);
+          setSearchHitLimit(primaryRes.hitLimit);
+
+          if (!trimmed) {
+            if (tab === 'active') {
+              setActiveTotalCount(primaryRes.customers.length);
+              setActiveHitLimit(primaryRes.hitLimit);
+            } else {
+              setArchivedTotalCount(primaryRes.customers.length);
+              setArchivedHitLimit(primaryRes.hitLimit);
+            }
+          }
+        }
+
+        if (activeTotalRes && !activeTotalRes.error) {
+          setActiveTotalCount(activeTotalRes.customers.length);
+          setActiveHitLimit(activeTotalRes.hitLimit);
+        }
+
+        if (archivedTotalRes && !archivedTotalRes.error) {
+          setArchivedTotalCount(archivedTotalRes.customers.length);
+          setArchivedHitLimit(archivedTotalRes.hitLimit);
         }
       } finally {
         if (seq === requestSeqRef.current) {
@@ -109,12 +145,16 @@ export function CustomersView() {
     []
   );
 
-  // Reset state immediately when workspace changes and load active org's customers
+  // Reset state immediately when workspace changes and load active org's customers & counts
   useEffect(() => {
     requestSeqRef.current += 1;
+    setDirectoryTab('active');
+    setLoadedTab('active');
     setCustomers([]);
-    setTotalActiveCount(0);
-    setTotalHitLimit(false);
+    setActiveTotalCount(0);
+    setActiveHitLimit(false);
+    setArchivedTotalCount(0);
+    setArchivedHitLimit(false);
     setSearchHitLimit(false);
     setSearchInput('');
     setAppliedSearch('');
@@ -124,61 +164,87 @@ export function CustomersView() {
     setFormOpen(false);
     setEditingCustomer(null);
     setArchivingCustomer(null);
+    setRestoringCustomer(null);
 
     if (status === 'authenticated' && activeOrgId) {
-      void loadCustomers(activeOrgId, '', { isManualRefresh: false });
+      void loadDirectory(activeOrgId, 'active', '', {
+        isManualRefresh: false,
+        refreshBothCounts: true,
+      });
     } else {
       setLoading(false);
     }
-  }, [status, activeOrgId, loadCustomers]);
+  }, [status, activeOrgId, loadDirectory]);
 
-  // Debounced search via customers_v1_search
+  // Debounced search or tab switch via customers_v1_search
   useEffect(() => {
     if (status !== 'authenticated' || !activeOrgId) return;
     const trimmed = searchInput.trim();
-    if (trimmed === appliedSearch) return;
+    if (trimmed === appliedSearch && directoryTab === loadedTab) return;
 
+    // Tab switches reload immediately; typing debounces
+    const delay = directoryTab !== loadedTab ? 0 : 280;
     const timer = window.setTimeout(() => {
-      void loadCustomers(activeOrgId, trimmed, { isManualRefresh: false });
-    }, 280);
+      void loadDirectory(activeOrgId, directoryTab, trimmed, { isManualRefresh: false });
+    }, delay);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [searchInput, appliedSearch, status, activeOrgId, loadCustomers]);
+  }, [
+    searchInput,
+    appliedSearch,
+    directoryTab,
+    loadedTab,
+    status,
+    activeOrgId,
+    loadDirectory,
+  ]);
 
-  // Escape closes archive confirmation modal
+  // Escape closes archive / restore confirmation modals
   useEffect(() => {
-    if (!archivingCustomer) return;
+    if (!archivingCustomer && !restoringCustomer) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !archivingSubmitting) {
-        setArchivingCustomer(null);
+      if (e.key === 'Escape') {
+        if (archivingCustomer && !archivingSubmitting) {
+          setArchivingCustomer(null);
+        }
+        if (restoringCustomer && !restoringSubmitting) {
+          setRestoringCustomer(null);
+        }
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [archivingCustomer, archivingSubmitting]);
+  }, [archivingCustomer, archivingSubmitting, restoringCustomer, restoringSubmitting]);
 
   const handleManualRefresh = () => {
     if (!activeOrgId) return;
     setFeedback(null);
-    void loadCustomers(activeOrgId, searchInput, {
+    void loadDirectory(activeOrgId, directoryTab, searchInput, {
       isManualRefresh: true,
-      refreshTotalIfFiltered: true,
+      refreshBothCounts: true,
     });
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrgId) return;
-    void loadCustomers(activeOrgId, searchInput, { isManualRefresh: false });
+    void loadDirectory(activeOrgId, directoryTab, searchInput, { isManualRefresh: false });
   };
 
   const handleClearSearch = () => {
     setSearchInput('');
     if (activeOrgId) {
-      void loadCustomers(activeOrgId, '', { isManualRefresh: false });
+      void loadDirectory(activeOrgId, directoryTab, '', { isManualRefresh: false });
     }
+  };
+
+  const handleSwitchTab = (nextTab: CustomerDirectoryTab) => {
+    if (nextTab === directoryTab) return;
+    setFeedback(null);
+    setLoadError(null);
+    setDirectoryTab(nextTab);
   };
 
   const openCreateModal = () => {
@@ -189,16 +255,22 @@ export function CustomersView() {
   };
 
   const openEditModal = (customer: CustomerRecord) => {
-    if (!canManage) return;
+    if (!canManage || !customer.isActive) return;
     setFeedback(null);
     setEditingCustomer(customer);
     setFormOpen(true);
   };
 
   const openArchiveModal = (customer: CustomerRecord) => {
-    if (!canManage) return;
+    if (!canManage || !customer.isActive) return;
     setFeedback(null);
     setArchivingCustomer(customer);
+  };
+
+  const openRestoreModal = (customer: CustomerRecord) => {
+    if (!canManage || customer.isActive) return;
+    setFeedback(null);
+    setRestoringCustomer(customer);
   };
 
   const handleFormSuccess = async (message: string) => {
@@ -206,9 +278,9 @@ export function CustomersView() {
     setEditingCustomer(null);
     setFeedback({ type: 'success', message });
     if (activeOrgId) {
-      await loadCustomers(activeOrgId, searchInput, {
+      await loadDirectory(activeOrgId, directoryTab, searchInput, {
         isManualRefresh: true,
-        refreshTotalIfFiltered: true,
+        refreshBothCounts: true,
       });
     }
   };
@@ -236,15 +308,50 @@ export function CustomersView() {
       }
       setFeedback({
         type: 'success',
-        message: `Customer "${target.name}" archived and removed from the active list.`,
+        message: `Customer "${target.name}" moved to Archived Customers.`,
       });
-      await loadCustomers(activeOrgId, searchInput, {
+      await loadDirectory(activeOrgId, directoryTab, searchInput, {
         isManualRefresh: true,
-        refreshTotalIfFiltered: true,
+        refreshBothCounts: true,
       });
     } finally {
       archiveLockRef.current = false;
       setArchivingSubmitting(false);
+    }
+  };
+
+  const handleConfirmRestore = async () => {
+    if (!activeOrgId || !restoringCustomer || !canManage) return;
+    if (restoreLockRef.current || restoringSubmitting) return;
+
+    restoreLockRef.current = true;
+    setRestoringSubmitting(true);
+    setFeedback(null);
+
+    const target = restoringCustomer;
+    try {
+      const result = await restoreCustomer(activeOrgId, target.id);
+      if (result.error) {
+        setRestoringCustomer(null);
+        setFeedback({ type: 'error', message: result.error });
+        return;
+      }
+
+      setRestoringCustomer(null);
+      if (viewingCustomer?.id === target.id) {
+        setViewingCustomer(null);
+      }
+      setFeedback({
+        type: 'success',
+        message: `Customer "${target.name}" restored to Active Customers.`,
+      });
+      await loadDirectory(activeOrgId, directoryTab, searchInput, {
+        isManualRefresh: true,
+        refreshBothCounts: true,
+      });
+    } finally {
+      restoreLockRef.current = false;
+      setRestoringSubmitting(false);
     }
   };
 
@@ -260,6 +367,7 @@ export function CustomersView() {
 
   const isInitialLoading = loading && !refreshing;
   const hasSearchFilter = appliedSearch.length > 0;
+  const isArchivedTab = directoryTab === 'archived';
 
   return (
     <div className="space-y-8">
@@ -277,8 +385,13 @@ export function CustomersView() {
             </span>
             <span aria-hidden="true">·</span>
             <span className="font-mono tabular-nums">
-              {totalActiveCount}
-              {totalHitLimit ? '+' : ''} active {totalActiveCount === 1 ? 'customer' : 'customers'}
+              {activeTotalCount}
+              {activeHitLimit ? '+' : ''} active
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="font-mono tabular-nums">
+              {archivedTotalCount}
+              {archivedHitLimit ? '+' : ''} archived
             </span>
           </div>
           <h1
@@ -288,7 +401,7 @@ export function CustomersView() {
             Customers
           </h1>
           <p className="text-sm text-slate-600 max-w-2xl">
-            Manage active customer records, contact information, and directory notes for{' '}
+            Manage active customer records, archived accounts, contact details, and notes for{' '}
             {activeOrganisation?.name ?? 'your workspace'}.
           </p>
         </div>
@@ -358,7 +471,9 @@ export function CustomersView() {
           <div className="flex items-start gap-2.5 text-xs text-amber-900">
             <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" aria-hidden="true" />
             <div className="space-y-0.5">
-              <div className="font-semibold">Unable to load customer records</div>
+              <div className="font-semibold">
+                Unable to load {isArchivedTab ? 'archived' : 'active'} customer records
+              </div>
               <div className="text-amber-800">{loadError}</div>
             </div>
           </div>
@@ -385,7 +500,7 @@ export function CustomersView() {
               <span className="text-xs font-medium text-slate-600">Total Active Customers</span>
               <Users className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
             </div>
-            {isInitialLoading && !hasSearchFilter ? (
+            {isInitialLoading && !hasSearchFilter && directoryTab === 'active' ? (
               <div className="space-y-2" aria-busy="true">
                 <div className="h-7 w-16 bg-slate-100 rounded animate-pulse" />
                 <div className="h-3.5 w-28 bg-slate-100 rounded animate-pulse" />
@@ -393,11 +508,11 @@ export function CustomersView() {
             ) : (
               <div>
                 <div className="font-mono text-2xl font-semibold text-slate-900 tabular-nums">
-                  {totalActiveCount}
-                  {totalHitLimit ? '+' : ''}
+                  {activeTotalCount}
+                  {activeHitLimit ? '+' : ''}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {totalHitLimit
+                  {activeHitLimit
                     ? 'Showing up to 100 active records'
                     : 'Active in current organization'}
                 </div>
@@ -407,10 +522,10 @@ export function CustomersView() {
 
           <div className="p-5 flex flex-col justify-between gap-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-slate-600">With Phone Number</span>
-              <Phone className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
+              <span className="text-xs font-medium text-slate-600">Archived Customers</span>
+              <Archive className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
             </div>
-            {isInitialLoading ? (
+            {isInitialLoading && !hasSearchFilter && directoryTab === 'archived' ? (
               <div className="space-y-2" aria-busy="true">
                 <div className="h-7 w-16 bg-slate-100 rounded animate-pulse" />
                 <div className="h-3.5 w-28 bg-slate-100 rounded animate-pulse" />
@@ -418,10 +533,11 @@ export function CustomersView() {
             ) : (
               <div>
                 <div className="font-mono text-2xl font-semibold text-slate-900 tabular-nums">
-                  {contactMetrics.withPhone}
+                  {archivedTotalCount}
+                  {archivedHitLimit ? '+' : ''}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {hasSearchFilter ? 'In current search results' : 'Reachable by phone'}
+                  {canManage ? 'Restorable to active status' : 'Read-only archived records'}
                 </div>
               </div>
             )}
@@ -429,21 +545,26 @@ export function CustomersView() {
 
           <div className="p-5 flex flex-col justify-between gap-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-slate-600">With Email Address</span>
-              <Mail className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
+              <span className="text-xs font-medium text-slate-600">Contact Reachability</span>
+              <div className="flex items-center gap-1.5 text-slate-400 shrink-0" aria-hidden="true">
+                <Phone className="h-3.5 w-3.5" />
+                <Mail className="h-3.5 w-3.5" />
+              </div>
             </div>
             {isInitialLoading ? (
               <div className="space-y-2" aria-busy="true">
-                <div className="h-7 w-16 bg-slate-100 rounded animate-pulse" />
+                <div className="h-7 w-24 bg-slate-100 rounded animate-pulse" />
                 <div className="h-3.5 w-28 bg-slate-100 rounded animate-pulse" />
               </div>
             ) : (
               <div>
-                <div className="font-mono text-2xl font-semibold text-slate-900 tabular-nums">
-                  {contactMetrics.withEmail}
+                <div className="font-mono text-xl font-semibold text-slate-900 tabular-nums">
+                  {contactMetrics.withPhone} phone · {contactMetrics.withEmail} email
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {hasSearchFilter ? 'In current search results' : 'Reachable by email'}
+                  {hasSearchFilter
+                    ? 'In current search results'
+                    : `In ${isArchivedTab ? 'archived' : 'active'} list`}
                 </div>
               </div>
             )}
@@ -460,7 +581,7 @@ export function CustomersView() {
               </div>
               <div className="mt-1 text-xs text-slate-500">
                 {canManage
-                  ? 'Create, edit, and archive enabled'
+                  ? 'Create, edit, archive, and restore enabled'
                   : 'Contact an Owner, Admin, or Manager to modify records'}
               </div>
             </div>
@@ -468,13 +589,53 @@ export function CustomersView() {
         </div>
       </section>
 
+      {/* Directory Tabs */}
+      <div
+        role="tablist"
+        aria-label="Customer directory tabs"
+        className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-md w-fit"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={directoryTab === 'active'}
+          onClick={() => handleSwitchTab('active')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
+            directoryTab === 'active'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Active Customers ({activeTotalCount}
+          {activeHitLimit ? '+' : ''})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={directoryTab === 'archived'}
+          onClick={() => handleSwitchTab('archived')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
+            directoryTab === 'archived'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Archived Customers ({archivedTotalCount}
+          {archivedHitLimit ? '+' : ''})
+        </button>
+      </div>
+
       {/* Customer Directory Table */}
       <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Active Customers</h2>
+            <h2 className="text-sm font-semibold text-slate-900">
+              {isArchivedTab ? 'Archived Customers' : 'Active Customers'}
+            </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Search active customers by full name, phone number, or email address. Archived customers are excluded from this list.
+              {isArchivedTab
+                ? 'Archived customers are hidden from active operations and cannot be edited until restored.'
+                : 'Search active customers by full name, phone number, or email address. Archived customers appear under Archived Customers.'}
             </p>
           </div>
 
@@ -492,7 +653,7 @@ export function CustomersView() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Search name, phone, or email..."
-                aria-label="Search customers by name, phone, or email"
+                aria-label={`Search ${isArchivedTab ? 'archived' : 'active'} customers by name, phone, or email`}
                 className="w-full pl-8 pr-8 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
               {searchInput && (
@@ -520,10 +681,10 @@ export function CustomersView() {
         <div className="px-5 py-2.5 border-b border-slate-200 bg-slate-50/60 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
           <span className="font-mono tabular-nums">
             {loading
-              ? 'Loading customers...'
+              ? `Loading ${isArchivedTab ? 'archived' : 'active'} customers...`
               : hasSearchFilter
                 ? `${customers.length}${searchHitLimit ? '+' : ''} matching "${appliedSearch}"`
-                : `${customers.length}${searchHitLimit ? '+' : ''} active ${customers.length === 1 ? 'customer' : 'customers'}`}
+                : `${customers.length}${searchHitLimit ? '+' : ''} ${isArchivedTab ? 'archived' : 'active'} ${customers.length === 1 ? 'customer' : 'customers'}`}
           </span>
           <span>Maximum 100 results per query</span>
         </div>
@@ -538,7 +699,9 @@ export function CustomersView() {
         ) : loadError && customers.length === 0 ? (
           <div className="p-10 text-center space-y-2">
             <AlertTriangle className="h-6 w-6 text-amber-600 mx-auto" aria-hidden="true" />
-            <div className="text-xs font-semibold text-slate-900">Could not load customers</div>
+            <div className="text-xs font-semibold text-slate-900">
+              Could not load {isArchivedTab ? 'archived' : 'active'} customers
+            </div>
             <p className="text-xs text-slate-500 max-w-md mx-auto">{loadError}</p>
           </div>
         ) : customers.length === 0 ? (
@@ -547,7 +710,7 @@ export function CustomersView() {
               <Search className="h-6 w-6 text-slate-400 mx-auto" aria-hidden="true" />
               <div className="space-y-1">
                 <div className="text-xs font-semibold text-slate-900">
-                  No customers match &ldquo;{appliedSearch}&rdquo;
+                  No {isArchivedTab ? 'archived' : 'active'} customers match &ldquo;{appliedSearch}&rdquo;
                 </div>
                 <p className="text-xs text-slate-500">
                   Try another name, phone number, or email address, or clear the search filter.
@@ -560,6 +723,14 @@ export function CustomersView() {
               >
                 Clear Search
               </button>
+            </div>
+          ) : isArchivedTab ? (
+            <div className="p-10 text-center space-y-2">
+              <Archive className="h-6 w-6 text-slate-400 mx-auto" aria-hidden="true" />
+              <div className="text-xs font-semibold text-slate-900">No archived customers</div>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Archived customer accounts will appear here when an Owner, Admin, or Manager archives an active customer.
+              </p>
             </div>
           ) : (
             <div className="p-10 text-center space-y-3">
@@ -614,7 +785,13 @@ export function CustomersView() {
                       {customer.email ?? '—'}
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="text-xs font-medium text-emerald-700">Active</span>
+                      <span
+                        className={`text-xs font-medium ${
+                          customer.isActive ? 'text-emerald-700' : 'text-amber-800'
+                        }`}
+                      >
+                        {customer.isActive ? 'Active' : 'Archived'}
+                      </span>
                     </td>
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       <div className="inline-flex items-center gap-2">
@@ -626,7 +803,7 @@ export function CustomersView() {
                           <Eye className="h-3 w-3" aria-hidden="true" />
                           <span>View</span>
                         </button>
-                        {canManage && (
+                        {canManage && customer.isActive && (
                           <>
                             <button
                               type="button"
@@ -646,6 +823,16 @@ export function CustomersView() {
                             </button>
                           </>
                         )}
+                        {canManage && !customer.isActive && (
+                          <button
+                            type="button"
+                            onClick={() => openRestoreModal(customer)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue-200 bg-blue-50 text-[11px] font-medium text-blue-800 hover:bg-blue-100 whitespace-nowrap"
+                          >
+                            <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                            <span>Restore</span>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -664,6 +851,7 @@ export function CustomersView() {
         onClose={() => setViewingCustomer(null)}
         onEdit={openEditModal}
         onArchive={openArchiveModal}
+        onRestore={openRestoreModal}
       />
 
       {/* Create / Edit Customer Modal */}
@@ -709,7 +897,7 @@ export function CustomersView() {
                 <span className="font-semibold text-slate-900">{archivingCustomer.name}</span>?
               </p>
               <p>
-                Archived customers are removed from the active customer directory without deleting historical business records.
+                Archived customers are moved to Archived Customers without deleting historical records, and cannot be edited until restored.
               </p>
             </div>
             <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
@@ -731,6 +919,64 @@ export function CustomersView() {
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                 )}
                 <span>{archivingSubmitting ? 'Archiving...' : 'Archive Customer'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Confirmation Modal */}
+      {restoringCustomer && canManage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="restore-customer-title"
+        >
+          <div className="bg-white border border-slate-200 rounded-lg w-full max-w-md overflow-hidden shadow-xl">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-2">
+              <h2 id="restore-customer-title" className="text-sm font-semibold text-slate-900">
+                Restore Customer
+              </h2>
+              <button
+                type="button"
+                onClick={() => setRestoringCustomer(null)}
+                disabled={restoringSubmitting}
+                aria-label="Close modal"
+                className="p-1 rounded text-slate-400 hover:text-slate-700 disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 text-xs text-slate-600 space-y-2.5 leading-relaxed">
+              <p>
+                Restore{' '}
+                <span className="font-semibold text-slate-900">{restoringCustomer.name}</span> to
+                Active Customers?
+              </p>
+              <p>
+                Once restored, this customer will appear in the active customer directory and can be edited again.
+              </p>
+            </div>
+            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRestoringCustomer(null)}
+                disabled={restoringSubmitting}
+                className="px-3.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmRestore()}
+                disabled={restoringSubmitting}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-blue-700 text-white text-xs font-semibold hover:bg-blue-800 disabled:opacity-50"
+              >
+                {restoringSubmitting && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                )}
+                <span>{restoringSubmitting ? 'Restoring...' : 'Restore Customer'}</span>
               </button>
             </div>
           </div>

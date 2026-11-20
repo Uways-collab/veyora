@@ -699,6 +699,7 @@ export interface Database {
           p_organization_id: string;
           p_search: string | null;
           p_limit: number;
+          p_is_active?: boolean | null;
         };
         Returns: unknown;
       };
@@ -726,6 +727,13 @@ export interface Database {
         Returns: unknown;
       };
       customers_v1_archive: {
+        Args: {
+          p_organization_id: string;
+          p_customer_id: string;
+        };
+        Returns: unknown;
+      };
+      customers_v1_restore: {
         Args: {
           p_organization_id: string;
           p_customer_id: string;
