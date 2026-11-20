@@ -21,24 +21,55 @@ function readString(...values: unknown[]): string | null {
 }
 
 
+function parseOptionalBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return null;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === 't' || normalized === '1' || normalized === 'active') {
+      return true;
+    }
+    if (
+      normalized === 'false' ||
+      normalized === 'f' ||
+      normalized === '0' ||
+      normalized === 'archived' ||
+      normalized === 'inactive'
+    ) {
+      return false;
+    }
+  }
+  return null;
+}
+
 function normalizeCustomerRow(
   raw: Record<string, unknown>,
-  fallbackOrgId: string
+  fallbackOrgId: string,
+  defaultIsActive = true
 ): CustomerRecord | null {
   const id = readString(raw.id, raw.customer_id);
   if (!id) return null;
 
   const rowOrgId = readString(raw.organization_id, raw.organisation_id) ?? fallbackOrgId;
-  if (rowOrgId !== fallbackOrgId) {
+  if (rowOrgId.toLowerCase() !== fallbackOrgId.toLowerCase()) {
     return null;
   }
 
   const archivedAt = readString(raw.archived_at);
   const statusText = (readString(raw.status) ?? '').toLowerCase();
+  const explicitIsActive = parseOptionalBoolean(raw.is_active ?? raw.isActive);
   const isActive =
-    typeof raw.is_active === 'boolean'
-      ? raw.is_active
-      : statusText !== 'archived' && !archivedAt;
+    explicitIsActive !== null
+      ? explicitIsActive
+      : statusText === 'archived' || statusText === 'inactive' || Boolean(archivedAt)
+        ? false
+        : statusText === 'active'
+          ? true
+          : defaultIsActive;
 
   return {
     id,
@@ -55,21 +86,41 @@ function normalizeCustomerRow(
   };
 }
 
-function extractCustomerRows(data: unknown): Record<string, unknown>[] {
-  if (Array.isArray(data)) {
-    return data.filter(
-      (item): item is Record<string, unknown> =>
-        Boolean(item) && typeof item === 'object' && !Array.isArray(item)
-    );
+function unwrapCustomerCandidate(item: unknown): Record<string, unknown> | null {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+  const record = item as Record<string, unknown>;
+  const nested = record.customer ?? record.customers_v1_search;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
   }
-  if (data && typeof data === 'object' && !Array.isArray(data)) {
-    const obj = data as Record<string, unknown>;
-    const candidate = obj.customers ?? obj.items ?? obj.rows ?? obj.data;
+  return record;
+}
+
+function extractCustomerRows(data: unknown): Record<string, unknown>[] {
+  let parsedData = data;
+  if (typeof parsedData === 'string') {
+    const trimmed = parsedData.trim();
+    if (!trimmed) return [];
+    try {
+      parsedData = JSON.parse(trimmed) as unknown;
+    } catch {
+      return [];
+    }
+  }
+
+  if (Array.isArray(parsedData)) {
+    return parsedData
+      .map(unwrapCustomerCandidate)
+      .filter((item): item is Record<string, unknown> => Boolean(item));
+  }
+  if (parsedData && typeof parsedData === 'object' && !Array.isArray(parsedData)) {
+    const obj = parsedData as Record<string, unknown>;
+    const candidate =
+      obj.customers ?? obj.items ?? obj.rows ?? obj.data ?? obj.records ?? obj.results;
     if (Array.isArray(candidate)) {
-      return candidate.filter(
-        (item): item is Record<string, unknown> =>
-          Boolean(item) && typeof item === 'object' && !Array.isArray(item)
-      );
+      return candidate
+        .map(unwrapCustomerCandidate)
+        .filter((item): item is Record<string, unknown> => Boolean(item));
     }
   }
   return [];
@@ -90,7 +141,7 @@ function extractSingleCustomerRecord(
       obj.customer && typeof obj.customer === 'object' && !Array.isArray(obj.customer)
         ? (obj.customer as Record<string, unknown>)
         : obj;
-    const customer = normalizeCustomerRow(nested, orgId);
+    const customer = normalizeCustomerRow(nested, orgId, true);
     const customerId =
       customer?.id ?? readString(nested.id, nested.customer_id, obj.customer_id, obj.id);
     return { customer, customerId };
@@ -224,11 +275,22 @@ export async function searchCustomers(
   );
   const trimmedSearch = searchQuery.trim();
 
-  const { data, error } = await supabase.rpc('customers_v1_search', {
+  let { data, error } = await supabase.rpc('customers_v1_search', {
     p_organization_id: verified.organizationId,
     p_search: trimmedSearch ? trimmedSearch : null,
     p_limit: clampedLimit,
+    p_is_active: true,
   });
+
+  if (error && isMissingRpcSignatureError(error)) {
+    const legacyRes = await supabase.rpc('customers_v1_search', {
+      p_organization_id: verified.organizationId,
+      p_search: trimmedSearch ? trimmedSearch : null,
+      p_limit: clampedLimit,
+    });
+    data = legacyRes.data;
+    error = legacyRes.error;
+  }
 
   if (error) {
     return {
@@ -240,7 +302,7 @@ export async function searchCustomers(
 
   const rawRows = extractCustomerRows(data);
   const customers = rawRows
-    .map((row) => normalizeCustomerRow(row, verified.organizationId))
+    .map((row) => normalizeCustomerRow(row, verified.organizationId, true))
     .filter((row): row is CustomerRecord => Boolean(row))
     .filter((row) => row.isActive);
 
@@ -282,7 +344,7 @@ export async function searchArchivedCustomers(
   if (!error) {
     const rawRows = extractCustomerRows(data);
     const customers = rawRows
-      .map((row) => normalizeCustomerRow(row, verified.organizationId))
+      .map((row) => normalizeCustomerRow(row, verified.organizationId, false))
       .filter((row): row is CustomerRecord => Boolean(row))
       .filter((row) => !row.isActive);
 
@@ -326,7 +388,7 @@ export async function searchArchivedCustomers(
 
     const rawRows = extractCustomerRows(fallbackRes.data);
     const customers = rawRows
-      .map((row) => normalizeCustomerRow(row, verified.organizationId))
+      .map((row) => normalizeCustomerRow(row, verified.organizationId, false))
       .filter((row): row is CustomerRecord => Boolean(row))
       .filter((row) => !row.isActive);
 

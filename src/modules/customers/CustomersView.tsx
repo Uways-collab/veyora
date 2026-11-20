@@ -182,11 +182,14 @@ export function CustomersView() {
     const trimmed = searchInput.trim();
     if (trimmed === appliedSearch && directoryTab === loadedTab) return;
 
-    // Tab switches reload immediately; typing debounces
-    const delay = directoryTab !== loadedTab ? 0 : 280;
+    if (directoryTab !== loadedTab) {
+      void loadDirectory(activeOrgId, directoryTab, trimmed, { isManualRefresh: false });
+      return;
+    }
+
     const timer = window.setTimeout(() => {
       void loadDirectory(activeOrgId, directoryTab, trimmed, { isManualRefresh: false });
-    }, delay);
+    }, 280);
 
     return () => {
       window.clearTimeout(timer);
@@ -244,6 +247,11 @@ export function CustomersView() {
     if (nextTab === directoryTab) return;
     setFeedback(null);
     setLoadError(null);
+    setCustomers([]);
+    setSearchHitLimit(false);
+    if (status === 'authenticated' && activeOrgId) {
+      setLoading(true);
+    }
     setDirectoryTab(nextTab);
   };
 
