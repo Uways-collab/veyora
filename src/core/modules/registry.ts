@@ -65,13 +65,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     id: 'customers',
     label: 'Customers',
     group: 'operations',
-    stage: 'planned_module',
+    stage: 'foundation_active',
     summary:
-      'Retail and wholesale account directory, credit limits, price tiers, contact history, and statements.',
-    primaryEntities: ['Customer Accounts', 'Price Lists', 'Contacts', 'Credit Terms'],
-    plannedTables: ['customers', 'customer_contacts', 'customer_price_tiers'],
+      'Active customer directory with search, contact details, address notes, and role-governed lifecycle management.',
+    primaryEntities: ['Customer Directory', 'Contact Details', 'Address & Notes'],
+    plannedTables: ['customers'],
     connectedModules: ['sales', 'finance', 'reports'],
-    targetPhase: 'Phase 4',
+    targetPhase: 'Active Customer Directory',
   },
   {
     id: 'purchases',

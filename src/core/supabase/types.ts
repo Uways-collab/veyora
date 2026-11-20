@@ -472,6 +472,7 @@ export interface Database {
       sales_returns: InventoryTableRecord;
       sales_return_items: InventoryTableRecord;
       sale_refunds: InventoryTableRecord;
+      customers: InventoryTableRecord;
     };
     Views: Record<string, never>;
     Functions: {
@@ -690,6 +691,44 @@ export interface Database {
         Args: {
           p_organization_id: string;
           p_payment_method_id: string;
+        };
+        Returns: unknown;
+      };
+      customers_v1_search: {
+        Args: {
+          p_organization_id: string;
+          p_search: string | null;
+          p_limit: number;
+        };
+        Returns: unknown;
+      };
+      customers_v1_create: {
+        Args: {
+          p_organization_id: string;
+          p_name: string;
+          p_phone: string | null;
+          p_email: string | null;
+          p_address: string | null;
+          p_notes: string | null;
+        };
+        Returns: unknown;
+      };
+      customers_v1_update: {
+        Args: {
+          p_organization_id: string;
+          p_customer_id: string;
+          p_name: string;
+          p_phone: string | null;
+          p_email: string | null;
+          p_address: string | null;
+          p_notes: string | null;
+        };
+        Returns: unknown;
+      };
+      customers_v1_archive: {
+        Args: {
+          p_organization_id: string;
+          p_customer_id: string;
         };
         Returns: unknown;
       };
