@@ -461,6 +461,14 @@ export interface Database {
         };
         Relationships: [];
       };
+      payment_methods: InventoryTableRecord;
+      sale_sequences: InventoryTableRecord;
+      sales: InventoryTableRecord;
+      sale_items: InventoryTableRecord;
+      sale_payments: InventoryTableRecord;
+      sales_returns: InventoryTableRecord;
+      sales_return_items: InventoryTableRecord;
+      sale_refunds: InventoryTableRecord;
     };
     Views: Record<string, never>;
     Functions: {
@@ -584,6 +592,103 @@ export interface Database {
           p_transfer_id: string;
         };
         Returns: string;
+      };
+      sales_v1_checkout: {
+        Args: {
+          p_organization_id: string;
+          p_location_id: string;
+          p_items: Array<{
+            variant_id: string;
+            quantity: number;
+            line_discount_amount: number;
+          }>;
+          p_payments: Array<{
+            payment_method_id: string;
+            amount: number;
+            reference: string | null;
+          }>;
+          p_idempotency_key: string;
+          p_customer_name: string | null;
+          p_customer_phone: string | null;
+          p_order_discount_amount: number;
+        };
+        Returns: unknown;
+      };
+      sales_v1_record_follow_up_payment: {
+        Args: {
+          p_organization_id: string;
+          p_sale_id: string;
+          p_payment_method_id: string;
+          p_amount: number;
+          p_idempotency_key: string;
+          p_reference: string | null;
+        };
+        Returns: unknown;
+      };
+      sales_v1_record_return: {
+        Args: {
+          p_organization_id: string;
+          p_sale_id: string;
+          p_reason: string;
+          p_items: Array<{
+            sale_item_id: string;
+            quantity: number;
+            restock_quantity: number;
+            restock_location_id: string | null;
+            condition_notes: string | null;
+          }>;
+          p_idempotency_key: string;
+        };
+        Returns: unknown;
+      };
+      sales_v1_record_refund: {
+        Args: {
+          p_organization_id: string;
+          p_sale_id: string;
+          p_refund_source: string;
+          p_return_id: string | null;
+          p_payment_method_id: string;
+          p_amount: number;
+          p_reason: string;
+          p_idempotency_key: string;
+          p_reference: string | null;
+        };
+        Returns: unknown;
+      };
+      sales_v1_cancel_sale: {
+        Args: {
+          p_organization_id: string;
+          p_sale_id: string;
+          p_reason: string;
+          p_idempotency_key: string;
+        };
+        Returns: unknown;
+      };
+      sales_v1_create_payment_method: {
+        Args: {
+          p_organization_id: string;
+          p_name: string;
+          p_method_code: string;
+          p_requires_reference: boolean;
+        };
+        Returns: unknown;
+      };
+      sales_v1_update_payment_method: {
+        Args: {
+          p_organization_id: string;
+          p_payment_method_id: string;
+          p_name: string;
+          p_requires_reference: boolean;
+          p_is_active: boolean;
+        };
+        Returns: unknown;
+      };
+      sales_v1_archive_payment_method: {
+        Args: {
+          p_organization_id: string;
+          p_payment_method_id: string;
+        };
+        Returns: unknown;
       };
     };
     Enums: Record<string, never>;

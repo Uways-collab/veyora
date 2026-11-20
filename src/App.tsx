@@ -9,6 +9,7 @@ import { DashboardView } from './modules/dashboard/DashboardView';
 import { InventoryView } from './modules/inventory/InventoryView';
 import { BusinessOnboardingScreen } from './modules/onboarding/BusinessOnboardingScreen';
 import { ReportsView } from './modules/reports/ReportsView';
+import { SalesView } from './modules/sales/SalesView';
 import { SettingsView, type SettingsTab } from './modules/settings/SettingsView';
 import { PlannedModuleView } from './modules/shared/PlannedModuleView';
 
@@ -153,6 +154,8 @@ function ProtectedWorkspaceRouter() {
         return <DashboardView onSelectModule={handleSelectModule} />;
       case 'inventory':
         return <InventoryView onSelectModule={handleSelectModule} />;
+      case 'sales':
+        return <SalesView onSelectModule={handleSelectModule} />;
       case 'reports':
         return <ReportsView />;
       case 'settings':
