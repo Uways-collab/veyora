@@ -824,6 +824,7 @@ export async function fetchSalesModuleData(
           `SAL-${id.slice(0, 8).toUpperCase()}`,
         locationId,
         locationName: locationById.get(locationId)?.name ?? 'Location',
+        locationAddress: locationById.get(locationId)?.address ?? null,
         currency: (readString(row.currency) ?? defaultCurrency).toUpperCase(),
         customerName: readString(row.customer_name),
         customerPhone: readString(row.customer_phone),

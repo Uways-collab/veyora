@@ -12,6 +12,12 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
+import {
+  getDefaultReceiptSettings,
+  loadOrganizationReceiptSettings,
+  subscribeReceiptSettingsUpdates,
+} from '../../core/receipts/receiptSettingsService';
+import type { ReceiptSettings } from '../../core/receipts/receiptSettingsTypes';
 import type { ModuleId } from '../../core/types/domain';
 import { formatMoneyAmount } from '../inventory/inventoryService';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
@@ -53,6 +59,9 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [receiptSaleId, setReceiptSaleId] = useState<string | null>(null);
+  const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>(() =>
+    getDefaultReceiptSettings()
+  );
 
   useEffect(() => {
     if (activeTab === 'returns' && !canManageReturns) {
@@ -89,6 +98,27 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
       setLoading(false);
     }
   }, [status, activeOrgId, loadSales]);
+
+  useEffect(() => {
+    let active = true;
+    if (status !== 'authenticated' || !activeOrganisation) {
+      setReceiptSettings(getDefaultReceiptSettings());
+      return;
+    }
+
+    void loadOrganizationReceiptSettings(activeOrganisation).then((res) => {
+      if (active) setReceiptSettings(res.settings);
+    });
+
+    const unsubscribe = subscribeReceiptSettingsUpdates(activeOrganisation.id, (next) => {
+      if (active) setReceiptSettings(next);
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [status, activeOrganisation]);
 
   const handleReload = useCallback(async () => {
     if (activeOrgId) {
@@ -661,6 +691,7 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
       <SaleReceiptModal
         sale={receiptSale}
         organisation={activeOrganisation}
+        receiptSettings={receiptSettings}
         onClose={() => setReceiptSaleId(null)}
       />
     </div>

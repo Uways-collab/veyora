@@ -34,3 +34,34 @@
     scroll-behavior: auto !important;
   }
 }
+
+#veyora-receipt-print-host {
+  display: none;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body.veyora-printing-receipt > #root {
+    display: none !important;
+  }
+
+  body.veyora-printing-receipt > #veyora-receipt-print-host {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}
+

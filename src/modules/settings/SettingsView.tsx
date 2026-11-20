@@ -33,7 +33,15 @@ import type {
   OrganisationRole,
 } from '../../core/types/domain';
 
-export type SettingsTab = 'auth_orgs' | 'members_roles' | 'schema_rls' | 'environment' | 'security_storage';
+import { ReceiptSettingsPanel } from './ReceiptSettingsPanel';
+
+export type SettingsTab =
+  | 'auth_orgs'
+  | 'receipt_settings'
+  | 'members_roles'
+  | 'schema_rls'
+  | 'environment'
+  | 'security_storage';
 
 const ENV_TEMPLATE = `VITE_SUPABASE_URL="https://your-project-ref.supabase.co"
 VITE_SUPABASE_ANON_KEY="your-public-anon-key"
@@ -97,6 +105,12 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
 
   // Active Organisation Edit (Owner/Admin only)
   const canEditOrg = activeRole === 'owner' || activeRole === 'admin';
+
+  useEffect(() => {
+    if (activeTab === 'receipt_settings' && !canEditOrg) {
+      setActiveTab('auth_orgs');
+    }
+  }, [activeTab, canEditOrg]);
   const [editOrgName, setEditOrgName] = useState(activeOrganisation?.name ?? '');
   const [editOrgType, setEditOrgType] = useState<BusinessType>(
     activeOrganisation?.business_type ?? 'retail'
@@ -364,11 +378,14 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
         {(
           [
             { id: 'auth_orgs', label: 'Account & Organisations' },
+            ...(canEditOrg
+              ? [{ id: 'receipt_settings' as const, label: 'Receipt Settings' }]
+              : []),
             { id: 'members_roles', label: 'Members & Roles' },
             { id: 'schema_rls', label: 'Database Schema & RLS' },
             { id: 'environment', label: 'Environment & Supabase' },
             { id: 'security_storage', label: 'Security & Storage' },
-          ] as const
+          ] satisfies ReadonlyArray<{ id: SettingsTab; label: string }>
         ).map((tab) => (
           <button
             key={tab.id}
@@ -802,7 +819,16 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
         </div>
       )}
 
-      {/* Tab 2: Members & Roles */}
+      {/* Tab 2: Receipt Settings (Owner / Admin only) */}
+      {activeTab === 'receipt_settings' && canEditOrg && (
+        <ReceiptSettingsPanel
+          organisation={activeOrganisation}
+          activeRole={activeRole}
+          onRefreshOrganisation={refreshMemberships}
+        />
+      )}
+
+      {/* Tab 3: Members & Roles */}
       {activeTab === 'members_roles' && (
         <div className="space-y-6">
           <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">

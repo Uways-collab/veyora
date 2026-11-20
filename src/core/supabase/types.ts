@@ -75,6 +75,7 @@ export interface Database {
           timezone: string;
           email: string | null;
           phone: string | null;
+          receipt_settings?: Record<string, unknown> | null;
           created_by: string;
           created_at: string;
           updated_at: string;
@@ -89,6 +90,7 @@ export interface Database {
           timezone?: string;
           email?: string | null;
           phone?: string | null;
+          receipt_settings?: Record<string, unknown> | null;
           created_by: string;
           created_at?: string;
           updated_at?: string;
@@ -102,6 +104,7 @@ export interface Database {
           timezone?: string;
           email?: string | null;
           phone?: string | null;
+          receipt_settings?: Record<string, unknown> | null;
           updated_at?: string;
         };
         Relationships: [];

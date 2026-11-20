@@ -137,6 +137,7 @@ export interface SaleRecord {
   saleNumber: string;
   locationId: string;
   locationName: string;
+  locationAddress: string | null;
   currency: string;
   customerName: string | null;
   customerPhone: string | null;
