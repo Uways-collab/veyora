@@ -1,0 +1,6 @@
+{
+  "name": "Veyora Business",
+  "description": "Modular multi-tenant business management platform for SMEs, retailers, wholesalers, and distributors.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
