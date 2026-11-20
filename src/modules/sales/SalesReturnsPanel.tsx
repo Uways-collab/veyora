@@ -177,11 +177,11 @@ export function SalesReturnsPanel({
     const next: Record<string, ReturnDraftLine> = {};
     for (const item of selectedReturnSale.items) {
       if (item.remainingReturnableQuantity <= 0) continue;
+      const initialQty = roundQuantity(item.remainingReturnableQuantity);
       next[item.id] = {
         selected: false,
-        quantity: String(item.remainingReturnableQuantity),
-        restockQuantity:
-          item.productType === 'service' ? '0' : String(item.remainingReturnableQuantity),
+        quantity: String(initialQty),
+        restockQuantity: item.productType === 'service' ? '0' : String(initialQty),
         restockLocationId: defaultLocId,
         conditionNotes: '',
       };
@@ -330,20 +330,56 @@ export function SalesReturnsPanel({
     );
   }
 
+  const hasMoreThanThreeDecimals = (rawValue: string): boolean => {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return false;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return true;
+    return Math.abs(parsed - roundQuantity(parsed)) > 1e-9;
+  };
+
   const validateReturnForm = (): string | null => {
     if (!selectedReturnSale) return 'Select an eligible completed sale.';
     if (returnPreview.selectedItems.length === 0) {
       return 'Select at least one item to return.';
     }
     for (const row of returnPreview.selectedItems) {
-      if (row.qty <= 0 || row.qty > row.item.remainingReturnableQuantity) {
-        return `Return quantity for "${row.item.productName}" must be between 0.001 and ${row.item.remainingReturnableQuantity}.`;
+      const draft = returnDrafts[row.item.id];
+      const maxReturnable = roundQuantity(row.item.remainingReturnableQuantity);
+      const rawReturnNum = draft ? Number(draft.quantity.trim()) : NaN;
+
+      if (
+        !draft ||
+        draft.quantity.trim() === '' ||
+        !Number.isFinite(rawReturnNum) ||
+        rawReturnNum <= 0 ||
+        rawReturnNum > maxReturnable
+      ) {
+        return `Return quantity for "${row.item.productName}" must be greater than 0 and no more than ${formatSalesQuantity(maxReturnable)}.`;
       }
-      if (row.item.productType === 'service' && row.restockQty > 0) {
-        return `Service item "${row.item.productName}" cannot be restocked.`;
+      if (hasMoreThanThreeDecimals(draft.quantity)) {
+        return `Return quantity for "${row.item.productName}" supports at most 3 decimal places.`;
       }
-      if (row.restockQty < 0 || row.restockQty > row.qty) {
-        return `Restock quantity for "${row.item.productName}" cannot exceed the return quantity.`;
+
+      if (row.item.productType === 'service') {
+        if (row.restockQty > 0) {
+          return `Service item "${row.item.productName}" cannot be restocked.`;
+        }
+        continue;
+      }
+
+      const rawRestockStr = draft.restockQuantity.trim();
+      const rawRestockNum = rawRestockStr === '' ? NaN : Number(rawRestockStr);
+      if (
+        rawRestockStr === '' ||
+        !Number.isFinite(rawRestockNum) ||
+        rawRestockNum < 0 ||
+        rawRestockNum > rawReturnNum
+      ) {
+        return `Restock quantity for "${row.item.productName}" must be between 0 and ${formatSalesQuantity(row.qty)}.`;
+      }
+      if (hasMoreThanThreeDecimals(draft.restockQuantity)) {
+        return `Restock quantity for "${row.item.productName}" supports at most 3 decimal places.`;
       }
       if (row.restockQty > 0 && !row.restockLocationId) {
         return `Select a restock location for "${row.item.productName}".`;
@@ -817,34 +853,52 @@ export function SalesReturnsPanel({
                                 <input
                                   type="number"
                                   min="0.001"
-                                  step="1"
-                                  max={item.remainingReturnableQuantity}
+                                  step="0.001"
+                                  max={roundQuantity(item.remainingReturnableQuantity)}
                                   disabled={!draft.selected}
                                   value={draft.quantity}
                                   onChange={(e) => {
                                     const nextQty = e.target.value;
-                                    const num = Math.min(
-                                      item.remainingReturnableQuantity,
-                                      Math.max(0, Number(nextQty) || 0)
-                                    );
                                     setReturnDrafts((prev) => ({
                                       ...prev,
                                       [item.id]: {
                                         ...draft,
                                         quantity: nextQty,
-                                        restockQuantity:
-                                          item.productType === 'service'
-                                            ? '0'
-                                            : String(
-                                                Math.min(
-                                                  num,
-                                                  Number(draft.restockQuantity) || 0
-                                                )
-                                              ),
                                       },
                                     }));
                                   }}
-                                  className="w-20 px-2 py-1 rounded-md border border-slate-200 text-right font-mono tabular-nums disabled:bg-slate-50"
+                                  onBlur={() => {
+                                    const trimmed = draft.quantity.trim();
+                                    if (!trimmed) return;
+                                    const parsed = Number(trimmed);
+                                    if (!Number.isFinite(parsed)) return;
+                                    const maxQty = roundQuantity(item.remainingReturnableQuantity);
+                                    const normalizedQty = Math.min(
+                                      maxQty,
+                                      Math.max(0, roundQuantity(parsed))
+                                    );
+                                    setReturnDrafts((prev) => {
+                                      const current = prev[item.id] ?? draft;
+                                      const currentRestock = Number(current.restockQuantity);
+                                      const nextRestock =
+                                        item.productType === 'service'
+                                          ? '0'
+                                          : Number.isFinite(currentRestock) &&
+                                              currentRestock > normalizedQty
+                                            ? String(normalizedQty)
+                                            : current.restockQuantity;
+                                      return {
+                                        ...prev,
+                                        [item.id]: {
+                                          ...current,
+                                          quantity: String(normalizedQty),
+                                          restockQuantity: nextRestock,
+                                        },
+                                      };
+                                    });
+                                  }}
+                                  aria-label={`Return quantity for ${item.productName}`}
+                                  className="w-24 px-2 py-1 rounded-md border border-slate-200 text-right font-mono tabular-nums disabled:bg-slate-50"
                                 />
                               </td>
                               <td className="py-2.5 px-3 text-right align-top">
@@ -857,7 +911,7 @@ export function SalesReturnsPanel({
                                     <input
                                       type="number"
                                       min="0"
-                                      step="1"
+                                      step="0.001"
                                       max={returnQtyNum}
                                       disabled={!draft.selected}
                                       value={draft.restockQuantity}
@@ -870,7 +924,28 @@ export function SalesReturnsPanel({
                                           },
                                         }))
                                       }
-                                      className="w-20 px-2 py-1 rounded-md border border-slate-200 text-right font-mono tabular-nums disabled:bg-slate-50"
+                                      onBlur={() => {
+                                        const trimmed = draft.restockQuantity.trim();
+                                        if (!trimmed) return;
+                                        const parsed = Number(trimmed);
+                                        if (!Number.isFinite(parsed)) return;
+                                        const normalizedRestock = Math.min(
+                                          returnQtyNum,
+                                          Math.max(0, roundQuantity(parsed))
+                                        );
+                                        setReturnDrafts((prev) => {
+                                          const current = prev[item.id] ?? draft;
+                                          return {
+                                            ...prev,
+                                            [item.id]: {
+                                              ...current,
+                                              restockQuantity: String(normalizedRestock),
+                                            },
+                                          };
+                                        });
+                                      }}
+                                      aria-label={`Restock quantity for ${item.productName}`}
+                                      className="w-24 px-2 py-1 rounded-md border border-slate-200 text-right font-mono tabular-nums disabled:bg-slate-50"
                                     />
                                     {draft.selected && damagedQty > 0 && (
                                       <div className="text-[10px] text-amber-700 font-mono">

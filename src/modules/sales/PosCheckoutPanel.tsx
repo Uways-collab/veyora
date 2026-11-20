@@ -936,8 +936,8 @@ export function PosCheckoutPanel({
                         <input
                           type="number"
                           min="0.001"
-                          step="1"
-                          max={available ?? undefined}
+                          step="0.001"
+                          max={available !== null ? roundQuantity(available) : undefined}
                           value={line.quantity}
                           onChange={(e) =>
                             handleUpdateCartQty(line.variantId, Number(e.target.value))
