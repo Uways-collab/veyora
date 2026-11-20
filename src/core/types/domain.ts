@@ -43,8 +43,7 @@ export interface Organisation {
   timezone: string;
   business_email: string | null;
   business_phone: string | null;
-  receipt_settings?: Record<string, unknown> | null;
-  has_receipt_settings_column?: boolean;
+  receipt_settings: Record<string, unknown> | null;
   created_by: string;
   created_at: string;
   updated_at: string;

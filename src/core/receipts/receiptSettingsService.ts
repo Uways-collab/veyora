@@ -7,44 +7,19 @@ import {
 } from './receiptSettingsTypes';
 
 const RECEIPT_STORAGE_BUCKET = 'organisation-files';
-const LOCAL_STORAGE_PREFIX = 'veyora_receipt_settings:';
 const RECEIPT_SETTINGS_UPDATED_EVENT = 'veyora:receipt-settings-updated';
-
-export type ReceiptSettingsStorageSource =
-  | 'database'
-  | 'storage'
-  | 'local_cache'
-  | 'default';
-
-function getLocalStorageKey(organisationId: string): string {
-  return `${LOCAL_STORAGE_PREFIX}${organisationId}`;
-}
-
-function readLocalReceiptSettings(organisationId: string): ReceiptSettings | null {
-  try {
-    const raw = window.localStorage.getItem(getLocalStorageKey(organisationId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    return normalizeReceiptSettings(parsed);
-  } catch {
-    return null;
-  }
-}
-
-function writeLocalReceiptSettings(organisationId: string, settings: ReceiptSettings): void {
-  try {
-    window.localStorage.setItem(getLocalStorageKey(organisationId), JSON.stringify(settings));
-  } catch {
-    // Ignore quota or storage restriction errors
-  }
-}
-
-function getSettingsStoragePath(organisationId: string): string {
-  return `${organisationId}/settings/receipt-settings.json`;
-}
 
 export function getDefaultReceiptSettings(): ReceiptSettings {
   return { ...DEFAULT_RECEIPT_SETTINGS };
+}
+
+export function getOrganizationReceiptSettings(
+  organisation: Organisation | null
+): ReceiptSettings {
+  if (!organisation?.id) {
+    return getDefaultReceiptSettings();
+  }
+  return normalizeReceiptSettings(organisation.receipt_settings);
 }
 
 export function notifyReceiptSettingsUpdated(
@@ -84,182 +59,131 @@ export function subscribeReceiptSettingsUpdates(
   };
 }
 
-export async function loadOrganizationReceiptSettings(
-  organisation: Organisation | null
-): Promise<{
-  settings: ReceiptSettings;
-  source: ReceiptSettingsStorageSource;
-  warning: string | null;
-}> {
-  if (!organisation?.id) {
-    return {
-      settings: getDefaultReceiptSettings(),
-      source: 'default',
-      warning: null,
-    };
-  }
-
-  const orgId = organisation.id;
-
-  // 1. Prefer organizations.receipt_settings column if present in schema & populated
-  if (organisation.has_receipt_settings_column && organisation.receipt_settings) {
-    const normalized = normalizeReceiptSettings(organisation.receipt_settings);
-    writeLocalReceiptSettings(orgId, normalized);
-    return {
-      settings: normalized,
-      source: 'database',
-      warning: null,
-    };
-  }
-
-  // 2. Try existing Supabase Storage bucket (organisation-files/<orgId>/settings/receipt-settings.json)
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase.storage
-        .from(RECEIPT_STORAGE_BUCKET)
-        .download(getSettingsStoragePath(orgId));
-
-      if (!error && data) {
-        const text = await data.text();
-        const parsed = JSON.parse(text) as unknown;
-        const normalized = normalizeReceiptSettings(parsed);
-        writeLocalReceiptSettings(orgId, normalized);
-        return {
-          settings: normalized,
-          source: 'storage',
-          warning: null,
-        };
-      }
-    } catch {
-      // Fall through cleanly to local cache or defaults if Storage file doesn't exist yet
-    }
-  }
-
-  // 3. Fallback to per-organisation local cache
-  const local = readLocalReceiptSettings(orgId);
-  if (local) {
-    return {
-      settings: local,
-      source: 'local_cache',
-      warning: null,
-    };
-  }
-
-  // 4. Default receipt settings
+function serializeReceiptSettingsForDatabase(
+  settings: ReceiptSettings
+): Record<string, unknown> {
   return {
-    settings: getDefaultReceiptSettings(),
-    source: 'default',
-    warning: null,
+    paperSize: settings.paperSize,
+    customWidthMm: settings.customWidthMm,
+    showLogo: settings.showLogo,
+    logoUrl: settings.logoUrl,
+    logoStoragePath: settings.logoStoragePath,
+    showAddress: settings.showAddress,
+    businessAddress: settings.businessAddress,
+    showPhone: settings.showPhone,
+    showEmail: settings.showEmail,
+    showCashier: settings.showCashier,
+    showCustomer: settings.showCustomer,
+    showPaymentMethod: settings.showPaymentMethod,
+    showPaymentReference: settings.showPaymentReference,
+    showSubtotal: settings.showSubtotal,
+    showDiscounts: settings.showDiscounts,
+    showAmountPaid: settings.showAmountPaid,
+    showOutstandingBalance: settings.showOutstandingBalance,
+    footerText: settings.footerText,
+    updatedAt: settings.updatedAt,
   };
 }
 
 export async function saveOrganizationReceiptSettings(
   organisation: Organisation,
   draft: ReceiptSettings,
-  role: OrganisationRole | null
+  role: OrganisationRole | null,
+  previousSavedLogoStoragePath?: string | null
 ): Promise<{
-  settings: ReceiptSettings;
-  source: ReceiptSettingsStorageSource;
+  settings: ReceiptSettings | null;
   error: string | null;
-  warning: string | null;
 }> {
   if (role !== 'owner' && role !== 'admin') {
     return {
-      settings: draft,
-      source: 'default',
-      error: 'Only Organization Owners and Admins can modify receipt settings.',
-      warning: null,
+      settings: null,
+      error: 'Only Organization Owners and Admins can update receipt settings.',
+    };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      settings: null,
+      error: 'Supabase client is not configured. Unable to save receipt settings.',
     };
   }
 
   const orgId = organisation.id;
+  if (!orgId || !orgId.trim()) {
+    return {
+      settings: null,
+      error: 'Active organization ID is required to save receipt settings.',
+    };
+  }
+
   const nextSettings: ReceiptSettings = {
     ...normalizeReceiptSettings(draft),
     updatedAt: new Date().toISOString(),
   };
 
-  // Always save per-organisation local cache so reloads retain preferences immediately
-  writeLocalReceiptSettings(orgId, nextSettings);
-  notifyReceiptSettingsUpdated(orgId, nextSettings);
+  // Update ONLY receipt_settings so unrelated organization columns remain untouched.
+  // Use .select('id, receipt_settings').single() so RLS denial or missing rows fail loudly.
+  const { data, error } = await supabase
+    .from('organizations')
+    .update({
+      receipt_settings: serializeReceiptSettingsForDatabase(nextSettings),
+    })
+    .eq('id', orgId)
+    .select('id, receipt_settings')
+    .single();
 
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    return {
-      settings: nextSettings,
-      source: 'local_cache',
-      error: null,
-      warning:
-        'Supabase is not configured. Receipt settings were saved locally in this browser for this organization.',
-    };
-  }
-
-  // 1. If organizations.receipt_settings column exists in live schema, persist directly on public.organizations
-  if (organisation.has_receipt_settings_column) {
-    const { error } = await supabase
-      .from('organizations')
-      .update({
-        receipt_settings: nextSettings as unknown as Record<string, unknown>,
-      })
-      .eq('id', orgId);
-
-    if (!error) {
+  if (error) {
+    const rawMsg = error.message || 'Unable to save receipt settings to Supabase.';
+    const lower = rawMsg.toLowerCase();
+    if (
+      error.code === '42501' ||
+      lower.includes('row-level security') ||
+      lower.includes('policy') ||
+      lower.includes('permission denied')
+    ) {
       return {
-        settings: nextSettings,
-        source: 'database',
-        error: null,
-        warning: null,
+        settings: null,
+        error:
+          'Permission denied by database security policy. Only Organization Owners and Admins can update receipt settings.',
+      };
+    }
+    if (error.code === 'PGRST116') {
+      return {
+        settings: null,
+        error:
+          'Organization record could not be updated. Verify you have Owner or Admin permissions for this workspace.',
       };
     }
     return {
-      settings: nextSettings,
-      source: 'local_cache',
-      error: error.message || 'Unable to save receipt settings to the organization record.',
-      warning: null,
+      settings: null,
+      error: `Failed to save receipt settings: ${rawMsg}`,
     };
   }
 
-  // 2. Otherwise use existing organisation-files private Storage bucket (<orgId>/settings/receipt-settings.json)
-  // Note: Storage RLS provides DELETE (owner/admin) + INSERT (org member), so remove before upload instead of upsert.
-  const path = getSettingsStoragePath(orgId);
-  try {
-    await supabase.storage.from(RECEIPT_STORAGE_BUCKET).remove([path]);
-    const payloadBlob = new Blob([JSON.stringify(nextSettings)], {
-      type: 'application/json',
-    });
-    const { error: uploadError } = await supabase.storage
-      .from(RECEIPT_STORAGE_BUCKET)
-      .upload(path, payloadBlob, {
-        upsert: false,
-        contentType: 'application/json',
-        cacheControl: '0',
-      });
+  const persistedSettings = normalizeReceiptSettings(data?.receipt_settings ?? nextSettings);
 
-    if (!uploadError) {
-      return {
-        settings: nextSettings,
-        source: 'storage',
-        error: null,
-        warning: null,
-      };
+  // Best-effort cleanup of replaced or removed logo file in Supabase Storage after DB save succeeds
+  if (
+    previousSavedLogoStoragePath &&
+    previousSavedLogoStoragePath !== persistedSettings.logoStoragePath &&
+    previousSavedLogoStoragePath.startsWith(`${orgId}/`)
+  ) {
+    try {
+      await supabase.storage
+        .from(RECEIPT_STORAGE_BUCKET)
+        .remove([previousSavedLogoStoragePath]);
+    } catch {
+      // Non-fatal storage cleanup
     }
-
-    return {
-      settings: nextSettings,
-      source: 'local_cache',
-      error: null,
-      warning: `Settings saved in this browser for ${organisation.name}. Cloud sync via Storage (${RECEIPT_STORAGE_BUCKET}) was unavailable (${uploadError.message}); apply the receipt_settings SQL migration for database persistence.`,
-    };
-  } catch (err: unknown) {
-    return {
-      settings: nextSettings,
-      source: 'local_cache',
-      error: null,
-      warning: `Settings saved in this browser for ${organisation.name}. Cloud sync failed (${
-        err instanceof Error ? err.message : 'network error'
-      }).`,
-    };
   }
+
+  notifyReceiptSettingsUpdated(orgId, persistedSettings);
+
+  return {
+    settings: persistedSettings,
+    error: null,
+  };
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -277,7 +201,9 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function optimizeReceiptLogoToPng(sourceDataUrl: string): Promise<{ dataUrl: string; blob: Blob }> {
+function optimizeReceiptLogoToPng(
+  sourceDataUrl: string
+): Promise<{ dataUrl: string; blob: Blob }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -330,19 +256,16 @@ const ALLOWED_LOGO_TYPES = new Set([
 export async function processAndStoreReceiptLogo(
   organisationId: string,
   file: File,
-  previousStoragePath: string | null,
   role: OrganisationRole | null
 ): Promise<{
   logoUrl: string | null;
   logoStoragePath: string | null;
-  warning: string | null;
   error: string | null;
 }> {
   if (role !== 'owner' && role !== 'admin') {
     return {
       logoUrl: null,
       logoStoragePath: null,
-      warning: null,
       error: 'Only Organization Owners and Admins can upload a business logo.',
     };
   }
@@ -351,7 +274,6 @@ export async function processAndStoreReceiptLogo(
     return {
       logoUrl: null,
       logoStoragePath: null,
-      warning: null,
       error: 'Please upload a PNG, JPG, WebP, or SVG image file.',
     };
   }
@@ -360,8 +282,16 @@ export async function processAndStoreReceiptLogo(
     return {
       logoUrl: null,
       logoStoragePath: null,
-      warning: null,
       error: 'Logo file size must be 2 MB or smaller.',
+    };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      logoUrl: null,
+      logoStoragePath: null,
+      error: 'Supabase client is not configured. Unable to upload receipt logo.',
     };
   }
 
@@ -369,46 +299,33 @@ export async function processAndStoreReceiptLogo(
     const rawDataUrl = await readFileAsDataUrl(file);
     const { dataUrl, blob } = await optimizeReceiptLogoToPng(rawDataUrl);
 
-    let nextStoragePath: string | null = null;
-    let warning: string | null = null;
+    const storagePath = `${organisationId}/settings/receipt-logo-${Date.now()}.png`;
+    const { error: uploadErr } = await supabase.storage
+      .from(RECEIPT_STORAGE_BUCKET)
+      .upload(storagePath, blob, {
+        upsert: false,
+        contentType: 'image/png',
+        cacheControl: '3600',
+      });
 
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        if (previousStoragePath && previousStoragePath.startsWith(`${organisationId}/`)) {
-          await supabase.storage.from(RECEIPT_STORAGE_BUCKET).remove([previousStoragePath]);
-        }
-        const storagePath = `${organisationId}/settings/receipt-logo-${Date.now()}.png`;
-        const { error: uploadErr } = await supabase.storage
-          .from(RECEIPT_STORAGE_BUCKET)
-          .upload(storagePath, blob, {
-            upsert: false,
-            contentType: 'image/png',
-            cacheControl: '3600',
-          });
-        if (!uploadErr) {
-          nextStoragePath = storagePath;
-        } else {
-          warning = `Logo optimized for receipt printing, but Storage upload failed (${uploadErr.message}). Click Save Settings to persist the receipt configuration.`;
-        }
-      } catch {
-        warning =
-          'Logo optimized for receipt printing. Click Save Settings to persist the receipt configuration.';
-      }
+    if (uploadErr) {
+      return {
+        logoUrl: null,
+        logoStoragePath: null,
+        error: `Failed to upload receipt logo to Supabase Storage: ${uploadErr.message}`,
+      };
     }
 
     return {
       logoUrl: dataUrl,
-      logoStoragePath: nextStoragePath,
-      warning,
+      logoStoragePath: storagePath,
       error: null,
     };
   } catch (err: unknown) {
     return {
       logoUrl: null,
       logoStoragePath: null,
-      warning: null,
-      error: err instanceof Error ? err.message : 'Unable to process logo image.',
+      error: err instanceof Error ? err.message : 'Unable to process receipt logo image.',
     };
   }
 }

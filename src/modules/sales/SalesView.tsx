@@ -14,7 +14,7 @@ import {
 import { useAuth } from '../../core/auth/AuthContext';
 import {
   getDefaultReceiptSettings,
-  loadOrganizationReceiptSettings,
+  getOrganizationReceiptSettings,
   subscribeReceiptSettingsUpdates,
 } from '../../core/receipts/receiptSettingsService';
 import type { ReceiptSettings } from '../../core/receipts/receiptSettingsTypes';
@@ -100,22 +100,18 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
   }, [status, activeOrgId, loadSales]);
 
   useEffect(() => {
-    let active = true;
     if (status !== 'authenticated' || !activeOrganisation) {
       setReceiptSettings(getDefaultReceiptSettings());
       return;
     }
 
-    void loadOrganizationReceiptSettings(activeOrganisation).then((res) => {
-      if (active) setReceiptSettings(res.settings);
-    });
+    setReceiptSettings(getOrganizationReceiptSettings(activeOrganisation));
 
     const unsubscribe = subscribeReceiptSettingsUpdates(activeOrganisation.id, (next) => {
-      if (active) setReceiptSettings(next);
+      setReceiptSettings(next);
     });
 
     return () => {
-      active = false;
       unsubscribe();
     };
   }, [status, activeOrganisation]);

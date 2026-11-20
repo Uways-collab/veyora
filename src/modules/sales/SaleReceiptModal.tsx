@@ -3,11 +3,10 @@ import { createPortal } from 'react-dom';
 import { Printer, X } from 'lucide-react';
 import { ReceiptDocument } from '../../components/receipts/ReceiptDocument';
 import {
-  loadOrganizationReceiptSettings,
+  getOrganizationReceiptSettings,
   subscribeReceiptSettingsUpdates,
 } from '../../core/receipts/receiptSettingsService';
 import {
-  DEFAULT_RECEIPT_SETTINGS,
   getEffectiveReceiptWidthMm,
   type ReceiptSettings,
 } from '../../core/receipts/receiptSettingsTypes';
@@ -51,8 +50,8 @@ export function SaleReceiptModal({
   receiptSettings,
   onClose,
 }: SaleReceiptModalProps) {
-  const [loadedSettings, setLoadedSettings] = useState<ReceiptSettings>(
-    receiptSettings ?? DEFAULT_RECEIPT_SETTINGS
+  const [loadedSettings, setLoadedSettings] = useState<ReceiptSettings>(() =>
+    receiptSettings ?? getOrganizationReceiptSettings(organisation)
   );
   const [printHost, setPrintHost] = useState<HTMLElement | null>(null);
 
@@ -63,14 +62,8 @@ export function SaleReceiptModal({
       setLoadedSettings(receiptSettings);
       return;
     }
-    let active = true;
-    void loadOrganizationReceiptSettings(organisation).then((res) => {
-      if (active) setLoadedSettings(res.settings);
-    });
-    return () => {
-      active = false;
-    };
-  }, [receiptSettings, organisation, orgId]);
+    setLoadedSettings(getOrganizationReceiptSettings(organisation));
+  }, [receiptSettings, organisation]);
 
   useEffect(() => {
     return subscribeReceiptSettingsUpdates(orgId, (nextSettings) => {

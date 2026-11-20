@@ -62,10 +62,11 @@ export function normalizeOrganisationRow(raw: Record<string, unknown>): Organisa
           ? raw.phone
           : null,
     receipt_settings:
-      raw.receipt_settings && typeof raw.receipt_settings === 'object' && !Array.isArray(raw.receipt_settings)
+      raw.receipt_settings &&
+      typeof raw.receipt_settings === 'object' &&
+      !Array.isArray(raw.receipt_settings)
         ? (raw.receipt_settings as Record<string, unknown>)
         : null,
-    has_receipt_settings_column: Object.prototype.hasOwnProperty.call(raw, 'receipt_settings'),
     created_by: typeof raw.created_by === 'string' ? raw.created_by : '',
     created_at: typeof raw.created_at === 'string' ? raw.created_at : new Date().toISOString(),
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : new Date().toISOString(),

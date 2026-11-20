@@ -13,10 +13,9 @@ import {
 import { ReceiptDocument } from '../../components/receipts/ReceiptDocument';
 import {
   getDefaultReceiptSettings,
-  loadOrganizationReceiptSettings,
+  getOrganizationReceiptSettings,
   processAndStoreReceiptLogo,
   saveOrganizationReceiptSettings,
-  type ReceiptSettingsStorageSource,
 } from '../../core/receipts/receiptSettingsService';
 import {
   buildSamplePreviewSale,
@@ -68,14 +67,11 @@ export function ReceiptSettingsPanel({
   const orgId = organisation?.id ?? null;
 
   const [savedSettings, setSavedSettings] = useState<ReceiptSettings>(() =>
-    getDefaultReceiptSettings()
+    getOrganizationReceiptSettings(organisation)
   );
   const [draft, setDraft] = useState<ReceiptSettings>(() =>
-    getDefaultReceiptSettings()
+    getOrganizationReceiptSettings(organisation)
   );
-  const [storageSource, setStorageSource] =
-    useState<ReceiptSettingsStorageSource>('default');
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -85,36 +81,30 @@ export function ReceiptSettingsPanel({
 
   const saveLockRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const prevOrgIdRef = useRef<string | null>(orgId);
+  const draftRef = useRef<ReceiptSettings>(draft);
+  const savedSettingsRef = useRef<ReceiptSettings>(savedSettings);
+  draftRef.current = draft;
+  savedSettingsRef.current = savedSettings;
 
   useEffect(() => {
-    let active = true;
-    if (!organisation) {
-      const defaults = getDefaultReceiptSettings();
-      setSavedSettings(defaults);
-      setDraft(defaults);
-      setStorageSource('default');
-      setLoading(false);
+    const nextFromOrg = getOrganizationReceiptSettings(organisation);
+    const orgSwitched = prevOrgIdRef.current !== orgId;
+
+    if (orgSwitched) {
+      prevOrgIdRef.current = orgId;
+      setSavedSettings(nextFromOrg);
+      setDraft(nextFromOrg);
+      setFeedback(null);
       return;
     }
 
-    setLoading(true);
-    setFeedback(null);
-
-    void loadOrganizationReceiptSettings(organisation).then((res) => {
-      if (!active) return;
-      setSavedSettings(res.settings);
-      setDraft(res.settings);
-      setStorageSource(res.source);
-      if (res.warning) {
-        setFeedback({ type: 'warning', message: res.warning });
-      }
-      setLoading(false);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [orgId]);
+    const wasDirty = !areSettingsEqual(draftRef.current, savedSettingsRef.current);
+    setSavedSettings(nextFromOrg);
+    if (!wasDirty) {
+      setDraft(nextFromOrg);
+    }
+  }, [orgId, organisation]);
 
   const sampleSale = useMemo(
     () => buildSamplePreviewSale(organisation),
@@ -172,7 +162,6 @@ export function ReceiptSettingsPanel({
       const result = await processAndStoreReceiptLogo(
         organisation.id,
         file,
-        draft.logoStoragePath,
         activeRole
       );
       if (result.error) {
@@ -185,14 +174,10 @@ export function ReceiptSettingsPanel({
         logoUrl: result.logoUrl,
         logoStoragePath: result.logoStoragePath,
       }));
-      if (result.warning) {
-        setFeedback({ type: 'warning', message: result.warning });
-      } else {
-        setFeedback({
-          type: 'success',
-          message: 'Logo loaded into preview. Click Save Settings to apply for this organization.',
-        });
-      }
+      setFeedback({
+        type: 'success',
+        message: 'Logo uploaded and loaded into preview. Click Save Settings to apply for this organization.',
+      });
     } finally {
       setUploadingLogo(false);
     }
@@ -210,7 +195,7 @@ export function ReceiptSettingsPanel({
   const handleRestoreDefaults = () => {
     setFeedback({
       type: 'warning',
-      message: 'Default receipt preferences loaded in preview. Click Save Settings to apply them.',
+      message: 'Default receipt preferences loaded in preview. Click Save Settings to persist changes.',
     });
     setDraft(getDefaultReceiptSettings());
   };
@@ -231,34 +216,33 @@ export function ReceiptSettingsPanel({
       const res = await saveOrganizationReceiptSettings(
         organisation,
         sanitizedDraft,
-        activeRole
+        activeRole,
+        savedSettings.logoStoragePath
       );
 
-      if (res.error) {
-        setFeedback({ type: 'error', message: res.error });
+      if (res.error || !res.settings) {
+        setFeedback({
+          type: 'error',
+          message: res.error ?? 'Failed to save receipt settings. Your unsaved draft has been preserved.',
+        });
         return;
       }
 
       setSavedSettings(res.settings);
       setDraft(res.settings);
-      setStorageSource(res.source);
 
-      if (res.source === 'database' && onRefreshOrganisation) {
+      if (onRefreshOrganisation) {
         try {
           await onRefreshOrganisation();
         } catch {
-          // Non-fatal refresh error
+          // Non-fatal refresh error; database update already succeeded
         }
       }
 
-      if (res.warning) {
-        setFeedback({ type: 'warning', message: res.warning });
-      } else {
-        setFeedback({
-          type: 'success',
-          message: `Receipt settings saved for ${organisation.name}.`,
-        });
-      }
+      setFeedback({
+        type: 'success',
+        message: `Receipt settings saved to organization record for ${organisation.name}.`,
+      });
     } finally {
       saveLockRef.current = false;
       setSaving(false);
@@ -307,12 +291,7 @@ export function ReceiptSettingsPanel({
                 </h2>
               </div>
               <p className="text-xs text-slate-500">
-                Configure thermal and A4 receipt printing independently for this organization.
-                {storageSource === 'database'
-                  ? ' Synced to organization record.'
-                  : storageSource === 'storage'
-                    ? ' Synced to private organization storage.'
-                    : ''}
+                Configure thermal and A4 receipt printing independently for this organization. Stored on the organization record.
               </p>
             </div>
 
@@ -320,7 +299,7 @@ export function ReceiptSettingsPanel({
               <button
                 type="button"
                 onClick={handleRestoreDefaults}
-                disabled={loading || saving}
+                disabled={saving}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap"
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
@@ -329,7 +308,7 @@ export function ReceiptSettingsPanel({
               <button
                 type="button"
                 onClick={() => void handleSave()}
-                disabled={loading || saving}
+                disabled={saving}
                 className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-blue-700 text-white text-xs font-semibold hover:bg-blue-800 disabled:opacity-50 whitespace-nowrap"
               >
                 {saving ? (
@@ -342,14 +321,7 @@ export function ReceiptSettingsPanel({
             </div>
           </section>
 
-          {loading ? (
-            <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-3" aria-busy="true">
-              <div className="h-10 bg-slate-100 rounded animate-pulse" />
-              <div className="h-24 bg-slate-100 rounded animate-pulse" />
-              <div className="h-24 bg-slate-100 rounded animate-pulse" />
-            </div>
-          ) : (
-            <>
+          <>
               {/* 1. Paper Size */}
               <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
                 <div className="border-b border-slate-200 pb-3">
@@ -653,7 +625,6 @@ export function ReceiptSettingsPanel({
                 </div>
               </section>
             </>
-          )}
         </div>
 
         {/* Right Column: Live Receipt Preview (5 columns) */}
