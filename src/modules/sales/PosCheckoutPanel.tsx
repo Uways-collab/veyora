@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   CreditCard,
+  Loader2,
   MapPin,
   Minus,
   Package,
@@ -12,8 +13,12 @@ import {
   ShoppingCart,
   Trash2,
   User,
+  UserCheck,
+  X,
 } from 'lucide-react';
 import type { OrganisationRole } from '../../core/types/domain';
+import { searchCustomers } from '../customers/customersService';
+import type { CustomerRecord } from '../customers/customersTypes';
 import {
   formatMoneyAmount,
   formatUnitOfMeasureLabel,
@@ -87,6 +92,12 @@ export function PosCheckoutPanel({
 
   const [cart, setCart] = useState<PosCartLine[]>([]);
   const [orderDiscountInput, setOrderDiscountInput] = useState<string>('0');
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [customerSearchResults, setCustomerSearchResults] = useState<CustomerRecord[]>([]);
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
+  const [customerSearchError, setCustomerSearchError] = useState<string | null>(null);
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [paymentDrafts, setPaymentDrafts] = useState<PosPaymentDraft[]>([]);
@@ -99,6 +110,115 @@ export function PosCheckoutPanel({
 
   const submitLockRef = useRef(false);
   const pendingIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
+  const customerSearchSeqRef = useRef(0);
+  const activeOrgRef = useRef(organisationId);
+  const prevOrgIdRef = useRef(organisationId);
+  const isMountedRef = useRef(true);
+  const customerPickerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Reset entire checkout draft, customer selection, search state, and idempotency key when workspace changes
+  useEffect(() => {
+    activeOrgRef.current = organisationId;
+    if (prevOrgIdRef.current === organisationId) {
+      return;
+    }
+    prevOrgIdRef.current = organisationId;
+    customerSearchSeqRef.current += 1;
+    pendingIdempotencyRef.current = null;
+    submitLockRef.current = false;
+
+    setSelectedLocationId('');
+    setSearchQuery('');
+    setCategoryFilter('all');
+    setTypeFilter('all');
+    setCart([]);
+    setOrderDiscountInput('0');
+    setSelectedCustomer(null);
+    setCustomerSearchQuery('');
+    setCustomerSearchResults([]);
+    setCustomerSearchLoading(false);
+    setCustomerSearchError(null);
+    setCustomerDropdownOpen(false);
+    setCustomerName('');
+    setCustomerPhone('');
+    setPaymentDrafts([]);
+    setShowConfirmModal(false);
+    setSubmitting(false);
+    setFormError(null);
+    setSuccessMessage(null);
+    setLastCompletedSaleId(null);
+  }, [organisationId]);
+
+  // Close customer dropdown on outside click or Escape
+  useEffect(() => {
+    if (!customerDropdownOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        customerPickerRef.current &&
+        !customerPickerRef.current.contains(event.target as Node)
+      ) {
+        setCustomerDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setCustomerDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [customerDropdownOpen]);
+
+  // Query-based debounced active customer search for POS selection
+  useEffect(() => {
+    const trimmed = customerSearchQuery.trim();
+    if (!organisationId || selectedCustomer || (!customerDropdownOpen && trimmed.length === 0)) {
+      setCustomerSearchLoading(false);
+      return;
+    }
+
+    const seq = ++customerSearchSeqRef.current;
+    const targetOrgId = organisationId;
+    const delay = trimmed.length === 0 ? 0 : 250;
+    setCustomerSearchLoading(true);
+    setCustomerSearchError(null);
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const result = await searchCustomers(targetOrgId, trimmed, 25);
+        if (
+          !isMountedRef.current ||
+          activeOrgRef.current !== targetOrgId ||
+          customerSearchSeqRef.current !== seq
+        ) {
+          return;
+        }
+        setCustomerSearchLoading(false);
+        if (result.error) {
+          setCustomerSearchResults([]);
+          setCustomerSearchError(result.error);
+        } else {
+          setCustomerSearchResults(result.customers);
+          setCustomerSearchError(null);
+        }
+      })();
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [organisationId, customerSearchQuery, customerDropdownOpen, selectedCustomer]);
 
   // Sync default location
   useEffect(() => {
@@ -365,9 +485,40 @@ export function PosCheckoutPanel({
     setCart((prev) => prev.filter((l) => l.variantId !== variantId));
   };
 
+  const handleSelectCustomer = (customer: CustomerRecord) => {
+    setSelectedCustomer(customer);
+    setCustomerName(customer.name);
+    setCustomerPhone(customer.phone ?? '');
+    setCustomerSearchQuery('');
+    setCustomerSearchResults([]);
+    setCustomerSearchError(null);
+    setCustomerDropdownOpen(false);
+    setFormError(null);
+  };
+
+  const handleClearSelectedCustomer = () => {
+    customerSearchSeqRef.current += 1;
+    setSelectedCustomer(null);
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerSearchQuery('');
+    setCustomerSearchResults([]);
+    setCustomerSearchError(null);
+    setCustomerSearchLoading(false);
+    setCustomerDropdownOpen(false);
+    setFormError(null);
+  };
+
   const handleClearSaleDraft = () => {
+    customerSearchSeqRef.current += 1;
     setCart([]);
     setOrderDiscountInput('0');
+    setSelectedCustomer(null);
+    setCustomerSearchQuery('');
+    setCustomerSearchResults([]);
+    setCustomerSearchError(null);
+    setCustomerSearchLoading(false);
+    setCustomerDropdownOpen(false);
     setCustomerName('');
     setCustomerPhone('');
     setFormError(null);
@@ -457,7 +608,10 @@ export function PosCheckoutPanel({
       if (!allowCreditSales) {
         return 'Staff users must collect full payment at checkout. Credit or partial sales require manager, admin, or owner approval.';
       }
-      if (!customerName.trim()) {
+      const effectiveCustomerName = selectedCustomer
+        ? selectedCustomer.name.trim()
+        : customerName.trim();
+      if (!effectiveCustomerName) {
         return 'Customer name is required for partial or unpaid credit sales.';
       }
     }
@@ -495,8 +649,9 @@ export function PosCheckoutPanel({
       reference: row.reference.trim() || null,
     }));
     const orderDiscount = allowDiscounts ? effectiveOrderDiscount : 0;
-    const custName = customerName.trim() || null;
-    const custPhone = customerPhone.trim() || null;
+    const customerId = selectedCustomer?.id ?? null;
+    const custName = (selectedCustomer ? selectedCustomer.name : customerName).trim() || null;
+    const custPhone = (selectedCustomer ? (selectedCustomer.phone ?? '') : customerPhone).trim() || null;
 
     const signature = JSON.stringify({
       organisationId,
@@ -504,6 +659,7 @@ export function PosCheckoutPanel({
       payloadItems,
       payloadPayments,
       orderDiscount,
+      customerId,
       custName,
       custPhone,
     });
@@ -528,6 +684,7 @@ export function PosCheckoutPanel({
         items: payloadItems,
         payments: payloadPayments,
         orderDiscountAmount: orderDiscount,
+        customerId,
         customerName: custName,
         customerPhone: custPhone,
         idempotencyKey: pendingIdempotencyRef.current.key,
@@ -1222,6 +1379,144 @@ export function PosCheckoutPanel({
               </div>
             )}
 
+            {selectedCustomer ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50/70 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <div className="flex items-start gap-2 min-w-0">
+                  <UserCheck className="h-4 w-4 text-blue-700 shrink-0 mt-0.5" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-slate-900 truncate">
+                      {selectedCustomer.name}
+                    </div>
+                    <div className="text-[11px] text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                      <span className="text-blue-800 font-medium">Registered customer</span>
+                      {selectedCustomer.phone && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-mono tabular-nums">{selectedCustomer.phone}</span>
+                        </>
+                      )}
+                      {selectedCustomer.email && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="truncate">{selectedCustomer.email}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearSelectedCustomer}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-blue-200 bg-white text-[11px] font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0 self-start sm:self-center"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                  <span>Clear / Switch to Walk-in</span>
+                </button>
+              </div>
+            ) : (
+              <div ref={customerPickerRef} className="relative">
+                <label
+                  htmlFor="pos-customer-search"
+                  className="block text-[11px] font-medium text-slate-600 mb-1"
+                >
+                  Select Registered Customer (Optional)
+                </label>
+                <div className="relative">
+                  <Search
+                    className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                    aria-hidden="true"
+                  />
+                  <input
+                    id="pos-customer-search"
+                    type="text"
+                    value={customerSearchQuery}
+                    onFocus={() => setCustomerDropdownOpen(true)}
+                    onChange={(e) => {
+                      setCustomerSearchQuery(e.target.value);
+                      setCustomerDropdownOpen(true);
+                    }}
+                    placeholder="Search active customers by name, phone, or email..."
+                    autoComplete="off"
+                    className="w-full pl-8 pr-8 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  {customerSearchLoading ? (
+                    <Loader2
+                      className="h-3.5 w-3.5 text-slate-400 animate-spin absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    customerSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerSearchQuery('');
+                          setCustomerDropdownOpen(true);
+                        }}
+                        aria-label="Clear customer search"
+                        className="p-0.5 rounded text-slate-400 hover:text-slate-700 absolute right-2 top-1/2 -translate-y-1/2"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )
+                  )}
+                </div>
+
+                {customerDropdownOpen && (
+                  <div
+                    role="listbox"
+                    aria-label="Registered customers"
+                    className="absolute z-20 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg max-h-56 overflow-y-auto"
+                  >
+                    {customerSearchLoading && customerSearchResults.length === 0 ? (
+                      <div className="px-3 py-2.5 text-xs text-slate-500 flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        <span>Searching active customers...</span>
+                      </div>
+                    ) : customerSearchError ? (
+                      <div className="px-3 py-2.5 text-xs text-amber-800 bg-amber-50">
+                        {customerSearchError}
+                      </div>
+                    ) : customerSearchResults.length === 0 ? (
+                      <div className="px-3 py-2.5 text-xs text-slate-500">
+                        {customerSearchQuery.trim()
+                          ? `No active customers match "${customerSearchQuery.trim()}". Enter walk-in details below.`
+                          : 'No active registered customers found. Enter walk-in details below.'}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {customerSearchResults.map((customer) => (
+                          <button
+                            key={customer.id}
+                            type="button"
+                            role="option"
+                            aria-selected={false}
+                            onClick={() => handleSelectCustomer(customer)}
+                            className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-medium text-slate-900 truncate">
+                                {customer.name}
+                              </div>
+                              {(customer.phone || customer.email) && (
+                                <div className="text-[11px] text-slate-500 truncate">
+                                  {customer.phone ? customer.phone : ''}
+                                  {customer.phone && customer.email ? ' · ' : ''}
+                                  {customer.email ? customer.email : ''}
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-[11px] font-medium text-blue-700 shrink-0">
+                              Select
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label htmlFor="pos-customer-name" className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -1231,12 +1526,19 @@ export function PosCheckoutPanel({
                   id="pos-customer-name"
                   type="text"
                   value={customerName}
+                  readOnly={Boolean(selectedCustomer)}
+                  disabled={Boolean(selectedCustomer)}
                   onChange={(e) => {
+                    if (selectedCustomer) return;
                     setCustomerName(e.target.value);
                     setFormError(null);
                   }}
                   placeholder={isCreditSale ? 'Required customer name' : 'Walk-in customer'}
-                  className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  className={`w-full px-2.5 py-1.5 rounded-md border border-slate-200 text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                    selectedCustomer
+                      ? 'bg-slate-50 text-slate-600 cursor-not-allowed'
+                      : 'bg-white text-slate-900'
+                  }`}
                 />
               </div>
               <div>
@@ -1247,9 +1549,18 @@ export function PosCheckoutPanel({
                   id="pos-customer-phone"
                   type="tel"
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  readOnly={Boolean(selectedCustomer)}
+                  disabled={Boolean(selectedCustomer)}
+                  onChange={(e) => {
+                    if (selectedCustomer) return;
+                    setCustomerPhone(e.target.value);
+                  }}
                   placeholder="Optional phone number"
-                  className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  className={`w-full px-2.5 py-1.5 rounded-md border border-slate-200 text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                    selectedCustomer
+                      ? 'bg-slate-50 text-slate-600 cursor-not-allowed'
+                      : 'bg-white text-slate-900'
+                  }`}
                 />
               </div>
             </div>
@@ -1349,15 +1660,26 @@ export function PosCheckoutPanel({
                   </span>
                 </div>
               )}
-              {(customerName.trim() || customerPhone.trim()) && (
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Customer</span>
-                  <span className="text-slate-900">
-                    {customerName.trim() || 'Walk-in'}
-                    {customerPhone.trim() ? ` (${customerPhone.trim()})` : ''}
-                  </span>
-                </div>
-              )}
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-500">Customer</span>
+                <span className="text-slate-900 text-right">
+                  {selectedCustomer ? (
+                    <>
+                      <span className="font-medium">{selectedCustomer.name}</span>
+                      {selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ''}
+                      <span className="text-blue-700 font-medium"> · Registered</span>
+                    </>
+                  ) : customerName.trim() || customerPhone.trim() ? (
+                    <>
+                      {customerName.trim() || 'Walk-in'}
+                      {customerPhone.trim() ? ` (${customerPhone.trim()})` : ''}
+                      <span className="text-slate-500"> · Walk-in</span>
+                    </>
+                  ) : (
+                    'Walk-in Customer'
+                  )}
+                </span>
+              </div>
               {activePaymentRows.length > 0 && (
                 <div className="pt-2 border-t border-slate-100 space-y-1">
                   <div className="text-[11px] font-medium text-slate-500">Payments</div>

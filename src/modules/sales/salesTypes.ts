@@ -139,6 +139,7 @@ export interface SaleRecord {
   locationName: string;
   locationAddress: string | null;
   currency: string;
+  customerId?: string | null;
   customerName: string | null;
   customerPhone: string | null;
   status: SaleStatusValue;
@@ -243,6 +244,7 @@ export interface SalesCheckoutInput {
     reference: string | null;
   }>;
   orderDiscountAmount: number;
+  customerId: string | null;
   customerName: string | null;
   customerPhone: string | null;
   idempotencyKey: string;

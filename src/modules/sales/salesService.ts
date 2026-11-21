@@ -837,6 +837,7 @@ export async function fetchSalesModuleData(
         locationName: locationById.get(locationId)?.name ?? 'Location',
         locationAddress: locationById.get(locationId)?.address ?? null,
         currency: (readString(row.currency) ?? defaultCurrency).toUpperCase(),
+        customerId: readString(row.customer_id),
         customerName: readString(row.customer_name),
         customerPhone: readString(row.customer_phone),
         status: saleStatus,
@@ -920,7 +921,7 @@ export async function checkoutSale(
     return { saleId: null, error: verified.error };
   }
 
-  const { data, error } = await supabase.rpc('sales_v1_checkout', {
+  const { data, error } = await supabase.rpc('sales_v2_checkout', {
     p_organization_id: verified.organizationId,
     p_location_id: input.locationId,
     p_items: input.items.map((item) => ({
@@ -937,6 +938,7 @@ export async function checkoutSale(
     p_customer_name: input.customerName?.trim() || null,
     p_customer_phone: input.customerPhone?.trim() || null,
     p_order_discount_amount: roundMoney(input.orderDiscountAmount),
+    p_customer_id: input.customerId ?? null,
   });
 
   if (error) {

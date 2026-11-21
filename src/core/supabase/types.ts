@@ -618,6 +618,28 @@ export interface Database {
         };
         Returns: unknown;
       };
+      sales_v2_checkout: {
+        Args: {
+          p_organization_id: string;
+          p_location_id: string;
+          p_items: Array<{
+            variant_id: string;
+            quantity: number;
+            discount_amount: number;
+          }>;
+          p_payments: Array<{
+            payment_method_id: string;
+            amount: number;
+            reference: string | null;
+          }>;
+          p_idempotency_key: string;
+          p_customer_name: string | null;
+          p_customer_phone: string | null;
+          p_order_discount_amount: number;
+          p_customer_id: string | null;
+        };
+        Returns: string;
+      };
       sales_v1_record_follow_up_payment: {
         Args: {
           p_organization_id: string;
