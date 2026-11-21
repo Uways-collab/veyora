@@ -1,14 +1,23 @@
 import { getSupabaseClient } from '../../core/supabase/client';
 import { verifyActiveWorkspaceContext } from '../inventory/inventoryService';
+import { roundMoney } from '../sales/salesFormatters';
 import {
   canManageCustomers,
   type CustomerMutationInput,
   type CustomerMutationResult,
+  type CustomerPurchaseHistoryResult,
+  type CustomerPurchasePaymentRecord,
+  type CustomerPurchaseRefundRecord,
+  type CustomerPurchaseReturnRecord,
+  type CustomerPurchaseSaleRecord,
+  type CustomerPurchaseSummary,
   type CustomerRecord,
   type CustomerSearchResult,
 } from './customersTypes';
 
 const MAX_CUSTOMER_SEARCH_LIMIT = 100;
+const MAX_PURCHASE_HISTORY_LIMIT = 100;
+const DEFAULT_PURCHASE_HISTORY_LIMIT = 50;
 const BASIC_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function readString(...values: unknown[]): string | null {
@@ -621,6 +630,292 @@ export async function restoreCustomer(
   return {
     customer: parsed.customer,
     customerId: parsed.customerId ?? customerId.trim(),
+    error: null,
+  };
+}
+
+function createEmptyPurchaseSummary(): CustomerPurchaseSummary {
+  return {
+    totalPurchases: 0,
+    totalPurchaseValue: 0,
+    totalAmountPaid: 0,
+    outstandingCreditBalance: 0,
+    totalReturnedValue: 0,
+    totalRefundedValue: 0,
+  };
+}
+
+function readMoneyNumber(value: unknown): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? roundMoney(value) : 0;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? roundMoney(parsed) : 0;
+  }
+  return 0;
+}
+
+function readIntegerNumber(value: unknown): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+  }
+  return 0;
+}
+
+function parsePurchaseHistoryPayload(data: unknown): Record<string, unknown> | null {
+  let current = data;
+  if (typeof current === 'string') {
+    const trimmed = current.trim();
+    if (!trimmed) return null;
+    try {
+      current = JSON.parse(trimmed) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(current)) {
+    current = current[0] ?? null;
+  }
+  if (!current || typeof current !== 'object' || Array.isArray(current)) {
+    return null;
+  }
+  const obj = current as Record<string, unknown>;
+  const nested = obj.customers_v1_get_purchase_history;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+  return obj;
+}
+
+function normalizePurchasePaymentRow(raw: unknown): CustomerPurchasePaymentRecord | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const id = readString(row.id);
+  if (!id) return null;
+
+  return {
+    id,
+    amount: readMoneyNumber(row.amount),
+    reference: readString(row.reference),
+    paymentSource: readString(row.payment_source),
+    paidAt: readString(row.paid_at),
+    paymentMethodName: readString(row.payment_method_name_snapshot) ?? 'Payment',
+    paymentMethodCode: readString(row.payment_method_code_snapshot) ?? 'other',
+  };
+}
+
+function normalizePurchaseReturnRow(raw: unknown): CustomerPurchaseReturnRecord | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const id = readString(row.id);
+  if (!id) return null;
+
+  return {
+    id,
+    returnNumber: readString(row.return_number) ?? 'Return',
+    reason: readString(row.reason),
+    subtotal: readMoneyNumber(row.subtotal),
+    returnDiscountAmount: readMoneyNumber(row.return_discount_amount),
+    taxAmount: readMoneyNumber(row.tax_amount),
+    totalAmount: readMoneyNumber(row.total_amount),
+    debtReducedAmount: readMoneyNumber(row.debt_reduced_amount),
+    refundedAmount: readMoneyNumber(row.refunded_amount),
+    returnedAt: readString(row.returned_at),
+  };
+}
+
+function normalizePurchaseRefundRow(raw: unknown): CustomerPurchaseRefundRecord | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const id = readString(row.id);
+  if (!id) return null;
+
+  return {
+    id,
+    returnId: readString(row.return_id),
+    amount: readMoneyNumber(row.amount),
+    refundSource: readString(row.refund_source),
+    reference: readString(row.reference),
+    reason: readString(row.reason),
+    refundedAt: readString(row.refunded_at),
+    paymentMethodName: readString(row.payment_method_name_snapshot) ?? 'Refund',
+    paymentMethodCode: readString(row.payment_method_code_snapshot) ?? 'other',
+  };
+}
+
+function normalizePurchaseSaleRow(raw: unknown): CustomerPurchaseSaleRecord | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const id = readString(row.id);
+  if (!id) return null;
+
+  const status = (readString(row.status) ?? 'completed').toLowerCase();
+  const paymentStatus = (readString(row.payment_status) ?? 'unpaid').toLowerCase();
+  const totalAmount = readMoneyNumber(row.total_amount);
+  const paidAmount = readMoneyNumber(row.paid_amount);
+  const returnedAmount = readMoneyNumber(row.returned_amount);
+  const refundedAmount = readMoneyNumber(row.refunded_amount);
+
+  const rawOutstanding =
+    row.outstanding_balance !== undefined && row.outstanding_balance !== null
+      ? readMoneyNumber(row.outstanding_balance)
+      : Math.max(0, roundMoney(totalAmount - returnedAmount - paidAmount));
+  const outstandingBalance = status === 'cancelled' ? 0 : Math.max(0, rawOutstanding);
+
+  const paymentsRaw = Array.isArray(row.payments) ? row.payments : [];
+  const returnsRaw = Array.isArray(row.returns) ? row.returns : [];
+  const refundsRaw = Array.isArray(row.refunds) ? row.refunds : [];
+
+  return {
+    id,
+    saleNumber: readString(row.sale_number) ?? 'Sale',
+    status,
+    paymentStatus,
+    soldAt: readString(row.sold_at),
+    currencyCode: readString(row.currency_code),
+    totalAmount,
+    paidAmount,
+    returnedAmount,
+    refundedAmount,
+    outstandingBalance,
+    payments: paymentsRaw
+      .map(normalizePurchasePaymentRow)
+      .filter((item): item is CustomerPurchasePaymentRecord => Boolean(item)),
+    returns: returnsRaw
+      .map(normalizePurchaseReturnRow)
+      .filter((item): item is CustomerPurchaseReturnRecord => Boolean(item)),
+    refunds: refundsRaw
+      .map(normalizePurchaseRefundRow)
+      .filter((item): item is CustomerPurchaseRefundRecord => Boolean(item)),
+  };
+}
+
+export async function fetchCustomerPurchaseHistory(
+  organisationId: string,
+  customerId: string,
+  limit = DEFAULT_PURCHASE_HISTORY_LIMIT
+): Promise<CustomerPurchaseHistoryResult> {
+  const clampedLimit = Math.min(
+    MAX_PURCHASE_HISTORY_LIMIT,
+    Math.max(1, Math.trunc(Number.isFinite(limit) ? limit : DEFAULT_PURCHASE_HISTORY_LIMIT))
+  );
+
+  const trimmedCustomerId = (customerId ?? '').trim();
+  if (!trimmedCustomerId) {
+    return {
+      summary: createEmptyPurchaseSummary(),
+      sales: [],
+      limit: clampedLimit,
+      hasMore: false,
+      reachedMaxLimit: false,
+      error: 'Customer ID is required.',
+    };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      summary: createEmptyPurchaseSummary(),
+      sales: [],
+      limit: clampedLimit,
+      hasMore: false,
+      reachedMaxLimit: false,
+      error: 'Supabase client is not configured.',
+    };
+  }
+
+  const verified = await verifyActiveWorkspaceContext(organisationId, 'none');
+  if (!verified.ok) {
+    return {
+      summary: createEmptyPurchaseSummary(),
+      sales: [],
+      limit: clampedLimit,
+      hasMore: false,
+      reachedMaxLimit: false,
+      error: verified.error,
+    };
+  }
+
+  const { data, error } = await supabase.rpc('customers_v1_get_purchase_history', {
+    p_organization_id: verified.organizationId,
+    p_customer_id: trimmedCustomerId,
+    p_limit: clampedLimit,
+  });
+
+  if (error) {
+    if (isMissingRpcSignatureError(error)) {
+      return {
+        summary: createEmptyPurchaseSummary(),
+        sales: [],
+        limit: clampedLimit,
+        hasMore: false,
+        reachedMaxLimit: false,
+        error:
+          'Customer purchase history RPC is unavailable in this workspace database. Please verify database migrations are up to date.',
+      };
+    }
+
+    return {
+      summary: createEmptyPurchaseSummary(),
+      sales: [],
+      limit: clampedLimit,
+      hasMore: false,
+      reachedMaxLimit: false,
+      error: formatCustomerRpcError(error.message, 'Unable to load customer purchase history.'),
+    };
+  }
+
+  const payload = parsePurchaseHistoryPayload(data);
+  if (!payload) {
+    return {
+      summary: createEmptyPurchaseSummary(),
+      sales: [],
+      limit: clampedLimit,
+      hasMore: false,
+      reachedMaxLimit: false,
+      error: 'Received an unexpected purchase history response from the server.',
+    };
+  }
+
+  const rawSummary =
+    payload.summary && typeof payload.summary === 'object' && !Array.isArray(payload.summary)
+      ? (payload.summary as Record<string, unknown>)
+      : {};
+
+  const summary: CustomerPurchaseSummary = {
+    totalPurchases: readIntegerNumber(rawSummary.total_purchases),
+    totalPurchaseValue: readMoneyNumber(rawSummary.total_purchase_value),
+    totalAmountPaid: readMoneyNumber(rawSummary.total_amount_paid),
+    outstandingCreditBalance: Math.max(0, readMoneyNumber(rawSummary.outstanding_credit_balance)),
+    totalReturnedValue: readMoneyNumber(rawSummary.total_returned_value),
+    totalRefundedValue: readMoneyNumber(rawSummary.total_refunded_value),
+  };
+
+  const rawSales = Array.isArray(payload.sales) ? payload.sales : [];
+  const seenSaleIds = new Set<string>();
+  const sales: CustomerPurchaseSaleRecord[] = [];
+  for (const item of rawSales) {
+    const normalized = normalizePurchaseSaleRow(item);
+    if (!normalized || seenSaleIds.has(normalized.id)) continue;
+    seenSaleIds.add(normalized.id);
+    sales.push(normalized);
+  }
+
+  return {
+    summary,
+    sales,
+    limit: clampedLimit,
+    hasMore: sales.length >= clampedLimit && clampedLimit < MAX_PURCHASE_HISTORY_LIMIT,
+    reachedMaxLimit: sales.length >= MAX_PURCHASE_HISTORY_LIMIT,
     error: null,
   };
 }

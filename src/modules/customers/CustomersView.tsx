@@ -854,6 +854,8 @@ export function CustomersView() {
       {/* View Customer Modal */}
       <CustomerDetailModal
         customer={viewingCustomer}
+        organisationId={activeOrgId}
+        currencyCode={activeOrganisation?.base_currency ?? 'USD'}
         timeZone={timeZone}
         canManage={canManage}
         onClose={() => setViewingCustomer(null)}

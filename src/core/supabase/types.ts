@@ -762,6 +762,14 @@ export interface Database {
         };
         Returns: unknown;
       };
+      customers_v1_get_purchase_history: {
+        Args: {
+          p_organization_id: string;
+          p_customer_id: string;
+          p_limit?: number;
+        };
+        Returns: unknown;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
