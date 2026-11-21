@@ -23,6 +23,11 @@ import type {
   CancelSaleInput,
   CreatePaymentMethodInput,
   FollowUpPaymentInput,
+  OutstandingBalancesResult,
+  OutstandingCustomerBalanceByCurrency,
+  OutstandingCustomerRecord,
+  OutstandingCustomerSaleRecord,
+  OutstandingCurrencyTotal,
   PaymentMethodRecord,
   PosCatalogItem,
   RecordRefundInput,
@@ -1195,4 +1200,346 @@ export async function archivePaymentMethod(
   }
 
   return { error: null };
+}
+
+const DEFAULT_OUTSTANDING_LIMIT = 50;
+const MAX_OUTSTANDING_LIMIT = 100;
+
+function readNonNegativeInt(value: unknown, fallback = 0): number {
+  const num = readNumber(value);
+  if (num === null) return fallback;
+  return Math.max(0, Math.trunc(num));
+}
+
+function isMissingSalesRpcError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === 'PGRST202' || error.code === '42883') return true;
+  const lower = (error.message ?? '').toLowerCase();
+  return (
+    lower.includes('could not find the function') ||
+    lower.includes('schema cache') ||
+    (lower.includes('function') && lower.includes('does not exist'))
+  );
+}
+
+function parseOutstandingBalancesPayload(data: unknown): Record<string, unknown> | null {
+  let current = data;
+  if (typeof current === 'string') {
+    const trimmed = current.trim();
+    if (!trimmed) return null;
+    try {
+      current = JSON.parse(trimmed) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(current)) {
+    current = current[0] ?? null;
+  }
+  if (!current || typeof current !== 'object' || Array.isArray(current)) {
+    return null;
+  }
+  const obj = current as Record<string, unknown>;
+  const nested = obj.sales_v1_get_outstanding_balances;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+  return obj;
+}
+
+export function buildEmptyOutstandingBalancesResult(
+  limit = DEFAULT_OUTSTANDING_LIMIT,
+  offset = 0,
+  error: string | null = null
+): OutstandingBalancesResult {
+  return {
+    summary: {
+      customersWithBalances: 0,
+      openSalesCount: 0,
+      currencyTotals: [],
+    },
+    customers: [],
+    pagination: {
+      limit,
+      offset,
+      totalCustomers: 0,
+      hasMore: false,
+    },
+    error,
+  };
+}
+
+export async function fetchActivePaymentMethods(
+  organisationId: string
+): Promise<{ paymentMethods: PaymentMethodRecord[]; error: string | null }> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { paymentMethods: [], error: 'Supabase client is not configured.' };
+  }
+
+  const verified = await verifyActiveWorkspaceContext(organisationId, 'none');
+  if (!verified.ok) {
+    return { paymentMethods: [], error: verified.error };
+  }
+
+  const orgId = verified.organizationId;
+  const { data, error } = await supabase
+    .from('payment_methods')
+    .select('*')
+    .eq('organization_id', orgId)
+    .eq('is_active', true);
+
+  if (error) {
+    return {
+      paymentMethods: [],
+      error: formatSalesRpcError(error.message, 'Unable to load payment methods.'),
+    };
+  }
+
+  const paymentMethods: PaymentMethodRecord[] = ((data ?? []) as Record<string, unknown>[])
+    .filter((r) => readString(r.organization_id) === orgId)
+    .map((row) => {
+      const code = normalizePaymentMethodCode(
+        readString(row.method_code, row.method_type, row.code)
+      );
+      return {
+        id: readString(row.id) ?? '',
+        organizationId: orgId,
+        name: readString(row.name, row.method_name) ?? formatPaymentMethodCodeLabel(code),
+        methodCode: code,
+        methodCodeLabel: formatPaymentMethodCodeLabel(code),
+        requiresReference: readBoolean(row.requires_reference, code === 'bank_transfer'),
+        isActive: readBoolean(row.is_active, true),
+        isSystem: readBoolean(row.is_system, false),
+        createdAt: readString(row.created_at) ?? new Date().toISOString(),
+        updatedAt: readString(row.updated_at),
+      };
+    })
+    .filter((m) => Boolean(m.id) && m.isActive)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { paymentMethods, error: null };
+}
+
+export async function fetchOutstandingBalances(
+  organisationId: string,
+  search = '',
+  limit = DEFAULT_OUTSTANDING_LIMIT,
+  offset = 0,
+  defaultCurrency = 'USD'
+): Promise<OutstandingBalancesResult> {
+  const clampedLimit = Math.min(
+    MAX_OUTSTANDING_LIMIT,
+    Math.max(1, Math.trunc(Number.isFinite(limit) ? limit : DEFAULT_OUTSTANDING_LIMIT))
+  );
+  const safeOffset = Math.max(0, Math.trunc(Number.isFinite(offset) ? offset : 0));
+  const fallbackCurrency = (defaultCurrency || 'USD').trim().toUpperCase() || 'USD';
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return buildEmptyOutstandingBalancesResult(
+      clampedLimit,
+      safeOffset,
+      'Supabase client is not configured.'
+    );
+  }
+
+  const verified = await verifyActiveWorkspaceContext(organisationId, 'none');
+  if (!verified.ok) {
+    return buildEmptyOutstandingBalancesResult(clampedLimit, safeOffset, verified.error);
+  }
+
+  const trimmedSearch = search.trim();
+  const { data, error } = await supabase.rpc('sales_v1_get_outstanding_balances', {
+    p_organization_id: verified.organizationId,
+    p_search: trimmedSearch ? trimmedSearch : null,
+    p_limit: clampedLimit,
+    p_offset: safeOffset,
+  });
+
+  if (error) {
+    if (isMissingSalesRpcError(error)) {
+      return buildEmptyOutstandingBalancesResult(
+        clampedLimit,
+        safeOffset,
+        'Outstanding balances RPC is unavailable in this workspace database. Please verify migration 0006_outstanding_balances.sql has been applied.'
+      );
+    }
+    return buildEmptyOutstandingBalancesResult(
+      clampedLimit,
+      safeOffset,
+      formatSalesRpcError(error.message, 'Unable to load outstanding balances.')
+    );
+  }
+
+  const payload = parseOutstandingBalancesPayload(data);
+  if (!payload) {
+    return buildEmptyOutstandingBalancesResult(
+      clampedLimit,
+      safeOffset,
+      'Received an unexpected outstanding balances response from the server.'
+    );
+  }
+
+  const rawSummary =
+    payload.summary && typeof payload.summary === 'object' && !Array.isArray(payload.summary)
+      ? (payload.summary as Record<string, unknown>)
+      : {};
+
+  const currencyTotalsMap = new Map<string, number>();
+  const rawCurrencyTotals = Array.isArray(rawSummary.currency_totals)
+    ? rawSummary.currency_totals
+    : [];
+  for (const entry of rawCurrencyTotals) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const rec = entry as Record<string, unknown>;
+    const code = (readString(rec.currency_code) ?? fallbackCurrency).toUpperCase();
+    const total = roundMoney(Math.max(0, readNumber(rec.total_outstanding) ?? 0));
+    currencyTotalsMap.set(code, roundMoney((currencyTotalsMap.get(code) ?? 0) + total));
+  }
+  const currencyTotals: OutstandingCurrencyTotal[] = Array.from(currencyTotalsMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currencyCode, totalOutstanding]) => ({ currencyCode, totalOutstanding }));
+
+  const rawCustomers = Array.isArray(payload.customers) ? payload.customers : [];
+  const seenCustomerIds = new Set<string>();
+  const customers: OutstandingCustomerRecord[] = [];
+
+  for (const rawCustomer of rawCustomers) {
+    if (!rawCustomer || typeof rawCustomer !== 'object' || Array.isArray(rawCustomer)) continue;
+    const cObj = rawCustomer as Record<string, unknown>;
+    const customerId = readString(cObj.customer_id, cObj.id);
+    if (!customerId || seenCustomerIds.has(customerId)) continue;
+    seenCustomerIds.add(customerId);
+
+    const rawSales = Array.isArray(cObj.sales) ? cObj.sales : [];
+    const seenSaleIds = new Set<string>();
+    const sales: OutstandingCustomerSaleRecord[] = [];
+
+    for (const rawSale of rawSales) {
+      if (!rawSale || typeof rawSale !== 'object' || Array.isArray(rawSale)) continue;
+      const sObj = rawSale as Record<string, unknown>;
+      const saleId = readString(sObj.id);
+      if (!saleId || seenSaleIds.has(saleId)) continue;
+
+      const status = (readString(sObj.status) ?? 'completed').toLowerCase();
+      if (status !== 'completed') continue;
+
+      const totalAmount = roundMoney(Math.max(0, readNumber(sObj.total_amount) ?? 0));
+      const paidAmount = roundMoney(Math.max(0, readNumber(sObj.paid_amount) ?? 0));
+      const returnedAmount = roundMoney(Math.max(0, readNumber(sObj.returned_amount) ?? 0));
+      const outstandingBalance = roundMoney(
+        Math.max(
+          0,
+          readNumber(sObj.outstanding_balance) ??
+            totalAmount - returnedAmount - paidAmount
+        )
+      );
+      if (outstandingBalance <= 0) continue;
+
+      seenSaleIds.add(saleId);
+      const saleCurrency = (readString(sObj.currency_code) ?? fallbackCurrency).toUpperCase();
+      const paymentStatus = normalizePaymentStatus(
+        sObj.payment_status,
+        totalAmount,
+        paidAmount,
+        returnedAmount,
+        0
+      );
+
+      sales.push({
+        id: saleId,
+        saleNumber: readString(sObj.sale_number) ?? `SAL-${saleId.slice(0, 8).toUpperCase()}`,
+        status,
+        paymentStatus,
+        soldAt: readString(sObj.sold_at),
+        currencyCode: saleCurrency,
+        totalAmount,
+        paidAmount,
+        returnedAmount,
+        outstandingBalance,
+      });
+    }
+
+    if (sales.length === 0) continue;
+
+    const balancesMap = new Map<string, number>();
+    const rawBalancesByCurrency = Array.isArray(cObj.balances_by_currency)
+      ? cObj.balances_by_currency
+      : [];
+    for (const entry of rawBalancesByCurrency) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const bObj = entry as Record<string, unknown>;
+      const code = (readString(bObj.currency_code) ?? fallbackCurrency).toUpperCase();
+      const amt = roundMoney(Math.max(0, readNumber(bObj.outstanding_balance) ?? 0));
+      if (amt > 0) {
+        balancesMap.set(code, roundMoney((balancesMap.get(code) ?? 0) + amt));
+      }
+    }
+    if (balancesMap.size === 0) {
+      for (const s of sales) {
+        balancesMap.set(
+          s.currencyCode,
+          roundMoney((balancesMap.get(s.currencyCode) ?? 0) + s.outstandingBalance)
+        );
+      }
+    }
+
+    const balancesByCurrency: OutstandingCustomerBalanceByCurrency[] = Array.from(
+      balancesMap.entries()
+    )
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([currencyCode, outstandingBalance]) => ({ currencyCode, outstandingBalance }));
+
+    customers.push({
+      customerId,
+      name: readString(cObj.name) ?? 'Unnamed Customer',
+      phone: readString(cObj.phone),
+      email: readString(cObj.email),
+      isActive: readBoolean(cObj.is_active, true),
+      openSalesCount: readNonNegativeInt(cObj.open_sales_count, sales.length) || sales.length,
+      oldestUnpaidAt: readString(cObj.oldest_unpaid_at),
+      latestUnpaidAt: readString(cObj.latest_unpaid_at),
+      balancesByCurrency,
+      sales,
+    });
+  }
+
+  const rawPagination =
+    payload.pagination && typeof payload.pagination === 'object' && !Array.isArray(payload.pagination)
+      ? (payload.pagination as Record<string, unknown>)
+      : {};
+
+  const resolvedLimit = readNonNegativeInt(rawPagination.limit, clampedLimit) || clampedLimit;
+  const resolvedOffset = readNonNegativeInt(rawPagination.offset, safeOffset);
+  const totalCustomers = readNonNegativeInt(
+    rawPagination.total_customers,
+    readNonNegativeInt(rawSummary.customers_with_balances, customers.length)
+  );
+  const hasMore = readBoolean(
+    rawPagination.has_more,
+    resolvedOffset + customers.length < totalCustomers
+  );
+
+  return {
+    summary: {
+      customersWithBalances: readNonNegativeInt(
+        rawSummary.customers_with_balances,
+        totalCustomers
+      ),
+      openSalesCount: readNonNegativeInt(
+        rawSummary.open_sales_count,
+        customers.reduce((sum, c) => sum + c.openSalesCount, 0)
+      ),
+      currencyTotals,
+    },
+    customers,
+    pagination: {
+      limit: resolvedLimit,
+      offset: resolvedOffset,
+      totalCustomers,
+      hasMore,
+    },
+    error: null,
+  };
 }

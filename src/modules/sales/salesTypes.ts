@@ -365,6 +365,62 @@ export function canConfigurePaymentMethods(
   return role === 'owner' || role === 'admin';
 }
 
+export interface OutstandingCurrencyTotal {
+  currencyCode: string;
+  totalOutstanding: number;
+}
+
+export interface OutstandingBalancesSummary {
+  customersWithBalances: number;
+  openSalesCount: number;
+  currencyTotals: OutstandingCurrencyTotal[];
+}
+
+export interface OutstandingCustomerBalanceByCurrency {
+  currencyCode: string;
+  outstandingBalance: number;
+}
+
+export interface OutstandingCustomerSaleRecord {
+  id: string;
+  saleNumber: string;
+  status: SaleStatusValue | string;
+  paymentStatus: SalePaymentStatusValue | string;
+  soldAt: string | null;
+  currencyCode: string;
+  totalAmount: number;
+  paidAmount: number;
+  returnedAmount: number;
+  outstandingBalance: number;
+}
+
+export interface OutstandingCustomerRecord {
+  customerId: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  isActive: boolean;
+  openSalesCount: number;
+  oldestUnpaidAt: string | null;
+  latestUnpaidAt: string | null;
+  balancesByCurrency: OutstandingCustomerBalanceByCurrency[];
+  sales: OutstandingCustomerSaleRecord[];
+}
+
+export interface OutstandingBalancesPagination {
+  limit: number;
+  offset: number;
+  totalCustomers: number;
+  hasMore: boolean;
+}
+
+export interface OutstandingBalancesResult {
+  summary: OutstandingBalancesSummary;
+  customers: OutstandingCustomerRecord[];
+  pagination: OutstandingBalancesPagination;
+  error: string | null;
+}
+
 export function isPaymentReferenceRequired(method: PaymentMethodRecord | null | undefined): boolean {
   if (!method) return false;
   return method.requiresReference || method.methodCode === 'bank_transfer';

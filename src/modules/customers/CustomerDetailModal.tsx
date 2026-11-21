@@ -44,10 +44,11 @@ interface CustomerDetailModalProps {
   currencyCode?: string | null;
   timeZone?: string | null;
   canManage: boolean;
+  initialTab?: DetailModalTab;
   onClose: () => void;
-  onEdit: (customer: CustomerRecord) => void;
-  onArchive: (customer: CustomerRecord) => void;
-  onRestore: (customer: CustomerRecord) => void;
+  onEdit?: (customer: CustomerRecord) => void;
+  onArchive?: (customer: CustomerRecord) => void;
+  onRestore?: (customer: CustomerRecord) => void;
 }
 
 function mergePurchaseSalesDeduplicated(
@@ -131,13 +132,14 @@ export function CustomerDetailModal({
   currencyCode,
   timeZone,
   canManage,
+  initialTab = 'overview',
   onClose,
   onEdit,
   onArchive,
   onRestore,
 }: CustomerDetailModalProps) {
   const defaultCurrency = (currencyCode ?? '').trim() || 'USD';
-  const [activeTab, setActiveTab] = useState<DetailModalTab>('overview');
+  const [activeTab, setActiveTab] = useState<DetailModalTab>(initialTab);
   const [historyData, setHistoryData] = useState<CustomerPurchaseHistoryResult | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
@@ -162,14 +164,14 @@ export function CustomerDetailModal({
   useEffect(() => {
     activeContextKeyRef.current = contextKey;
     requestSeqRef.current += 1;
-    setActiveTab('overview');
+    setActiveTab(initialTab);
     setHistoryData(null);
     setHistoryLoading(false);
     setHistoryLoadingMore(false);
     setHistoryError(null);
     setCurrentLimit(INITIAL_HISTORY_LIMIT);
     setExpandedSaleIds({});
-  }, [contextKey]);
+  }, [contextKey, initialTab]);
 
   useEffect(() => {
     if (!customer) return;
@@ -875,30 +877,34 @@ export function CustomerDetailModal({
           {canManage ? (
             customer.isActive ? (
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onEdit(customer);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap"
-                >
-                  <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Edit</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onArchive(customer);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-xs font-medium text-amber-800 hover:bg-amber-50 hover:border-amber-300 whitespace-nowrap"
-                >
-                  <Archive className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Archive</span>
-                </button>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onEdit(customer);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Edit</span>
+                  </button>
+                )}
+                {onArchive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onArchive(customer);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-xs font-medium text-amber-800 hover:bg-amber-50 hover:border-amber-300 whitespace-nowrap"
+                  >
+                    <Archive className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Archive</span>
+                  </button>
+                )}
               </div>
-            ) : (
+            ) : onRestore ? (
               <button
                 type="button"
                 onClick={() => {
@@ -910,6 +916,8 @@ export function CustomerDetailModal({
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Restore Customer</span>
               </button>
+            ) : (
+              <div />
             )
           ) : (
             <div />

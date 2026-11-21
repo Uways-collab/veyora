@@ -10,6 +10,7 @@ import {
   RotateCcw,
   ShoppingBag,
   TrendingUp,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import {
@@ -20,6 +21,7 @@ import {
 import type { ReceiptSettings } from '../../core/receipts/receiptSettingsTypes';
 import type { ModuleId } from '../../core/types/domain';
 import { formatMoneyAmount } from '../inventory/inventoryService';
+import { OutstandingBalancesPanel } from './OutstandingBalancesPanel';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
 import { PosCheckoutPanel } from './PosCheckoutPanel';
 import { SaleReceiptModal } from './SaleReceiptModal';
@@ -39,7 +41,13 @@ import {
   type SalesModuleData,
 } from './salesTypes';
 
-type SalesTab = 'overview' | 'pos' | 'history' | 'returns' | 'payment_methods';
+type SalesTab =
+  | 'overview'
+  | 'pos'
+  | 'history'
+  | 'outstanding'
+  | 'returns'
+  | 'payment_methods';
 
 interface SalesViewProps {
   onSelectModule?: (moduleId: ModuleId) => void;
@@ -171,6 +179,7 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
       { id: 'overview', label: 'Overview' },
       { id: 'pos', label: 'POS Checkout' },
       { id: 'history', label: `Sales History (${data.sales.length})` },
+      { id: 'outstanding', label: 'Outstanding Balances' },
     ];
     if (canManageReturns) {
       tabs.push({ id: 'returns', label: `Returns & Refunds (${data.returns.length})` });
@@ -390,7 +399,7 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
                       {kpiSummary.openCreditCount > 0 && (
                         <button
                           type="button"
-                          onClick={() => setActiveTab('history')}
+                          onClick={() => setActiveTab('outstanding')}
                           className="font-medium text-blue-700 hover:text-blue-800 whitespace-nowrap"
                         >
                           Collect
@@ -432,7 +441,7 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
             <h2 id="sales-actions-heading" className="text-sm font-semibold text-slate-900">
               Quick Actions
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
               <button
                 type="button"
                 onClick={() => setActiveTab('pos')}
@@ -457,6 +466,22 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
                   <div className="text-xs font-semibold text-slate-900">Sales History</div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
                     Receipts and follow-up payments
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('outstanding')}
+                className="p-4 bg-white border border-slate-200 rounded-lg text-left hover:border-blue-300 transition-colors flex items-start gap-3"
+              >
+                <Wallet className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <div className="text-xs font-semibold text-slate-900">
+                    Outstanding Balances
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Customer credit balances and collections
                   </div>
                 </div>
               </button>
@@ -655,6 +680,17 @@ export function SalesView({ onSelectModule }: SalesViewProps) {
           loading={isInitialLoading}
           onReload={handleReload}
           onOpenReceipt={handleOpenReceipt}
+        />
+      )}
+
+      {/* Tab 4: Outstanding Balances */}
+      {activeTab === 'outstanding' && activeOrgId && (
+        <OutstandingBalancesPanel
+          organisationId={activeOrgId}
+          currencyCode={currencyCode}
+          timeZone={timeZone}
+          paymentMethods={data.paymentMethods}
+          onReloadSales={handleReload}
         />
       )}
 

@@ -651,6 +651,15 @@ export interface Database {
         };
         Returns: unknown;
       };
+      sales_v1_get_outstanding_balances: {
+        Args: {
+          p_organization_id: string;
+          p_search?: string | null;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: unknown;
+      };
       sales_v1_record_return: {
         Args: {
           p_organization_id: string;
