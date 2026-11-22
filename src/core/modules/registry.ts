@@ -98,6 +98,18 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     targetPhase: 'Phase 2',
   },
   {
+    id: 'expenses',
+    label: 'Expenses',
+    group: 'financial',
+    stage: 'foundation_active',
+    summary:
+      'Business expense recording, categories, receipt attachments, audit history, and currency-grouped expense reporting.',
+    primaryEntities: ['Expense Ledger', 'Expense Categories', 'Receipts', 'Audit Trail'],
+    plannedTables: ['expenses', 'expense_categories', 'expense_sequences', 'expense_audit_logs'],
+    connectedModules: ['finance', 'reports'],
+    targetPhase: 'Active Expenses',
+  },
+  {
     id: 'finance',
     label: 'Finance',
     group: 'financial',

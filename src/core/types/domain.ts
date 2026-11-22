@@ -5,6 +5,7 @@ export type ModuleId =
   | 'customers'
   | 'purchases'
   | 'suppliers'
+  | 'expenses'
   | 'finance'
   | 'reports'
   | 'settings';

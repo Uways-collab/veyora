@@ -4,6 +4,7 @@ import {
   Building2,
   Landmark,
   LayoutDashboard,
+  Receipt,
   Settings,
   ShoppingBag,
   ShoppingCart,
@@ -30,6 +31,8 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <ShoppingCart className={className} aria-hidden="true" />;
     case 'suppliers':
       return <Building2 className={className} aria-hidden="true" />;
+    case 'expenses':
+      return <Receipt className={className} aria-hidden="true" />;
     case 'finance':
       return <Landmark className={className} aria-hidden="true" />;
     case 'reports':

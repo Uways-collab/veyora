@@ -473,6 +473,10 @@ export interface Database {
       sales_return_items: InventoryTableRecord;
       sale_refunds: InventoryTableRecord;
       customers: InventoryTableRecord;
+      expense_categories: InventoryTableRecord;
+      expense_sequences: InventoryTableRecord;
+      expenses: InventoryTableRecord;
+      expense_audit_logs: InventoryTableRecord;
     };
     Views: Record<string, never>;
     Functions: {
@@ -776,6 +780,107 @@ export interface Database {
           p_organization_id: string;
           p_customer_id: string;
           p_limit?: number;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_list_categories: {
+        Args: {
+          p_organization_id: string;
+          p_include_archived?: boolean;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_create_category: {
+        Args: {
+          p_organization_id: string;
+          p_name: string;
+          p_description?: string | null;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_update_category: {
+        Args: {
+          p_organization_id: string;
+          p_category_id: string;
+          p_name: string;
+          p_description?: string | null;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_archive_category: {
+        Args: {
+          p_organization_id: string;
+          p_category_id: string;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_create: {
+        Args: {
+          p_organization_id: string;
+          p_category_id: string;
+          p_payment_method_id: string;
+          p_expense_date: string;
+          p_amount: number;
+          p_description: string;
+          p_idempotency_key: string;
+          p_vendor_payee?: string | null;
+          p_reference?: string | null;
+          p_notes?: string | null;
+          p_receipt_storage_path?: string | null;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_update: {
+        Args: {
+          p_organization_id: string;
+          p_expense_id: string;
+          p_category_id: string;
+          p_payment_method_id: string;
+          p_expense_date: string;
+          p_amount: number;
+          p_description: string;
+          p_edit_reason: string;
+          p_vendor_payee?: string | null;
+          p_reference?: string | null;
+          p_notes?: string | null;
+          p_receipt_storage_path?: string | null;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_void: {
+        Args: {
+          p_organization_id: string;
+          p_expense_id: string;
+          p_reason: string;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_list: {
+        Args: {
+          p_organization_id: string;
+          p_search?: string | null;
+          p_category_id?: string | null;
+          p_payment_method_id?: string | null;
+          p_status?: string | null;
+          p_date_from?: string | null;
+          p_date_to?: string | null;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_get_detail: {
+        Args: {
+          p_organization_id: string;
+          p_expense_id: string;
+        };
+        Returns: unknown;
+      };
+      expenses_v1_get_summary: {
+        Args: {
+          p_organization_id: string;
+          p_date_from?: string | null;
+          p_date_to?: string | null;
         };
         Returns: unknown;
       };
