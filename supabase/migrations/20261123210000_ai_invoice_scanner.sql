@@ -49,7 +49,7 @@ for update to authenticated
 using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]))
 with check (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
 
-revoke all on table public.invoice_scans from anon,authenticated;
+revoke all on table public.invoice_scans from public,anon,authenticated;
 grant select on table public.invoice_scans to authenticated;
 grant insert (id,organization_id,uploaded_by,file_path,file_name,mime_type,file_size)
   on table public.invoice_scans to authenticated;
@@ -75,7 +75,7 @@ drop policy if exists invoice_scan_audit_select_managers on public.invoice_scan_
 create policy invoice_scan_audit_select_managers on public.invoice_scan_audit_logs
 for select to authenticated
 using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
-revoke all on table public.invoice_scan_audit_logs from anon,authenticated;
+revoke all on table public.invoice_scan_audit_logs from public,anon,authenticated;
 grant select on table public.invoice_scan_audit_logs to authenticated;
 
 create or replace function public.guard_invoice_scan_updates()
@@ -193,7 +193,7 @@ drop policy if exists purchase_invoice_claims_select_managers on public.purchase
 create policy purchase_invoice_claims_select_managers on public.purchase_invoice_number_claims
 for select to authenticated
 using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
-revoke all on table public.purchase_invoice_number_claims from anon,authenticated;
+revoke all on table public.purchase_invoice_number_claims from public,anon,authenticated;
 grant select on table public.purchase_invoice_number_claims to authenticated;
 
 alter table public.purchases
