@@ -420,7 +420,7 @@ export function InvoiceScannerPanel({
           .limit(1).maybeSingle();
         if (exactError) throw new Error(exactError.message);
         if (exactMatch) {
-          setDuplicate({ ...exactMatch, kind: 'exact' });
+          setDuplicate({ purchase_number: String(exactMatch.purchase_number ?? 'Existing purchase'), status: String(exactMatch.status ?? 'unknown'), kind: 'exact' });
           setDuplicateOverride(false);
           return;
         }
@@ -437,7 +437,7 @@ export function InvoiceScannerPanel({
           .neq('status', 'cancelled')
           .limit(1).maybeSingle();
         if (possibleError) throw new Error(possibleError.message);
-        setDuplicate(possibleMatch ? { ...possibleMatch, kind: 'possible' } : null);
+        setDuplicate(possibleMatch ? { purchase_number: String(possibleMatch.purchase_number ?? 'Existing purchase'), status: String(possibleMatch.status ?? 'unknown'), kind: 'possible' } : null);
         setDuplicateOverride(false);
       } else {
         setDuplicate(null);
