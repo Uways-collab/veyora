@@ -49,6 +49,13 @@ for update to authenticated
 using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]))
 with check (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
 
+revoke all on table public.invoice_scans from anon,authenticated;
+grant select on table public.invoice_scans to authenticated;
+grant insert (id,organization_id,uploaded_by,file_path,file_name,mime_type,file_size)
+  on table public.invoice_scans to authenticated;
+grant update (status,extracted_data,error_message,updated_at)
+  on table public.invoice_scans to authenticated;
+
 create table if not exists public.invoice_scan_audit_logs (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null,
@@ -68,6 +75,8 @@ drop policy if exists invoice_scan_audit_select_managers on public.invoice_scan_
 create policy invoice_scan_audit_select_managers on public.invoice_scan_audit_logs
 for select to authenticated
 using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
+revoke all on table public.invoice_scan_audit_logs from anon,authenticated;
+grant select on table public.invoice_scan_audit_logs to authenticated;
 
 create or replace function public.audit_invoice_scan_change()
 returns trigger
@@ -83,7 +92,7 @@ begin
   if tg_op='INSERT' then
     v_action := 'invoice_uploaded';
     v_old := null;
-    v_new := jsonb_build_object('status',new.status,'file_name',new.file_name,'mime_type',new.mime_type,'file_size',new.file_size);
+    v_new := jsonb_build_object('status',new.status,'purchase_id',new.purchase_id,'file_name',new.file_name,'mime_type',new.mime_type,'file_size',new.file_size);
   else
     if old.status is distinct from new.status then
       v_action := 'status_changed';
@@ -94,8 +103,8 @@ begin
     else
       return new;
     end if;
-    v_old := jsonb_build_object('status',old.status,'extracted_data',old.extracted_data,'error_message',old.error_message);
-    v_new := jsonb_build_object('status',new.status,'extracted_data',new.extracted_data,'error_message',new.error_message);
+    v_old := jsonb_build_object('status',old.status,'purchase_id',old.purchase_id,'extracted_data',old.extracted_data,'error_message',old.error_message);
+    v_new := jsonb_build_object('status',new.status,'purchase_id',new.purchase_id,'extracted_data',new.extracted_data,'error_message',new.error_message);
   end if;
   insert into public.invoice_scan_audit_logs(
     organization_id,invoice_scan_id,actor_id,action,old_values,new_values
@@ -133,6 +142,8 @@ drop policy if exists purchase_invoice_claims_select_managers on public.purchase
 create policy purchase_invoice_claims_select_managers on public.purchase_invoice_number_claims
 for select to authenticated
 using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
+revoke all on table public.purchase_invoice_number_claims from anon,authenticated;
+grant select on table public.purchase_invoice_number_claims to authenticated;
 
 alter table public.purchases
   add column if not exists invoice_document_path text,
