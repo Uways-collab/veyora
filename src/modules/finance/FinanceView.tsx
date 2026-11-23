@@ -49,7 +49,11 @@ export function FinanceView() {
  const [paymentMethods,setPaymentMethods]=useState<FinancePaymentMethod[]>([]);
  const [expenseCategories,setExpenseCategories]=useState<FinanceExpenseCategory[]>([]);
  const [sourceStatus,setSourceStatus]=useState<FinanceSourceStatus|null>(null);
- const [lines,setLines]=useState<FinanceJournalLine[]>([]);\n const [reportLines,setReportLines]=useState<FinanceReportLine[]>([]);\n const [reportLoading,setReportLoading]=useState(false);\n const [reportError,setReportError]=useState<string|null>(null);\n const [reportAccount,setReportAccount]=useState('');
+ const [lines,setLines]=useState<FinanceJournalLine[]>([]);
+ const [reportLines,setReportLines]=useState<FinanceReportLine[]>([]);
+ const [reportLoading,setReportLoading]=useState(false);
+ const [reportError,setReportError]=useState<string|null>(null);
+ const [reportAccount,setReportAccount]=useState('');
  const [selectedEntry,setSelectedEntry]=useState<string|null>(null);
  const [loading,setLoading]=useState(true);
  const [busy,setBusy]=useState(false);
@@ -84,7 +88,8 @@ export function FinanceView() {
  },[orgId,status,from,to]);
  useEffect(()=>{void refresh();},[refresh]);
  useEffect(()=>{setAccounts([]);setLedger([]);setEntries([]);setBalances(null);setPaymentMethods([]);setExpenseCategories([]);setSourceStatus(null);setSelectedEntry(null);setLines([]);},[orgId]);
- useEffect(()=>{if(tab!=='reports'||!orgId)return;let live=true;setReportLoading(true);setReportError(null);void loadFinanceReportLines(orgId,to).then(v=>{if(live)setReportLines(v)}).catch(e=>{if(live)setReportError(e instanceof Error?e.message:'Unable to load ledger reports.')}).finally(()=>{if(live)setReportLoading(false)});return()=>{live=false}},[tab,orgId,to]);\n useEffect(()=>{if(!selectedEntry||!orgId)return;let live=true;void loadJournalLines(orgId,selectedEntry).then(v=>{if(live)setLines(v)}).catch(e=>{if(live)setError(e.message)});return()=>{live=false}},[selectedEntry,orgId]);
+ useEffect(()=>{if(tab!=='reports'||!orgId)return;let live=true;setReportLoading(true);setReportError(null);void loadFinanceReportLines(orgId,to).then(v=>{if(live)setReportLines(v)}).catch(e=>{if(live)setReportError(e instanceof Error?e.message:'Unable to load ledger reports.')}).finally(()=>{if(live)setReportLoading(false)});return()=>{live=false}},[tab,orgId,to]);
+ useEffect(()=>{if(!selectedEntry||!orgId)return;let live=true;void loadJournalLines(orgId,selectedEntry).then(v=>{if(live)setLines(v)}).catch(e=>{if(live)setError(e.message)});return()=>{live=false}},[selectedEntry,orgId]);
  const activeAccounts=accounts.filter(a=>a.is_active);
  const reportRows=reportLines.filter(l=>l.finance_journal_entries.entry_date>=from&&l.finance_journal_entries.entry_date<=to);
  const asOfRows=reportLines;
