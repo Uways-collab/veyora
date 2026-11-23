@@ -89,9 +89,12 @@ Deno.serve(async (req: Request) => {
   if (scanError || !scan) return json({ error: 'Invoice scan not found in the active organisation' }, 404);
   if (!MIME_TYPES.has(scan.mime_type) || scan.file_size > MAX_BYTES) return json({ error: 'This file type or size is not supported' }, 400);
   if (!scan.file_path.startsWith(`${scan.organization_id}/invoices/`)) return json({ error: 'Invoice file path is invalid' }, 400);
-  if (scan.status === 'linked' || scan.status === 'cancelled') return json({ error: 'This invoice scan can no longer be processed' }, 409);
+  if (!['uploaded', 'failed'].includes(scan.status)) return json({ error: 'This invoice scan is already processing or has already been completed' }, 409);
 
-  await supabase.from('invoice_scans').update({ status: 'processing', error_message: null, updated_at: new Date().toISOString() }).eq('id', scanId);
+  const { data: claimedScan, error: claimError } = await supabase.from('invoice_scans')
+    .update({ status: 'processing', error_message: null, updated_at: new Date().toISOString() })
+    .eq('id', scanId).in('status', ['uploaded', 'failed']).select('id').maybeSingle();
+  if (claimError || !claimedScan) return json({ error: 'This invoice scan is already being processed. Wait for it to finish before retrying.' }, 409);
 
   try {
     const { data: file, error: downloadError } = await supabase.storage.from('invoice-documents').download(scan.file_path);
