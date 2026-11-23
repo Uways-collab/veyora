@@ -5,7 +5,7 @@ create table if not exists public.invoice_scans (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   uploaded_by uuid not null references auth.users(id),
-  file_path text not null,
+  file_path text not null check (file_path like organization_id::text || '/invoices/%'),
   file_name text not null,
   mime_type text not null check (mime_type in ('image/jpeg','image/png','image/webp','application/pdf')),
   file_size bigint not null check (file_size > 0 and file_size <= 10485760),
@@ -17,6 +17,7 @@ create table if not exists public.invoice_scans (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint invoice_scans_org_id_unique unique (organization_id,id),
+  constraint invoice_scans_file_path_unique unique (file_path),
   constraint invoice_scans_purchase_fk
     foreign key (organization_id,purchase_id)
     references public.purchases(organization_id,id)
@@ -296,6 +297,9 @@ begin
   for update;
   if not found or v_scan.status <> 'ready' or v_scan.purchase_id is not null then
     raise exception 'Invoice scan is not ready to create a purchase';
+  end if;
+  if v_scan.file_path not like p_organization_id::text || '/invoices/%' then
+    raise exception 'Invoice document does not belong to the active organisation';
   end if;
 
   select upper(currency) into v_currency
