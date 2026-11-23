@@ -275,6 +275,7 @@ as $function$
 declare
   v_product_id uuid;
   v_variant_id uuid;
+  v_scan_id uuid;
 begin
   if auth.uid() is null or not public.has_inventory_role(
     p_organization_id,array['owner','admin','manager']::text[]
@@ -282,10 +283,10 @@ begin
     raise exception 'You are not authorised to create products in this organisation'
       using errcode = '42501';
   end if;
-  if not exists (
-    select 1 from public.invoice_scans
-    where id=p_scan_id and organization_id=p_organization_id and status='ready' and purchase_id is null
-  ) then raise exception 'Invoice scan is not ready for product creation'; end if;
+  select id into v_scan_id from public.invoice_scans
+  where id=p_scan_id and organization_id=p_organization_id and status='ready' and purchase_id is null
+  for update;
+  if not found then raise exception 'Invoice scan is not ready for product creation'; end if;
   if nullif(btrim(p_product_name),'') is null
      or nullif(btrim(p_variant_name),'') is null
      or nullif(btrim(p_unit_of_measure),'') is null
