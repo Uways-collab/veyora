@@ -1,19 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import {
-  Check,
-  CheckCircle2,
-  Copy,
-  Database,
-  KeyRound,
-  Loader2,
-  Lock,
-  LogOut,
-  RefreshCw,
-  Shield,
-  Users,
-} from 'lucide-react';
+import { Loader2, LogOut, RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
-import { getRuntimeConfig } from '../../core/config/env';
 import {
   BUSINESS_TYPE_OPTIONS,
   COUNTRY_OPTIONS,
@@ -40,37 +27,15 @@ export type SettingsTab =
   | 'auth_orgs'
   | 'receipt_settings'
   | 'members_roles'
-  | 'schema_rls'
-  | 'environment'
-  | 'security_storage';
+;
 
-const ENV_TEMPLATE = `VITE_SUPABASE_URL="https://your-project-ref.supabase.co"
-VITE_SUPABASE_ANON_KEY="your-public-anon-key"`;
-
-const MIGRATION_SNIPPET = `-- Connected Supabase Tables:
---   public.profiles
---   public.organizations
---   public.organization_memberships
-
--- Atomic business workspace creation with server-enforced Owner role:
-select public.create_business_workspace(
-  p_name := 'Northbridge Wholesale Ltd.',
-  p_business_type := 'wholesale',
-  p_country := 'United Kingdom',
-  p_base_currency := 'GBP',
-  p_business_email := 'accounts@northbridge.co.uk',
-  p_business_phone := '+44 20 7946 0921',
-  p_timezone := 'Europe/London'
-);`;
 
 interface SettingsViewProps {
   requestedTab?: SettingsTab;
 }
 
 export function SettingsView({ requestedTab }: SettingsViewProps) {
-  const runtime = getRuntimeConfig();
   const {
-    isSupabaseConfigured,
     user,
     profile,
     memberships,
@@ -83,14 +48,19 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
     switchOrganisation,
   } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<SettingsTab>(requestedTab ?? 'auth_orgs');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    requestedTab === 'receipt_settings' || requestedTab === 'members_roles' ? requestedTab : 'auth_orgs'
+  );
 
   useEffect(() => {
     if (requestedTab) {
-      setActiveTab(requestedTab);
+      setActiveTab(
+        requestedTab === 'receipt_settings' || requestedTab === 'members_roles'
+          ? requestedTab
+          : 'auth_orgs'
+      );
     }
   }, [requestedTab]);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // User Profile Edit
   const [profileName, setProfileName] = useState(profile?.full_name ?? '');
@@ -186,16 +156,6 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
       void loadMembers();
     }
   }, [activeTab, activeOrganisation, loadMembers]);
-
-  const handleCopy = async (id: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      // Clipboard blocked in restricted context
-    }
-  };
 
   const handleSaveProfile = async (e: FormEvent) => {
     e.preventDefault();
@@ -388,13 +348,13 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
           <div className="text-xs font-medium text-slate-500">
             Workspace Administration
             <span aria-hidden="true"> · </span>
-            Supabase Auth &amp; Multi-Tenant Controls
+            Business &amp; Team
           </div>
           <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">
             Settings &amp; Access Management
           </h1>
           <p className="text-sm text-slate-600 max-w-2xl">
-            Manage your authenticated account, business profile, organisation roles, and PostgreSQL Row Level Security policies.
+            Manage your profile, business details, receipts, and team access.
           </p>
         </div>
 
@@ -421,9 +381,6 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               ? [{ id: 'receipt_settings' as const, label: 'Receipt Settings' }]
               : []),
             { id: 'members_roles', label: 'Members & Roles' },
-            { id: 'schema_rls', label: 'Database Schema & RLS' },
-            { id: 'environment', label: 'Environment & Supabase' },
-            { id: 'security_storage', label: 'Security & Storage' },
           ] satisfies ReadonlyArray<{ id: SettingsTab; label: string }>
         ).map((tab) => (
           <button
@@ -1048,7 +1005,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                 Organisation Role Hierarchy
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Backed by <span className="font-mono">public.organisation_roles</span> and enforced via RLS triggers.
+                Manage team responsibilities and access to this business.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
@@ -1057,9 +1014,6 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-slate-900">
                       {roleDef.label}
-                    </span>
-                    <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                      Rank {roleDef.rank}
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">
@@ -1072,182 +1026,6 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
         </div>
       )}
 
-      {/* Tab 3: Database Schema & RLS */}
-      {activeTab === 'schema_rls' && (
-        <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <Database className="h-4 w-4 text-slate-500" aria-hidden="true" />
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Supabase Schema &amp; Migrations
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Migration history is maintained in <span className="font-mono">supabase/migrations/</span>. Review and apply only migrations compatible with the connected database schema.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleCopy('sql', MIGRATION_SNIPPET)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0 self-start sm:self-auto"
-            >
-              {copiedId === 'sql' ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Copy Snippet</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-slate-200 text-xs">
-            <div className="space-y-2">
-              <h3 className="font-semibold text-slate-900">Core Tables</h3>
-              <ul className="space-y-1.5 text-slate-600">
-                <li>
-                  <span className="font-mono text-slate-900">public.profiles</span> — User display name and avatar metadata. Auth email addresses remain in <span className="font-mono">auth.users</span>.
-                </li>
-                <li>
-                  <span className="font-mono text-slate-900">public.organizations</span> — Business name, type, country, currency, timezone, email, phone.
-                </li>
-                <li>
-                  <span className="font-mono text-slate-900">public.organization_memberships</span> — Tenant memberships and role assignments (<span className="font-mono">owner | manager | staff</span>; legacy Admin rows may exist).
-                </li>
-              </ul>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold text-slate-900">Anti-Privilege-Escalation Controls</h3>
-              <ul className="space-y-1.5 text-slate-600">
-                <li>
-                  <span className="font-mono text-slate-900">enforce_membership_rbac()</span> — Membership changes are constrained by database policies and role checks.
-                </li>
-                <li>
-                  <span className="font-mono text-slate-900">organization_memberships_*_privileged</span> — Constrains membership role changes to prevent privilege escalation.
-                </li>
-                <li>
-                  <span className="font-mono text-slate-900">create_business_workspace()</span> — Atomic <span className="font-mono">SECURITY DEFINER</span> RPC assigning Owner server-side.
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <pre className="p-5 text-xs font-mono text-slate-800 bg-slate-50/70 overflow-x-auto leading-relaxed">
-            {MIGRATION_SNIPPET}
-          </pre>
-        </section>
-      )}
-
-      {/* Tab 4: Environment & Supabase */}
-      {activeTab === 'environment' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-slate-500" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-slate-900">
-                Runtime Environment Status
-              </h2>
-            </div>
-
-            <dl className="divide-y divide-slate-200 text-xs">
-              <div className="px-5 py-3.5 flex items-center justify-between gap-4">
-                <dt className="font-mono text-slate-700">VITE_SUPABASE_URL</dt>
-                <dd className="font-mono text-right truncate max-w-[260px] text-slate-900">
-                  {runtime.supabaseUrl ? maskedUrl : 'Missing'}
-                </dd>
-              </div>
-              <div className="px-5 py-3.5 flex items-center justify-between gap-4">
-                <dt className="font-mono text-slate-700">VITE_SUPABASE_ANON_KEY</dt>
-                <dd className={`font-medium ${runtime.supabaseAnonKey ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  {runtime.supabaseAnonKey ? 'Configured (client-safe)' : 'Missing'}
-                </dd>
-              </div>
-              <div className="px-5 py-3.5 flex items-center justify-between gap-4">
-                <dt className="font-mono text-slate-700">SUPABASE_SERVICE_ROLE_KEY</dt>
-                <dd className="text-slate-600">Server-only (never exposed in browser)</dd>
-              </div>
-              <div className="px-5 py-3.5 flex items-center justify-between gap-4">
-                <dt className="text-slate-700 font-medium">Connection State</dt>
-                <dd className={`font-medium ${isSupabaseConfigured ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  {isSupabaseConfigured ? 'Connected' : 'Credentials required'}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Environment Template
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Configure in <span className="font-mono">.env.local</span> or runtime environment secrets.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleCopy('env', ENV_TEMPLATE)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
-              >
-                {copiedId === 'env' ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
-                    <span>Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>Copy Template</span>
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="p-5 text-xs font-mono text-slate-800 bg-slate-50/70 overflow-x-auto flex-1 leading-relaxed">
-              {ENV_TEMPLATE}
-            </pre>
-          </section>
-        </div>
-      )}
-
-      {/* Tab 5: Security & Storage */}
-      {activeTab === 'security_storage' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Lock className="h-4 w-4 text-slate-500" aria-hidden="true" />
-              <span>Supabase Storage Isolation</span>
-            </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              The private <span className="font-mono text-slate-900">organisation-files</span> bucket enforces path-prefix Row Level Security so businesses can never access another tenant&apos;s documents.
-            </p>
-            <div className="p-3 rounded-md bg-slate-50 border border-slate-200 font-mono text-xs text-slate-800">
-              organisation-files/&lt;organisation_id&gt;/&lt;module&gt;/&lt;filename&gt;
-            </div>
-          </section>
-
-          <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Shield className="h-4 w-4 text-slate-500" aria-hidden="true" />
-              <span>Portability &amp; Key Separation</span>
-            </div>
-            <ul className="space-y-2 text-xs text-slate-600 leading-relaxed">
-              <li>
-                <span className="font-medium text-slate-900">Protected Routes:</span> Unauthenticated users and users without an organisation cannot access the business dashboard.
-              </li>
-              <li>
-                <span className="font-medium text-slate-900">Zero Exposed Secrets:</span> Only <span className="font-mono">VITE_SUPABASE_URL</span> and <span className="font-mono">VITE_SUPABASE_ANON_KEY</span> exist in browser code.
-              </li>
-            </ul>
-          </section>
-        </div>
-      )}
     </div>
   );
 }
