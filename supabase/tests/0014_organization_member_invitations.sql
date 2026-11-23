@@ -80,9 +80,9 @@ begin
   from pg_trigger t
   where t.tgrelid='auth.users'::regclass and t.tgname='on_auth_user_email_confirmed';
   if v_trigger is null
-     or position('UPDATE OF email_confirmed_at' in upper(v_trigger))=0
-     or position('old.email_confirmed_at IS NULL' in upper(v_trigger))=0
-     or position('new.email_confirmed_at IS NOT NULL' in upper(v_trigger))=0 then
+     or position('after update of email_confirmed_at' in lower(v_trigger))=0
+     or position('old.email_confirmed_at is null' in lower(v_trigger))=0
+     or position('new.email_confirmed_at is not null' in lower(v_trigger))=0 then
     raise exception 'FAIL: Auth acceptance trigger must fire only on first email confirmation'; end if;
 
   raise notice 'PASS: invitation RPC grants, owner and role enforcement, self-invite protection, duplicate guard, organisation audit RLS/isolation, Auth confirmation lifecycle, and no finance-audit writes';
