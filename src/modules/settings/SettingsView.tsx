@@ -33,6 +33,7 @@ import type {
   OrganisationRole,
 } from '../../core/types/domain';
 
+import { inviteOrganisationMember, type InviteableOrganisationRole } from '../../core/supabase/organizationInvitations';
 import { ReceiptSettingsPanel } from './ReceiptSettingsPanel';
 
 export type SettingsTab =
@@ -44,10 +45,7 @@ export type SettingsTab =
   | 'security_storage';
 
 const ENV_TEMPLATE = `VITE_SUPABASE_URL="https://your-project-ref.supabase.co"
-VITE_SUPABASE_ANON_KEY="your-public-anon-key"
-
-# Server-only (never prefix with VITE_ or bundle into frontend code)
-SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"`;
+VITE_SUPABASE_ANON_KEY="your-public-anon-key"`;
 
 const MIGRATION_SNIPPET = `-- Connected Supabase Tables:
 --   public.profiles
@@ -169,6 +167,9 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState<string | null>(null);
   const [memberActionMsg, setMemberActionMsg] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<InviteableOrganisationRole>('staff');
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
 
   const loadMembers = useCallback(async () => {
     if (!activeOrganisation) return;
@@ -334,6 +335,43 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
     } else {
       setMemberActionMsg('Member removed from organisation.');
       await loadMembers();
+    }
+  };
+
+  const handleInviteMember = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!activeOrganisation || activeRole !== 'owner' || inviteSubmitting) return;
+    setInviteSubmitting(true);
+    setMemberActionMsg(null);
+    try {
+      const { result, error } = await inviteOrganisationMember(
+        activeOrganisation.id,
+        inviteEmail,
+        inviteRole
+      );
+      if (error || !result) {
+        setMemberActionMsg(`Invitation rejected: ${error ?? 'Unknown error'}`);
+        return;
+      }
+      setInviteEmail('');
+      setMemberActionMsg(
+        result.status === 'added'
+          ? 'Existing confirmed Auth user provisioned in this organisation.'
+          : result.awaiting_existing_account_confirmation
+            ? 'Invitation is pending. This existing account must confirm its Auth email before membership is provisioned.'
+            : result.awaiting_email_confirmation
+              ? result.already_pending
+                ? 'An invitation is already pending. Membership will be provisioned after email confirmation.'
+                : 'Invitation email sent. Membership will be provisioned only after the recipient confirms the email.'
+              : 'Invitation is pending and membership has not yet been provisioned.'
+      );
+      await loadMembers();
+    } catch (err: unknown) {
+      setMemberActionMsg(
+        `Invitation failed: ${err instanceof Error ? err.message : 'Unexpected error'}`
+      );
+    } finally {
+      setInviteSubmitting(false);
     }
   };
 
@@ -854,6 +892,49 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                 <span>Refresh</span>
               </button>
             </div>
+
+            {activeRole === 'owner' && (
+              <form onSubmit={(e) => void handleInviteMember(e)} className="px-5 py-4 border-b border-slate-200 bg-slate-50/50 space-y-3">
+                <div>
+                  <h3 className="text-xs font-semibold text-slate-900">Invite a team member</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Only the organisation owner can add members. New invitations are limited to Manager and Staff.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_150px_auto] gap-2">
+                  <label className="sr-only" htmlFor="member-invite-email">Member email</label>
+                  <input
+                    id="member-invite-email"
+                    type="email"
+                    required
+                    maxLength={254}
+                    autoComplete="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-3 text-xs text-slate-900"
+                  />
+                  <label className="sr-only" htmlFor="member-invite-role">Role</label>
+                  <select
+                    id="member-invite-role"
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value as InviteableOrganisationRole)}
+                    className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
+                  >
+                    <option value="staff">Staff</option>
+                    <option value="manager">Manager</option>
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={inviteSubmitting || !inviteEmail.trim()}
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3 text-xs font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {inviteSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Users className="h-3.5 w-3.5" aria-hidden="true" />}
+                    <span>{inviteSubmitting ? 'Sending…' : 'Invite member'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
 
             {memberActionMsg && (
               <div className="px-5 py-2.5 text-xs bg-slate-50 border-b border-slate-200 text-slate-800">

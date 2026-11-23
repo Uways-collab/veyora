@@ -25,6 +25,7 @@ export type WorkspaceAuthStatus =
   | 'loading'
   | 'signed_out'
   | 'password_recovery'
+  | 'invitation_setup'
   | 'authenticated';
 
 export interface WorkspaceLoadError {
@@ -159,6 +160,14 @@ function classifySupabaseError(err: { code?: string; message: string }): Workspa
   };
 }
 
+function isInvitationCallback(): boolean {
+  const search = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return search.get('auth_flow') === 'invite' ||
+    search.get('type') === 'invite' ||
+    hash.get('type') === 'invite';
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -183,6 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadedUserIdRef = useRef<string | null>(null);
   const creatingOrgRef = useRef(false);
   const membershipsRef = useRef<OrganisationMembership[]>([]);
+  const invitationFlowRef = useRef(isInvitationCallback());
 
   const clearRecentlyCreatedNotice = useCallback(() => {
     setRecentlyCreatedOrgName(null);
@@ -352,7 +362,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         if (currentSession?.user) {
-          setStatus((prev) => (prev === 'password_recovery' ? 'password_recovery' : 'authenticated'));
+          setStatus((prev) => prev === 'password_recovery' ? 'password_recovery' : invitationFlowRef.current ? 'invitation_setup' : 'authenticated');
           void loadUserWorkspaceContext(currentSession.user.id);
         } else {
           setStatus('signed_out');
@@ -378,7 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (event === 'INITIAL_SESSION' && loadedUserIdRef.current === nextSession.user.id) {
           return;
         }
-        setStatus('authenticated');
+        setStatus(invitationFlowRef.current || isInvitationCallback() ? 'invitation_setup' : 'authenticated');
         void loadUserWorkspaceContext(nextSession.user.id);
       } else {
         loadSeqRef.current += 1;
@@ -489,6 +499,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const { data } = await supabase.auth.getUser();
       if (data.user) {
+        invitationFlowRef.current = false;
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('auth_flow');
+        window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
         setStatus('authenticated');
         await loadUserWorkspaceContext(data.user.id);
       } else {

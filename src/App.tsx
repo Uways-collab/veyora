@@ -8,6 +8,7 @@ import { AuthScreen } from './modules/auth/AuthScreen';
 import { CustomersView } from './modules/customers/CustomersView';
 import { DashboardView } from './modules/dashboard/DashboardView';
 import { ExpensesView } from './modules/expenses/ExpensesView';
+import { FinanceView } from './modules/finance/FinanceView';
 import { InventoryView } from './modules/inventory/InventoryView';
 import { BusinessOnboardingScreen } from './modules/onboarding/BusinessOnboardingScreen';
 import { PurchasesView } from './modules/purchases/PurchasesView';
@@ -66,7 +67,8 @@ function ProtectedWorkspaceRouter() {
   if (
     status === 'unconfigured' ||
     status === 'signed_out' ||
-    status === 'password_recovery'
+    status === 'password_recovery' ||
+    status === 'invitation_setup'
   ) {
     return <AuthScreen />;
   }
@@ -168,6 +170,8 @@ function ProtectedWorkspaceRouter() {
         return <SuppliersView />;
       case 'expenses':
         return <ExpensesView />;
+      case 'finance':
+        return <FinanceView />;
       case 'reports':
         return <ReportsView />;
       case 'settings':

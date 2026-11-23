@@ -113,13 +113,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     id: 'finance',
     label: 'Finance',
     group: 'financial',
-    stage: 'planned_module',
+    stage: 'foundation_active',
     summary:
-      'Double-entry general ledger, accounts payable and receivable, payment reconciliation, and tax configuration.',
-    primaryEntities: ['Chart of Accounts', 'Journal Entries', 'Receivables', 'Payables'],
-    plannedTables: ['ledger_accounts', 'journal_entries', 'payments', 'tax_rates'],
+      'Double-entry general ledger, cash and bank accounts, journal entries, opening balances, transfers, and ledger-based financial reporting.',
+    primaryEntities: ['Chart of Accounts', 'Cash & Bank Accounts', 'Journal Entries', 'Financial Reports'],
+    plannedTables: ['finance_ledger_accounts', 'finance_accounts', 'finance_journal_entries', 'finance_journal_lines'],
     connectedModules: ['sales', 'purchases', 'customers', 'suppliers', 'reports'],
-    targetPhase: 'Phase 5',
+    targetPhase: 'Finance Foundation Active',
   },
   {
     id: 'reports',
