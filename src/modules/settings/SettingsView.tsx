@@ -45,10 +45,7 @@ export type SettingsTab =
   | 'security_storage';
 
 const ENV_TEMPLATE = `VITE_SUPABASE_URL="https://your-project-ref.supabase.co"
-VITE_SUPABASE_ANON_KEY="your-public-anon-key"
-
-# Server-only (never prefix with VITE_ or bundle into frontend code)
-SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"`;
+VITE_SUPABASE_ANON_KEY="your-public-anon-key"`;
 
 const MIGRATION_SNIPPET = `-- Connected Supabase Tables:
 --   public.profiles
