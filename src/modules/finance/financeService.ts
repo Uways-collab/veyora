@@ -59,6 +59,9 @@ export async function loadFinanceWorkspace(orgId:string, from:string, to:string)
   };
 }
 
+export async function retryFinanceSourceEvents(orgId:string) {
+  return unwrap<{posted:number;pending:number;skipped:number;reversed:number}>(await client().rpc('finance_retry_pending_events',{p_organization_id:orgId}));
+}
 export async function mapPaymentMethod(orgId:string,methodId:string,financialAccountId:string) {
   return unwrap<void>(await client().rpc('finance_map_payment_method',{
     p_organization_id:orgId,p_payment_method_id:methodId,p_financial_account_id:financialAccountId,
