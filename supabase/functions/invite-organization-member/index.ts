@@ -56,13 +56,17 @@ Deno.serve(async (req: Request) => {
     return response({ error: 'Only manager and staff roles may be invited' }, 400);
   }
 
-  // This RPC re-checks auth.uid() and the owner membership for this exact tenant.
-  // It inserts directly only for an existing Auth user; otherwise it records a
-  // pending invitation before the server sends the Auth invite.
-  const { data: result, error: rpcError } = await userClient.rpc('create_organization_invitation', {
+  // The actor id comes only from the Auth-verified user object above.
+  // The database RPC is callable only by service_role and re-checks owner
+  // membership for the exact organisation before creating any membership/invite.
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: result, error: rpcError } = await adminClient.rpc('create_organization_invitation', {
     p_organization_id: organizationId,
     p_email: email,
     p_role: role,
+    p_actor_id: authData.user.id,
   });
   if (rpcError) {
     const denied = rpcError.code === '42501';
@@ -78,9 +82,6 @@ Deno.serve(async (req: Request) => {
     return response({ error: 'Unexpected invitation result' }, 500);
   }
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
   const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     data: { organization_invitation_id: payload.invitation_id },
   });
