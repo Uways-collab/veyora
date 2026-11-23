@@ -356,7 +356,7 @@ export function InvoiceScannerPanel({
       p_product_name: line.productName,
       p_description: line.description || null,
       p_variant_name: line.newVariant,
-      p_sku: line.newSku || null,
+      p_sku: line.newSku.trim(),
       p_barcode: line.newBarcode || null,
       p_unit_of_measure: line.newUnit,
       p_cost_price: cost,
