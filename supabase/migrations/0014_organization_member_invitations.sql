@@ -46,6 +46,7 @@ declare
   v_target_user uuid;
   v_membership_id uuid;
   v_invitation_id uuid;
+  v_existing_role text;
   v_inserted boolean := false;
 begin
   if v_actor is null then
@@ -107,16 +108,23 @@ begin
     return jsonb_build_object('status','added','membership_id',v_membership_id,'role',p_role);
   end if;
 
+  update public.organization_invitations
+  set status='revoked'
+  where organization_id=p_organization_id and email=v_email and status='pending' and expires_at <= now();
+
   insert into public.organization_invitations (organization_id,email,role,invited_by)
   values (p_organization_id,v_email,p_role,v_actor)
   on conflict (organization_id,email) where status = 'pending' do nothing
   returning id into v_invitation_id;
 
   if v_invitation_id is null then
-    select i.id into v_invitation_id
+    select i.id,i.role into v_invitation_id,v_existing_role
     from public.organization_invitations i
     where i.organization_id = p_organization_id and i.email = v_email and i.status = 'pending'
     for update;
+    if v_existing_role is distinct from p_role then
+      raise exception 'A pending invitation already exists with a different role' using errcode = '23505';
+    end if;
   else
     v_inserted := true;
     insert into public.finance_audit_log
