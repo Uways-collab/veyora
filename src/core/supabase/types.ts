@@ -1018,6 +1018,9 @@ export interface Database {
           p_expected_delivery_date: string | null;
           p_due_date: string | null;
           p_invoice_date: string | null;
+          p_grand_total: number | null;
+          p_delivery_charges: number | null;
+          p_allow_possible_duplicate: boolean;
           p_currency: string;
           p_notes: string | null;
         };
