@@ -48,7 +48,7 @@ type ExtractedInvoice = {
 
 type ScanRow = { id: string; file_path: string; status: string; extracted_data: ExtractedInvoice; error_message: string | null };
 
-const MAX_FILE_BYTES = 15 * 1024 * 1024;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 function normalizeCurrencyCode(value: string, fallback: string): string {
   const raw = value.trim().toUpperCase();
   if (!raw) return fallback.toUpperCase();
@@ -239,7 +239,7 @@ export function InvoiceScannerPanel({
   const handleUploadAndScan = async () => {
     if (!organisationId || !file || !canManage) return;
     if (!ACCEPTED_MIME.has(file.type)) { setError('Choose a JPG, PNG, WebP image or PDF invoice.'); return; }
-    if (file.size <= 0 || file.size > MAX_FILE_BYTES) { setError('The invoice must be smaller than 15 MB.'); return; }
+    if (file.size <= 0 || file.size > MAX_FILE_BYTES) { setError('The invoice must be smaller than 10 MB.'); return; }
     const supabase = getSupabaseClient();
     if (!supabase) { setError('Veyora is not connected to the database.'); return; }
     setBusy(true); setError(null); setCreatedPurchaseId(null);
@@ -388,7 +388,7 @@ export function InvoiceScannerPanel({
   const addManualLine = () => setLines((current) => [...current, {
     rowKey: `manual-${Date.now()}`, productName: '', description: '', sku: '', barcode: '', brand: '', size: '', variant: '',
     quantity: '1', unit: 'piece', unitCost: '', discount: null, tax: null, lineTotal: null,
-    confidence: 'manual', variantId: '', newSku: '', newBarcode: '', newVariant: 'Default', newUnit: 'piece', newSellingPrice: '', edited: true,
+    confidence: 'manual', variantId: '', newSku: '', newBarcode: '', newVariant: 'Default', newUnit: '', newSellingPrice: '', edited: true,
   }]);
 
   if (!canManage) return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">Invoice scanning is available to Owners, Admins and Managers.</div>;
@@ -410,7 +410,7 @@ export function InvoiceScannerPanel({
               <FileImage className="h-4 w-4" /> Choose invoice / use camera
               <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
             </label>
-            <p className="mt-2 text-[11px] text-slate-500">JPG, PNG, WebP or multi-page PDF · Up to 15 MB</p>
+            <p className="mt-2 text-[11px] text-slate-500">JPG, PNG, WebP or multi-page PDF · Up to 10 MB</p>
             {file && <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-700"><FileText className="h-4 w-4" />{file.name}<span className="text-slate-400">({(file.size / 1024 / 1024).toFixed(2)} MB)</span></div>}
             <button type="button" disabled={!file || busy || !organisationId || !referenceData} onClick={() => void handleUploadAndScan()} className="mt-4 inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-xs font-medium text-white disabled:opacity-40">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />} Scan invoice
