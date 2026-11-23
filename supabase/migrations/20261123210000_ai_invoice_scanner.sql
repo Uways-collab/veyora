@@ -8,7 +8,7 @@ create table if not exists public.invoice_scans (
   file_path text not null,
   file_name text not null,
   mime_type text not null check (mime_type in ('image/jpeg','image/png','image/webp','application/pdf')),
-  file_size bigint not null check (file_size > 0 and file_size <= 15728640),
+  file_size bigint not null check (file_size > 0 and file_size <= 10485760),
   status text not null default 'uploaded'
     check (status in ('uploaded','processing','ready','linked','failed','cancelled')),
   extracted_data jsonb not null default '{}'::jsonb,
@@ -80,12 +80,12 @@ values (
   'invoice-documents',
   'invoice-documents',
   false,
-  15728640,
+  10485760,
   array['image/jpeg','image/png','image/webp','application/pdf']
 )
 on conflict (id) do update set
   public = false,
-  file_size_limit = 15728640,
+  file_size_limit = 10485760,
   allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists invoice_documents_read_managers on storage.objects;
