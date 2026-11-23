@@ -356,10 +356,14 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
       setInviteEmail('');
       setMemberActionMsg(
         result.status === 'added'
-          ? 'Existing Auth user added to this organisation.'
-          : result.already_pending
-            ? 'This invitation was already pending; the invitation email was retried.'
-            : 'Invitation sent. The member will appear after Auth creates their account.'
+          ? 'Existing confirmed Auth user provisioned in this organisation.'
+          : result.awaiting_existing_account_confirmation
+            ? 'Invitation is pending. This existing account must confirm its Auth email before membership is provisioned.'
+            : result.awaiting_email_confirmation
+              ? result.already_pending
+                ? 'An invitation is already pending. Membership will be provisioned after email confirmation.'
+                : 'Invitation email sent. Membership will be provisioned only after the recipient confirms the email.'
+              : 'Invitation is pending and membership has not yet been provisioned.'
       );
       await loadMembers();
     } catch (err: unknown) {
