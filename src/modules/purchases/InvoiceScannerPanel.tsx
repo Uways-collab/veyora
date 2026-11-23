@@ -341,9 +341,9 @@ export function InvoiceScannerPanel({
       p_selling_price: Math.max(0, Number(line.newSellingPrice) || 0),
       p_attributes: { brand: line.brand, size: line.size },
     });
-    if (rpcError || !data) {
+    if (activeOrgIdRef.current === organisationId && (rpcError || !data)) {
       setError(rpcError?.message || 'The new product could not be created.');
-    } else {
+    } else if (activeOrgIdRef.current === organisationId) {
       updateLine(line.rowKey, { variantId: String(data) });
       const refreshed = await fetchPurchaseReferenceData(organisationId);
       setReferenceData(refreshed);
@@ -358,8 +358,10 @@ export function InvoiceScannerPanel({
     const { error: updateError } = await supabase.from('product_variants')
       .update({ selling_price: price })
       .eq('organization_id', organisationId).eq('id', line.variantId);
-    if (updateError) setError(updateError.message);
-    else setPriceMessage('Selling price updated by your explicit approval.');
+    if (activeOrgIdRef.current === organisationId) {
+      if (updateError) setError(updateError.message);
+      else setPriceMessage('Selling price updated by your explicit approval.');
+    }
     setBusy(false);
   };
 
@@ -374,7 +376,7 @@ export function InvoiceScannerPanel({
       .eq('supplier_invoice_number', invoiceNumber.trim())
       .neq('status', 'cancelled')
       .limit(1).maybeSingle();
-    setDuplicate(data ?? null);
+    if (activeOrgIdRef.current === organisationId) setDuplicate(data ?? null);
     setDuplicateChecking(false);
   };
 
@@ -413,8 +415,10 @@ export function InvoiceScannerPanel({
       p_currency: invoiceCurrency.trim().toUpperCase(),
       p_notes: notes,
     });
-    if (rpcError || !data) setError(rpcError?.message || 'The purchase draft could not be created.');
-    else setCreatedPurchaseId(String(data));
+    if (activeOrgIdRef.current === organisationId) {
+      if (rpcError || !data) setError(rpcError?.message || 'The purchase draft could not be created.');
+      else setCreatedPurchaseId(String(data));
+    }
     setBusy(false); setStage('idle');
   };
 
