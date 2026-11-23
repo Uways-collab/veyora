@@ -73,7 +73,7 @@ begin
   if p_role is null or p_role not in ('manager','staff') then
     raise exception 'Invited role must be manager or staff' using errcode = '22023';
   end if;
-  if v_email !~* '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$' or length(v_email) > 254 then
+  if v_email !~* '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$' or length(v_email) > 254 then
     raise exception 'A valid email address is required' using errcode = '22023';
   end if;
 
