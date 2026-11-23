@@ -433,7 +433,7 @@ $$;
 revoke all on function public.finance_on_sale_cancelled() from public,anon,authenticated;
 
 create or replace function public.finance_get_source_status(p_organization_id uuid)
-returns jsonb language plpgsql stable security definer set search_path=''
+returns jsonb language plpgsql stable security invoker set search_path=''
 as $$
 declare v_result jsonb;
 begin
