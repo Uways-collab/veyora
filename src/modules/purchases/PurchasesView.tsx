@@ -118,7 +118,7 @@ export function PurchasesView() {
               <span>{primaryCreateLabel}</span>
             </button>
           )}
-          <button
+          {!isInvoiceTab && <button
             type="button"
             onClick={handleHeaderRefresh}
             disabled={!activeOrgId || !isAuthenticated || isRefreshing}
@@ -129,7 +129,7 @@ export function PurchasesView() {
               aria-hidden="true"
             />
             <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-          </button>
+          </button>}
         </div>
       </section>
 
@@ -178,7 +178,7 @@ export function PurchasesView() {
         >
           Suppliers
         </button>
-        <button type="button" role="tab" aria-selected={isInvoiceTab} onClick={() => setActiveTab('invoice')} className="px-3.5 py-1.5 text-xs font-medium rounded text-slate-600 hover:text-slate-900">AI Invoice Scanner</button>
+        <button type="button" role="tab" aria-selected={isInvoiceTab} onClick={() => setActiveTab('invoice')} className={isInvoiceTab ? 'px-3.5 py-1.5 text-xs font-medium rounded bg-white text-slate-900 shadow-xs' : 'px-3.5 py-1.5 text-xs font-medium rounded text-slate-600 hover:text-slate-900'}>AI Invoice Scanner</button>
       </div>
 
       {/* Active Section */}
