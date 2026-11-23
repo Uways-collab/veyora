@@ -166,7 +166,7 @@ export function InvoiceScannerPanel({
     setFile(null); setScan(null); setPreviewUrl(''); setError(null); setStage('idle');
     setSupplierId(''); setInvoiceNumber(''); setInvoiceDate(''); setDueDate('');
     setInvoiceCurrency(currencyCode); setSubtotal(''); setDiscount('0'); setTax('0');
-    setDelivery('0'); setGrandTotal(''); setLines([]); setCreatedPurchaseId(null);
+    setDelivery(''); setGrandTotal(''); setLines([]); setCreatedPurchaseId(null);
     setDuplicate(null); setEditedFields([]);
   };
 
@@ -174,11 +174,11 @@ export function InvoiceScannerPanel({
     setInvoiceNumber(cleanText(data.invoice_number));
     setInvoiceDate(cleanText(data.invoice_date));
     setDueDate(cleanText(data.due_date));
-    setInvoiceCurrency(normalizeCurrencyCode(cleanText(data.currency), currencyCode));
+    setInvoiceCurrency(cleanText(data.currency) ? normalizeCurrencyCode(cleanText(data.currency), currencyCode) : '');
     setSubtotal(numericText(data.subtotal));
-    setDiscount(numericText(data.discount_amount, '0'));
-    setTax(numericText(data.tax_amount, '0'));
-    setDelivery(numericText(data.delivery_charges, '0'));
+    setDiscount(numericText(data.discount_amount));
+    setTax(numericText(data.tax_amount));
+    setDelivery(numericText(data.delivery_charges));
     setGrandTotal(numericText(data.grand_total));
     const supplierName = cleanText(data.supplier?.name);
     const supplierMatch = supplierName ? (suppliers.find((supplier) => normalize(supplier.name) === normalize(supplierName))
@@ -196,8 +196,8 @@ export function InvoiceScannerPanel({
         brand: cleanText(raw.brand),
         size: cleanText(raw.size),
         variant: cleanText(raw.variant),
-        quantity: numericText(raw.quantity, '1'),
-        unit: cleanText(raw.unit_of_measure) || 'piece',
+        quantity: numericText(raw.quantity),
+        unit: cleanText(raw.unit_of_measure),
         unitCost: numericText(raw.unit_cost),
         discount: typeof raw.discount === 'number' ? raw.discount : null,
         tax: typeof raw.tax === 'number' ? raw.tax : null,
@@ -207,7 +207,7 @@ export function InvoiceScannerPanel({
         newSku: cleanText(raw.sku),
         newBarcode: cleanText(raw.barcode),
         newVariant: cleanText(raw.variant) || 'Default',
-        newUnit: cleanText(raw.unit_of_measure) || 'piece',
+        newUnit: cleanText(raw.unit_of_measure),
         newSellingPrice: '',
         edited: false,
       };
@@ -349,7 +349,9 @@ export function InvoiceScannerPanel({
     const supabase = getSupabaseClient();
     if (!supabase || !organisationId || !scan) return;
     if (!supplierId) { setError('Select the supplier before creating a purchase draft.'); return; }
+    if (!invoiceCurrency.trim()) { setError('Invoice currency is missing. Confirm the currency before creating the purchase.'); return; }
     if (currencyMismatch) { setError('The invoice currency differs from the organisation currency. Resolve this before creating the purchase.'); return; }
+    if (!discount.trim() || !tax.trim()) { setError('Confirm the invoice discount and tax values. Enter 0 when the invoice shows none.'); return; }
     if (lines.length === 0 || lines.some((line) => !line.variantId || !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0 || !line.unitCost.trim() || !Number.isFinite(Number(line.unitCost)) || Number(line.unitCost) < 0)) {
       setError('Match or create every product and enter a valid quantity and purchase cost before continuing.');
       return;
