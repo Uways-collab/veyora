@@ -95,22 +95,12 @@ Deno.serve(async (req: Request) => {
 
   // Handle the narrow race where the account was registered after the SQL lookup
   // but before Auth invitation creation. Attach only if Auth confirms exact email.
-  const { data: usersData, error: listError } = await adminClient.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
-  const existing = !listError
-    ? usersData.users.find((candidate) => candidate.email?.toLowerCase() === email)
-    : undefined;
-  if (existing) {
-    const { data: membershipId, error: attachError } = await adminClient.rpc(
-      'attach_pending_organization_invitation',
-      { p_invitation_id: payload.invitation_id, p_user_id: existing.id },
-    );
-    if (!attachError) {
-      return response({ status: 'added', membership_id: membershipId, existing_account: true });
-    }
-    return response({ error: attachError.message }, 500);
+  const { data: membershipId, error: attachError } = await adminClient.rpc(
+    'attach_pending_organization_invitation',
+    { p_invitation_id: payload.invitation_id },
+  );
+  if (!attachError) {
+    return response({ status: 'added', membership_id: membershipId, existing_account: true });
   }
 
   return response({
