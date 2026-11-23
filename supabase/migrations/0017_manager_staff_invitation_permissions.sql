@@ -51,8 +51,8 @@ begin
   from public.organization_memberships m
   where m.organization_id = p_organization_id and m.user_id = v_actor
   for update;
-  if v_actor_role is distinct from 'owner'
-     and not (v_actor_role = 'manager' and p_role = 'staff') then
+  if coalesce(v_actor_role, '') <> 'owner'
+     and not (coalesce(v_actor_role, '') = 'manager' and p_role = 'staff') then
     raise exception 'Owners may invite Managers or Staff; Managers may invite Staff only' using errcode = '42501';
   end if;
 
