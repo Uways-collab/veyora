@@ -124,6 +124,7 @@ export function InvoiceScannerPanel({
   const [supplierId, setSupplierId] = useState('');
   const [supplierName, setSupplierName] = useState('');
   const [supplierEmail, setSupplierEmail] = useState('');
+  const [supplierContactPerson, setSupplierContactPerson] = useState('');
   const [supplierPhone, setSupplierPhone] = useState('');
   const [supplierAddress, setSupplierAddress] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -153,7 +154,7 @@ export function InvoiceScannerPanel({
     setPreviewUrl('');
     setError(null);
     setSupplierId('');
-    setSupplierName(''); setSupplierEmail(''); setSupplierPhone(''); setSupplierAddress('');
+    setSupplierName(''); setSupplierEmail(''); setSupplierContactPerson(''); setSupplierPhone(''); setSupplierAddress('');
     setInvoiceNumber('');
     setInvoiceDate('');
     setDueDate('');
@@ -225,6 +226,7 @@ export function InvoiceScannerPanel({
     const extractedSupplierName = cleanText(data.supplier?.name);
     setSupplierName(extractedSupplierName);
     setSupplierEmail(cleanText(data.supplier?.email));
+    setSupplierContactPerson(cleanText(data.supplier?.contact_person));
     setSupplierPhone(cleanText(data.supplier?.phone));
     setSupplierAddress(cleanText(data.supplier?.address));
     const supplierMatch = extractedSupplierName ? (suppliers.find((supplier) => normalize(supplier.name) === normalize(extractedSupplierName))
@@ -480,7 +482,7 @@ export function InvoiceScannerPanel({
       reviewed_invoice: {
         supplier_id: supplierId,
         supplier_name: selectedSupplierName,
-        supplier_invoice_details: { name: supplierName || null, email: supplierEmail || null, phone: supplierPhone || null, address: supplierAddress || null },
+        supplier_invoice_details: { name: supplierName || null, contact_person: supplierContactPerson || null, email: supplierEmail || null, phone: supplierPhone || null, address: supplierAddress || null },
         invoice_number: invoiceNumber.trim() || null,
         invoice_date: invoiceDate || null,
         due_date: dueDate || null,
@@ -604,6 +606,7 @@ export function InvoiceScannerPanel({
               <p className="text-[11px] font-semibold text-slate-700">Supplier details extracted from invoice · correct if needed</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <label className="space-y-1"><span className="text-slate-500">Invoice supplier name</span><input value={supplierName} onChange={(e) => { setSupplierName(e.target.value); markEdited('supplier name'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Supplier contact person</span><input value={supplierContactPerson} onChange={(e) => { setSupplierContactPerson(e.target.value); markEdited('supplier contact person'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
                 <label className="space-y-1"><span className="text-slate-500">Supplier email</span><input type="email" value={supplierEmail} onChange={(e) => { setSupplierEmail(e.target.value); markEdited('supplier email'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
                 <label className="space-y-1"><span className="text-slate-500">Supplier phone</span><input value={supplierPhone} onChange={(e) => { setSupplierPhone(e.target.value); markEdited('supplier phone'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
                 <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Supplier address</span><input value={supplierAddress} onChange={(e) => { setSupplierAddress(e.target.value); markEdited('supplier address'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
