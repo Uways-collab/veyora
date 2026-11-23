@@ -121,7 +121,7 @@ export function AuthScreen() {
     if (error) {
       setLocalError(error);
     } else {
-      setSuccessMessage('Password updated successfully.');
+      setSuccessMessage(status === 'invitation_setup' ? 'Invitation accepted and password set. Your organisation access is ready.' : 'Password updated successfully.');
     }
     setSubmitting(false);
   };
@@ -191,18 +191,18 @@ export function AuthScreen() {
                 Apply <span className="font-mono">supabase/migrations/0001_initial_foundation.sql</span> and <span className="font-mono">0002_auth_onboarding_and_rbac_hardening.sql</span> in your Supabase SQL Editor before signing in.
               </p>
             </section>
-          ) : status === 'password_recovery' ? (
+          ) : status === 'password_recovery' || status === 'invitation_setup' ? (
             <section className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8 space-y-6">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                   <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Password Recovery</span>
+                  <span>{status === 'invitation_setup' ? 'Accept Organisation Invitation' : 'Password Recovery'}</span>
                 </div>
                 <h1 className="font-display text-xl font-semibold text-slate-900">
                   Set a new password
                 </h1>
                 <p className="text-xs text-slate-600">
-                  Enter a new password for your Veyora Business account.
+                  {status === 'invitation_setup' ? 'Your email has been confirmed. Set a password to finish activating your Veyora account and open the invited organisation.' : 'Enter a new password for your Veyora Business account.'}
                 </p>
               </div>
 
@@ -258,7 +258,7 @@ export function AuthScreen() {
                   disabled={submitting}
                   className="w-full h-10 rounded-md bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition-colors"
                 >
-                  {submitting ? 'Updating password...' : 'Update Password'}
+                  {submitting ? 'Saving password...' : status === 'invitation_setup' ? 'Accept Invitation & Set Password' : 'Update Password'}
                 </button>
               </form>
             </section>
