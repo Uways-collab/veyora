@@ -582,6 +582,7 @@ export interface Database {
         Relationships: [];
       };
       purchase_invoice_number_claims: InventoryTableRecord;
+      invoice_scan_audit_logs: InventoryTableRecord;
       purchase_returns: InventoryTableRecord;
       purchase_return_items: InventoryTableRecord;
     };
@@ -994,6 +995,7 @@ export interface Database {
       invoice_scanner_create_product_variant: {
         Args: {
           p_organization_id: string;
+          p_scan_id: string;
           p_product_name: string;
           p_description: string | null;
           p_variant_name: string;
@@ -1006,10 +1008,22 @@ export interface Database {
         };
         Returns: string;
       };
+      invoice_scanner_apply_selling_price: {
+        Args: {
+          p_organization_id: string;
+          p_scan_id: string;
+          p_variant_id: string;
+          p_selling_price: number;
+          p_pricing_method: string;
+          p_target_percent: number | null;
+        };
+        Returns: Record<string, unknown>;
+      };
       invoice_scanner_create_purchase_draft: {
         Args: {
           p_organization_id: string;
           p_scan_id: string;
+          p_reviewed_data: Record<string, unknown>;
           p_supplier_id: string;
           p_items: Array<{ variant_id: string; quantity: number; unit_cost: number }>;
           p_discount_amount: number;
