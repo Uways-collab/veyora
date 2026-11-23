@@ -271,6 +271,9 @@ create or replace function public.invoice_scanner_create_purchase_draft(
   p_expected_delivery_date date,
   p_due_date date,
   p_invoice_date date,
+  p_grand_total numeric,
+  p_delivery_charges numeric,
+  p_allow_possible_duplicate boolean,
   p_currency text,
   p_notes text
 ) returns uuid
@@ -333,6 +336,19 @@ begin
     ) values (p_organization_id,p_supplier_id,v_invoice_key);
   end if;
 
+  if p_invoice_date is not null and p_grand_total is not null then
+    if exists (
+      select 1 from public.purchases p
+      where p.organization_id=p_organization_id
+        and p.supplier_id=p_supplier_id
+        and p.supplier_invoice_date=p_invoice_date
+        and p.status <> 'cancelled'
+        and abs(p.total_amount - (p_grand_total - coalesce(p_delivery_charges,0))) <= 0.01
+    ) and not coalesce(p_allow_possible_duplicate,false) then
+      raise exception 'A possible duplicate from this supplier has the same invoice date and total. Review it and explicitly confirm if this is a different invoice.';
+    end if;
+  end if;
+
   v_purchase_id := public.purchases_v1_create_draft(
     p_organization_id,
     p_supplier_id,
@@ -374,5 +390,5 @@ begin
 end;
 $function$;
 
-revoke all on function public.invoice_scanner_create_purchase_draft(uuid,uuid,uuid,jsonb,numeric,numeric,text,date,date,date,text,text) from public,anon;
-grant execute on function public.invoice_scanner_create_purchase_draft(uuid,uuid,uuid,jsonb,numeric,numeric,text,date,date,date,text,text) to authenticated;
+revoke all on function public.invoice_scanner_create_purchase_draft(uuid,uuid,uuid,jsonb,numeric,numeric,text,date,date,date,numeric,numeric,boolean,text,text) from public,anon;
+grant execute on function public.invoice_scanner_create_purchase_draft(uuid,uuid,uuid,jsonb,numeric,numeric,text,date,date,date,numeric,numeric,boolean,text,text) to authenticated;
