@@ -63,7 +63,14 @@ Deno.serve(async (req: Request) => {
   if (!token) return json({ error: 'Sign in before scanning an invoice' }, 401);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  let anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  if (!anonKey) {
+    const publishableKeys = Deno.env.get('SUPABASE_PUBLISHABLE_KEYS');
+    if (publishableKeys) {
+      try { anonKey = (JSON.parse(publishableKeys) as Record<string, string>).default ?? null; }
+      catch { anonKey = null; }
+    }
+  }
   const geminiKey = Deno.env.get('GEMINI_API_KEY');
   if (!supabaseUrl || !anonKey) return json({ error: 'Supabase function configuration is incomplete' }, 500);
   if (!geminiKey) return json({ error: 'AI scanning is not configured yet. Add GEMINI_API_KEY to the Edge Function secrets.' }, 503);
