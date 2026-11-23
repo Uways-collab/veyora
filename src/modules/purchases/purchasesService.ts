@@ -727,8 +727,10 @@ export async function fetchPurchasesList(
           supplierRecord?.name ??
           'Unknown Supplier',
         orderDate,
+        supplierInvoiceDate: readString(row.supplier_invoice_date),
         expectedDeliveryDate: readString(row.expected_delivery_date, row.expected_date),
         supplierInvoiceNumber: readString(row.supplier_invoice_number, row.invoice_number),
+        invoiceDocumentPath: readString(row.invoice_document_path),
         notes: readString(row.notes),
         status,
         currencyCode: (readString(row.currency, row.currency_code) ?? fallbackCurrency).toUpperCase(),
