@@ -29,6 +29,8 @@ If the secret is missing, the scanner returns a configuration error and does not
 
 Pricing reference: https://ai.google.dev/gemini-api/docs/pricing
 
+Data-use terms: https://ai.google.dev/gemini-api/terms. Paid Gemini API prompts, uploaded invoice files and responses are not used to improve Google's products, but Google may retain them for a limited period for abuse prevention and legal/regulatory requirements. Unpaid API use may be used to improve Google products and may involve human review; it is prohibited for confidential invoices in this design.
+
 ## Safety rules
 
 - The full uploaded invoice document is sent to the Google Gemini paid API for extraction; supplier contact details printed on the invoice are therefore visible to that provider. No customer records, product catalogue or unrelated organisation data are sent.
