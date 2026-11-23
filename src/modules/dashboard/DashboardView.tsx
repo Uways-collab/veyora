@@ -88,6 +88,18 @@ const CHART_WINDOW_LABELS: Record<ChartWindow, string> = {
   '12M': 'Last 12 months',
 };
 
+function formatMetricCurrency(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('en-NG', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${currency} ${Math.round(amount).toLocaleString('en-NG')}`;
+  }
+}
+
 function formatTimestamp(iso: string): string {
   try {
     return new Intl.DateTimeFormat('en-GB', {
@@ -140,14 +152,18 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
     }
   };
 
+  const canViewWorkspaceActivity = activeRole === 'owner' || activeRole === 'admin';
+
   useEffect(() => {
-    if (status === 'authenticated' && activeOrganisation) {
+    if (status === 'authenticated' && activeOrganisation && canViewWorkspaceActivity) {
       void loadLogs(activeOrganisation.id);
     } else {
       setAuditLogs([]);
       setAuditError(null);
+      setAuditErrorKind(null);
+      setAuditLoading(false);
     }
-  }, [status, activeOrganisation]);
+  }, [status, activeOrganisation, canViewWorkspaceActivity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -315,7 +331,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
               <div className="space-y-1">
                 <div className="font-mono text-2xl font-semibold text-slate-900 tabular-nums">
                   {metricsLoading ? '…' : metricsError ? '—' : card.id === 'total_sales'
-                    ? new Intl.NumberFormat('en-NG', { style: 'currency', currency: metrics.currency, maximumFractionDigits: 0 }).format(metrics.totalSales)
+                    ? formatMetricCurrency(metrics.totalSales, metrics.currency)
                     : card.id === 'orders' ? metrics.orders.toLocaleString()
                     : card.id === 'inventory_items' ? metrics.inventoryItems.toLocaleString()
                     : metrics.customers.toLocaleString()}
@@ -468,24 +484,26 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
               <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
             </button>
 
-            <button
-              type="button"
-              onClick={() => onSelectModule('settings', 'auth_orgs')}
-              className="w-full px-5 py-3.5 text-left flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:bg-slate-50"
-            >
-              <span className="flex items-center gap-3 min-w-0">
-                <Settings className="h-4 w-4 text-slate-500 shrink-0" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium text-slate-900">
-                    Create Another Business Workspace
-                  </span>
-                  <span className="block text-[11px] text-slate-500 truncate">
-                    Add a separate store, branch, or wholesale entity
+            {activeRole === 'owner' && (
+              <button
+                type="button"
+                onClick={() => onSelectModule('settings', 'auth_orgs')}
+                className="w-full px-5 py-3.5 text-left flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:bg-slate-50"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <Settings className="h-4 w-4 text-slate-500 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium text-slate-900">
+                      Create Another Business Workspace
+                    </span>
+                    <span className="block text-[11px] text-slate-500 truncate">
+                      Add a separate store, branch, or wholesale entity
+                    </span>
                   </span>
                 </span>
-              </span>
-              <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
-            </button>
+                <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+              </button>
+            )}
 
             <button
               type="button"
@@ -571,7 +589,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
                 Verified organisation events from <span className="font-mono">public.organization_audit_log</span>.
               </p>
             </div>
-            {activeOrganisation && (
+            {activeOrganisation && canViewWorkspaceActivity && (
               <button
                 type="button"
                 onClick={() => void loadLogs(activeOrganisation.id)}
@@ -584,7 +602,11 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
             )}
           </div>
 
-          {auditLoading ? (
+          {!canViewWorkspaceActivity ? (
+            <div className="p-6 text-xs text-slate-500 text-center">
+              Workspace activity is restricted to Owners and Admins.
+            </div>
+          ) : auditLoading ? (
             <div className="p-5 space-y-2.5" aria-busy="true">
               <div className="h-9 bg-slate-100 rounded animate-pulse" />
               <div className="h-9 bg-slate-100 rounded animate-pulse" />
