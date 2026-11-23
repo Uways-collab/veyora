@@ -60,6 +60,8 @@ export interface PurchaseCatalogVariant {
   sku: string;
   unitOfMeasure: string;
   defaultCostPrice: number;
+  defaultSellingPrice: number;
+  barcode: string | null;
   productTypeValue: 'physical' | 'service';
   categoryName: string;
 }
