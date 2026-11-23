@@ -64,7 +64,9 @@ begin
   '  select m.ledger_account_id into v_expense from public.finance_expense_category_mappings m join public.finance_ledger_accounts l on l.organization_id=m.organization_id and l.id=m.ledger_account_id and l.is_active and l.account_type=''expense'' where m.organization_id=e.organization_id and m.expense_category_id=v_exp.category_id;'||chr(10)||
   '  if v_expense is null then update public.finance_source_events set status=''pending'',last_error=''Map this expense category to an active expense ledger account'',updated_at=now() where id=e.id; return ''pending''; end if;'||chr(10)||
   '  if e.event_type=''expense_edit'' then';
- if position(old_text in d)=0 then raise exception 'Expense mapping insertion point not found'; end if;
- d:=replace(d,old_text,new_text);
+ if position('finance_expense_category_mappings' in d)=0 then
+  if position(old_text in d)=0 then raise exception 'Expense mapping insertion point not found'; end if;
+  d:=replace(d,old_text,new_text);
+ end if;
  execute d;
 end $$;
