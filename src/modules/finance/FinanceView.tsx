@@ -11,8 +11,9 @@ import {
   type FinanceAccount, type FinanceBalances, type FinanceExpenseCategory, type FinancePaymentMethod, type FinanceSourceStatus, type FinanceJournalEntry,
   type FinanceJournalLine, type FinanceLedgerAccount,
 } from './financeService';
+import { FinanceSetupView } from './FinanceSetupView';
 
-type Tab = 'overview'|'accounts'|'ledger'|'journals'|'reports';
+type Tab = 'overview'|'setup'|'accounts'|'ledger'|'journals'|'reports';
 type Modal = 'account'|'opening'|'transfer'|'movement'|'journal'|null;
 const today=()=>new Date().toISOString().slice(0,10);
 const uuid=()=>crypto.randomUUID();
@@ -99,7 +100,7 @@ export function FinanceView() {
  const submitJournal=(e:FormEvent)=>{e.preventDefault();void run(()=>postManualJournal({organizationId:orgId,date:entryDate,description,key:uuid(),lines:[{ledger_account_id:journalDebit,debit:Number(journalAmount),credit:0},{ledger_account_id:journalCredit,debit:0,credit:Number(journalAmount)}]}),'Journal entry posted.');};
  const doReverse=(entry:FinanceJournalEntry)=>{const reason=reverseReason.trim();if(!reason)return;void run(()=>reverseJournal(orgId,entry.id,reason,uuid()),'Reversal posted.');setReverseReason('');};
  const fmt=(v:number)=>money(v,currency);
- const tabItems:[Tab,string][]=[['overview','Overview'],['accounts','Accounts'],['ledger','Chart of accounts'],['journals','Journal entries'],['reports','Reports']];
+ const tabItems:[Tab,string][]=[['overview','Overview'],['setup','Guided setup'],['accounts','Accounts'],['ledger','Chart of accounts'],['journals','Journal entries'],['reports','Reports']];
  if(status!=='authenticated'||!orgId)return <div className="rounded-lg border border-slate-200 bg-white p-8 text-sm text-slate-600">Sign in and select an organisation to access Finance.</div>;
 
  return <div className="space-y-6">
@@ -113,6 +114,7 @@ export function FinanceView() {
   {!!sourceStatus?.pending&&<div role="status" className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><strong>{sourceStatus.pending} source events awaiting Finance posting.</strong> Check payment-method mappings and the reconciliation list.</div>}
   <div className="flex gap-1 overflow-x-auto border-b border-slate-200" role="tablist">{tabItems.map(([id,name])=><button key={id} role="tab" aria-selected={tab===id} onClick={()=>setTab(id)} className={'whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-medium '+(tab===id?'border-blue-700 text-blue-700':'border-transparent text-slate-500 hover:text-slate-900')}>{name}</button>)}</div>
   {loading?<div className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-20 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin"/>Loading live ledger data…</div>:<>
+   {tab==='setup'&&<FinanceSetupView organizationId={orgId} canManage={canManage} currency={currency} ledger={ledger} accounts={accounts} paymentMethods={paymentMethods} categories={expenseCategories} onChanged={refresh}/>}
    {tab==='overview'&&<div className="space-y-6">
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
      <Metric title="Cash & bank" value={fmt(balances?.accounts.reduce((s,a)=>s+Number(a.balance),0)??0)} sub="Posted balances across financial accounts" icon={Wallet}/>
