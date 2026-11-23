@@ -17,7 +17,6 @@ interface ReportDomainDefinition {
   label: string;
   status: 'active' | 'upcoming';
   description: string;
-  targetPhase?: string;
 }
 
 const REPORT_DOMAINS: ReportDomainDefinition[] = [
@@ -33,24 +32,21 @@ const REPORT_DOMAINS: ReportDomainDefinition[] = [
     label: 'Sales Reports',
     status: 'upcoming',
     description:
-      'Order volume, invoiced revenue, customer fulfilment, and gross margin reporting will activate with the Sales module.',
-    targetPhase: 'Phase 4',
+      'Sales reporting is planned. The Sales workspace remains available for day-to-day sales operations; this status applies only to reports.',
   },
   {
     id: 'purchases',
     label: 'Purchases Reports',
     status: 'upcoming',
     description:
-      'Supplier spend, purchase order receipts, and landed cost reporting will activate with the Purchases module.',
-    targetPhase: 'Phase 3',
+      'Purchases reporting is planned. The Purchases workspace remains available for purchasing operations; this status applies only to reports.',
   },
   {
     id: 'finance',
     label: 'Finance Reports',
     status: 'upcoming',
     description:
-      'Trial balance, aged receivables/payables, and tax summary reporting will activate with the Finance module.',
-    targetPhase: 'Phase 5',
+      'Finance reporting is planned. This does not indicate that the Finance workspace itself is unavailable.',
   },
 ];
 
@@ -106,7 +102,7 @@ export function ReportsView() {
 
         <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-3 py-1.5 shrink-0 self-start sm:self-auto">
           <BarChart3 className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
-          <span>Inventory Reports Active · Sales, Purchases &amp; Finance Upcoming</span>
+          <span>Inventory reporting active · Sales, Purchases &amp; Finance reporting planned</span>
         </div>
       </section>
 
@@ -146,7 +142,7 @@ export function ReportsView() {
                       : 'bg-slate-50 text-slate-600 border-slate-200'
                   }`}
                 >
-                  {isActive ? 'Active' : 'Upcoming'}
+                  {isActive ? 'Active' : 'Planned'}
                 </span>
               </div>
               <p className="mt-2 text-[11px] text-slate-500 leading-relaxed line-clamp-2">
@@ -169,8 +165,7 @@ export function ReportsView() {
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-medium">
               <Clock className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
               <span>
-                Upcoming Report Domain
-                {activeDomainDef.targetPhase ? ` · ${activeDomainDef.targetPhase}` : ''}
+                Planned Report Domain
               </span>
             </div>
 
