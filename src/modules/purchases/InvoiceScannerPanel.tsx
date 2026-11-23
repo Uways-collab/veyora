@@ -481,6 +481,7 @@ export function InvoiceScannerPanel({
         delivery_charges: delivery.trim() ? Number(delivery) : null,
         grand_total: grandTotal.trim() ? Number(grandTotal) : null,
         edited_fields: editedFields,
+        possible_duplicate_review: duplicate ? { purchase_number: duplicate.purchase_number, status: duplicate.status, kind: duplicate.kind, explicitly_confirmed_different: duplicate.kind === 'possible' && duplicateOverride } : null,
       },
       reviewed_line_items: lines.map((line) => ({
         product_name: line.productName,
