@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileImage, FileText, Loader2, Plus, RefreshCw, ScanLine, Trash2, Upload, X } from 'lucide-react';
 import { getSupabaseClient } from '../../core/supabase/client';
 import { fetchPurchaseReferenceData, formatPurchaseMoney } from './purchasesService';
@@ -110,6 +110,7 @@ export function InvoiceScannerPanel({
   canManage: boolean;
 }) {
   const [referenceData, setReferenceData] = useState<PurchaseReferenceData | null>(null);
+  const activeOrgIdRef = useRef(organisationId);
   const [file, setFile] = useState<File | null>(null);
   const [scan, setScan] = useState<ScanRow | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -135,6 +136,29 @@ export function InvoiceScannerPanel({
   const [priceMessage, setPriceMessage] = useState<string | null>(null);
   const [editedFields, setEditedFields] = useState<string[]>([]);
   const markEdited = (field: string) => setEditedFields((current) => current.includes(field) ? current : [...current, field]);
+
+  useEffect(() => {
+    activeOrgIdRef.current = organisationId;
+    setScan(null);
+    setFile(null);
+    setPreviewUrl('');
+    setError(null);
+    setSupplierId('');
+    setInvoiceNumber('');
+    setInvoiceDate('');
+    setDueDate('');
+    setInvoiceCurrency(currencyCode);
+    setSubtotal('');
+    setDiscount('0');
+    setTax('0');
+    setDelivery('');
+    setGrandTotal('');
+    setLines([]);
+    setCreatedPurchaseId(null);
+    setDuplicate(null);
+    setEditedFields([]);
+    setPriceMessage(null);
+  }, [organisationId, currencyCode]);
 
   useEffect(() => {
     let active = true;
@@ -234,6 +258,7 @@ export function InvoiceScannerPanel({
     const { data: saved, error: readError } = await supabase.from('invoice_scans')
       .select('id,file_path,status,extracted_data,error_message').eq('id', scanId).single();
     if (readError || !saved) throw new Error(readError?.message || 'Could not load the saved invoice scan.');
+    if (activeOrgIdRef.current !== organisationId) return;
     setScan(saved as ScanRow);
     applyExtraction(extracted);
     const { data: signed, error: signedError } = await supabase.storage.from('invoice-documents')
@@ -268,11 +293,13 @@ export function InvoiceScannerPanel({
         await supabase.storage.from('invoice-documents').remove([filePath]);
         throw new Error(insertError.message);
       }
+      if (activeOrgIdRef.current !== organisationId) return;
       setScan({ id: scanId, file_path: filePath, status: 'uploaded', extracted_data: {}, error_message: null });
       await processExistingScan(scanId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invoice scanning failed. Try again.');
+      if (activeOrgIdRef.current === organisationId) setError(err instanceof Error ? err.message : 'Invoice scanning failed. Try again.');
       setStage('idle');
+      if (activeOrgIdRef.current !== organisationId) return;
       const { data: row } = await supabase.from('invoice_scans')
         .select('id,file_path,status,extracted_data,error_message').eq('id', scanId).maybeSingle();
       if (row) setScan(row as ScanRow);
