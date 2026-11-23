@@ -78,6 +78,57 @@ using (public.has_inventory_role(organization_id,array['owner','admin','manager'
 revoke all on table public.invoice_scan_audit_logs from anon,authenticated;
 grant select on table public.invoice_scan_audit_logs to authenticated;
 
+create or replace function public.guard_invoice_scan_updates()
+returns trigger
+language plpgsql
+set search_path = ''
+as $function$
+begin
+  if new.organization_id is distinct from old.organization_id
+     or new.uploaded_by is distinct from old.uploaded_by
+     or new.file_path is distinct from old.file_path
+     or new.file_name is distinct from old.file_name
+     or new.mime_type is distinct from old.mime_type
+     or new.file_size is distinct from old.file_size
+     or new.created_at is distinct from old.created_at then
+    raise exception 'Invoice file identity and organisation ownership are immutable';
+  end if;
+
+  if old.status in ('linked','cancelled') and new.status is distinct from old.status then
+    raise exception 'A linked or cancelled invoice scan cannot change status';
+  end if;
+  if new.status is distinct from old.status then
+    if old.status='uploaded' and new.status not in ('processing','cancelled') then
+      raise exception 'Invalid invoice scan status transition';
+    elsif old.status='processing' and new.status not in ('ready','failed','cancelled') then
+      raise exception 'Invalid invoice scan status transition';
+    elsif old.status='failed' and new.status not in ('processing','cancelled') then
+      raise exception 'Invalid invoice scan status transition';
+    elsif old.status='ready' and new.status not in ('linked','cancelled') then
+      raise exception 'Invalid invoice scan status transition';
+    end if;
+  end if;
+  if new.status='ready' and jsonb_typeof(new.extracted_data->'line_items') <> 'array' then
+    raise exception 'A ready invoice scan must contain extracted line items';
+  end if;
+  if new.status='linked' and new.purchase_id is null then
+    raise exception 'A linked invoice scan must reference its purchase';
+  end if;
+  if new.status='cancelled' and new.purchase_id is not null then
+    raise exception 'A linked purchase invoice cannot be cancelled';
+  end if;
+  if old.status in ('linked','cancelled') and new.extracted_data is distinct from old.extracted_data then
+    raise exception 'A linked or cancelled invoice scan cannot be edited';
+  end if;
+  return new;
+end;
+$function$;
+
+drop trigger if exists invoice_scans_guard_updates on public.invoice_scans;
+create trigger invoice_scans_guard_updates
+before update on public.invoice_scans
+for each row execute function public.guard_invoice_scan_updates();
+
 create or replace function public.audit_invoice_scan_change()
 returns trigger
 language plpgsql
