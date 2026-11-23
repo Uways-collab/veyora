@@ -129,3 +129,23 @@ export async function reverseJournal(orgId:string,entryId:string,reason:string,k
     p_organization_id:orgId,p_entry_id:entryId,p_reason:reason,p_idempotency_key:key,
   }));
 }
+
+export type FinanceReportLine = {
+ id:string; journal_entry_id:string; ledger_account_id:string; financial_account_id:string|null;
+ debit:number|string; credit:number|string; description:string|null;
+ finance_journal_entries:{id:string;journal_number:string;entry_date:string;description:string;status:string;source_type:string};
+ finance_ledger_accounts:{id:string;account_code:string;account_name:string;account_type:string;normal_balance:string};
+};
+export async function loadFinanceReportLines(orgId:string,to:string) {
+ const db=client() as any; const all:FinanceReportLine[]=[]; let start=0; const page=1000;
+ while(true) {
+  const result=await db.from('finance_journal_lines')
+   .select('id,journal_entry_id,ledger_account_id,financial_account_id,debit,credit,description,finance_journal_entries!inner(id,journal_number,entry_date,description,status,source_type),finance_ledger_accounts!inner(id,account_code,account_name,account_type,normal_balance)')
+   .eq('organization_id',orgId).eq('finance_journal_entries.status','posted')
+   .lte('finance_journal_entries.entry_date',to).order('entry_date',{foreignTable:'finance_journal_entries',ascending:true})
+   .order('line_number',{ascending:true}).range(start,start+page-1);
+  const rows=unwrap<FinanceReportLine[]>(result); all.push(...rows);
+  if(rows.length<page) break; start+=page;
+ }
+ return all;
+}
