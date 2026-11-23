@@ -311,7 +311,7 @@ export function InvoiceScannerPanel({
         await supabase.storage.from('invoice-documents').remove([filePath]);
         return;
       }
-      setScan({ id: scanId, file_path: filePath, status: 'uploaded', extracted_data: {}, error_message: null });
+      setScan({ id: scanId, file_path: filePath, status: 'uploaded', extracted_data: {}, error_message: null, updated_at: new Date().toISOString() });
       await processExistingScan(scanId);
     } catch (err) {
       if (activeOrgIdRef.current !== organisationId) {
