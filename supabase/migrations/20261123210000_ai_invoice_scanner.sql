@@ -115,6 +115,83 @@ using (
   and public.has_inventory_role(((storage.foldername(name))[1])::uuid,array['owner','admin','manager']::text[])
 );
 
+
+-- Enforce invoice-number claims for every purchase-creation path, not only the scanner.
+create or replace function public.enforce_purchase_invoice_number_claim()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_key text;
+  v_claimed_purchase_id uuid;
+  v_rows integer;
+begin
+  if tg_op = 'UPDATE' and new.status = 'cancelled' then
+    delete from public.purchase_invoice_number_claims
+    where organization_id=old.organization_id
+      and supplier_id=old.supplier_id
+      and invoice_number_key=lower(btrim(coalesce(old.supplier_invoice_number,'')))
+      and purchase_id=old.id;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' and (
+    old.supplier_id is distinct from new.supplier_id
+    or old.supplier_invoice_number is distinct from new.supplier_invoice_number
+  ) then
+    delete from public.purchase_invoice_number_claims
+    where organization_id=old.organization_id
+      and supplier_id=old.supplier_id
+      and invoice_number_key=lower(btrim(coalesce(old.supplier_invoice_number,'')))
+      and purchase_id=old.id;
+  end if;
+
+  if new.status = 'cancelled' or nullif(btrim(new.supplier_invoice_number),'') is null then
+    return new;
+  end if;
+
+  v_key := lower(btrim(new.supplier_invoice_number));
+  perform pg_advisory_xact_lock(hashtextextended(
+    new.organization_id::text || ':' || new.supplier_id::text || ':' || v_key,0
+  ));
+
+  if exists (
+    select 1 from public.purchases p
+    where p.organization_id=new.organization_id
+      and p.supplier_id=new.supplier_id
+      and p.id <> new.id
+      and p.status <> 'cancelled'
+      and lower(btrim(coalesce(p.supplier_invoice_number,'')))=v_key
+  ) then
+    raise exception 'A purchase with this supplier invoice number already exists'
+      using errcode = '23505';
+  end if;
+
+  insert into public.purchase_invoice_number_claims(
+    organization_id,supplier_id,invoice_number_key,purchase_id
+  ) values (new.organization_id,new.supplier_id,v_key,new.id)
+  on conflict (organization_id,supplier_id,invoice_number_key)
+  do update set purchase_id=excluded.purchase_id
+  where public.purchase_invoice_number_claims.purchase_id is null
+     or public.purchase_invoice_number_claims.purchase_id=excluded.purchase_id;
+
+  get diagnostics v_rows = row_count;
+  if v_rows = 0 then
+    raise exception 'A purchase with this supplier invoice number is already claimed'
+      using errcode = '23505';
+  end if;
+  return new;
+end;
+$function$;
+
+drop trigger if exists purchases_invoice_number_claim_guard on public.purchases;
+create trigger purchases_invoice_number_claim_guard
+after insert or update of supplier_id,supplier_invoice_number,status
+on public.purchases
+for each row execute function public.enforce_purchase_invoice_number_claim();
+
 create or replace function public.invoice_scanner_create_product_variant(
   p_organization_id uuid,
   p_product_name text,
