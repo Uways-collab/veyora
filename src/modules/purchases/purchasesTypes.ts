@@ -62,6 +62,7 @@ export interface PurchaseCatalogVariant {
   defaultCostPrice: number;
   defaultSellingPrice: number;
   barcode: string | null;
+  attributes: Record<string, string>;
   productTypeValue: 'physical' | 'service';
   categoryName: string;
 }
