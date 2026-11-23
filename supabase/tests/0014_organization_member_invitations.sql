@@ -26,7 +26,10 @@ begin
   if position('auth.uid()' in v_def)=0
      or position('v_actor_role is distinct from ''owner''' in lower(v_def))=0
      or position('p_role not in (''manager'',''staff'')' in lower(v_def))=0
-     or position('organization_memberships' in v_def)=0 then
+     or position('organization_memberships' in v_def)=0
+     or position('v_email = v_actor_email' in v_def)=0
+     or position('insert into public.finance_audit_log' in lower(v_def))=0
+     or position('p_organization_id' in v_def)=0 then
     raise exception 'FAIL: owner, role and membership checks must remain in the server RPC';
   end if;
 
