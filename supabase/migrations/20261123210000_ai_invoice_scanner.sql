@@ -49,6 +49,68 @@ for update to authenticated
 using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]))
 with check (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
 
+create table if not exists public.invoice_scan_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null,
+  invoice_scan_id uuid not null,
+  actor_id uuid references auth.users(id),
+  action text not null,
+  old_values jsonb,
+  new_values jsonb,
+  created_at timestamptz not null default now(),
+  constraint invoice_scan_audit_org_scan_fk
+    foreign key (organization_id,invoice_scan_id)
+    references public.invoice_scans(organization_id,id)
+);
+
+alter table public.invoice_scan_audit_logs enable row level security;
+drop policy if exists invoice_scan_audit_select_managers on public.invoice_scan_audit_logs;
+create policy invoice_scan_audit_select_managers on public.invoice_scan_audit_logs
+for select to authenticated
+using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
+
+create or replace function public.audit_invoice_scan_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_action text;
+  v_old jsonb;
+  v_new jsonb;
+begin
+  if tg_op='INSERT' then
+    v_action := 'invoice_uploaded';
+    v_old := null;
+    v_new := jsonb_build_object('status',new.status,'file_name',new.file_name,'mime_type',new.mime_type,'file_size',new.file_size);
+  else
+    if old.status is distinct from new.status then
+      v_action := 'status_changed';
+    elsif old.extracted_data is distinct from new.extracted_data then
+      v_action := 'review_or_extraction_updated';
+    elsif old.error_message is distinct from new.error_message then
+      v_action := 'processing_error_updated';
+    else
+      return new;
+    end if;
+    v_old := jsonb_build_object('status',old.status,'extracted_data',old.extracted_data,'error_message',old.error_message);
+    v_new := jsonb_build_object('status',new.status,'extracted_data',new.extracted_data,'error_message',new.error_message);
+  end if;
+  insert into public.invoice_scan_audit_logs(
+    organization_id,invoice_scan_id,actor_id,action,old_values,new_values
+  ) values (
+    new.organization_id,new.id,auth.uid(),v_action,v_old,v_new
+  );
+  return new;
+end;
+$function$;
+
+drop trigger if exists invoice_scans_audit_changes on public.invoice_scans;
+create trigger invoice_scans_audit_changes
+after insert or update on public.invoice_scans
+for each row execute function public.audit_invoice_scan_change();
+
 -- A unique claim closes concurrent duplicate-scanner requests without imposing
 -- a risky unique index on historical purchase rows that have not been audited.
 create table if not exists public.purchase_invoice_number_claims (
@@ -195,6 +257,7 @@ for each row execute function public.enforce_purchase_invoice_number_claim();
 
 create or replace function public.invoice_scanner_create_product_variant(
   p_organization_id uuid,
+  p_scan_id uuid,
   p_product_name text,
   p_description text,
   p_variant_name text,
@@ -219,6 +282,10 @@ begin
     raise exception 'You are not authorised to create products in this organisation'
       using errcode = '42501';
   end if;
+  if not exists (
+    select 1 from public.invoice_scans
+    where id=p_scan_id and organization_id=p_organization_id and status='ready' and purchase_id is null
+  ) then raise exception 'Invoice scan is not ready for product creation'; end if;
   if nullif(btrim(p_product_name),'') is null
      or nullif(btrim(p_variant_name),'') is null
      or nullif(btrim(p_unit_of_measure),'') is null
@@ -253,16 +320,86 @@ begin
     btrim(p_unit_of_measure),p_cost_price,p_selling_price,
     coalesce(p_attributes,'{}'::jsonb),true
   ) returning id into v_variant_id;
+  update public.invoice_scans
+  set extracted_data=coalesce(extracted_data,'{}'::jsonb) || jsonb_build_object(
+    'product_approvals',coalesce(extracted_data->'product_approvals','[]'::jsonb) || jsonb_build_array(
+      jsonb_build_object('variant_id',v_variant_id,'product_name',btrim(p_product_name),'variant_name',btrim(p_variant_name),'sku',btrim(p_sku),'approved_by',auth.uid(),'approved_at',now())
+    )
+  ),updated_at=now()
+  where id=p_scan_id and organization_id=p_organization_id;
   return v_variant_id;
 end;
 $function$;
 
-revoke all on function public.invoice_scanner_create_product_variant(uuid,text,text,text,text,text,text,numeric,numeric,jsonb) from public,anon;
-grant execute on function public.invoice_scanner_create_product_variant(uuid,text,text,text,text,text,text,numeric,numeric,jsonb) to authenticated;
+revoke all on function public.invoice_scanner_create_product_variant(uuid,uuid,text,text,text,text,text,text,numeric,numeric,jsonb) from public,anon;
+grant execute on function public.invoice_scanner_create_product_variant(uuid,uuid,text,text,text,text,text,text,numeric,numeric,jsonb) to authenticated;
+
+create or replace function public.invoice_scanner_apply_selling_price(
+  p_organization_id uuid,
+  p_scan_id uuid,
+  p_variant_id uuid,
+  p_selling_price numeric,
+  p_pricing_method text,
+  p_target_percent numeric
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_scan public.invoice_scans%rowtype;
+  v_old_price numeric;
+begin
+  if auth.uid() is null or not public.has_inventory_role(
+    p_organization_id,array['owner','admin','manager']::text[]
+  ) then
+    raise exception 'You are not authorised to change selling prices in this organisation'
+      using errcode = '42501';
+  end if;
+  if p_selling_price is null or p_selling_price < 0
+     or p_pricing_method not in ('markup','margin','custom')
+     or (p_target_percent is not null and p_target_percent < 0) then
+    raise exception 'A valid selling price and pricing method are required';
+  end if;
+  select * into v_scan from public.invoice_scans
+  where id=p_scan_id and organization_id=p_organization_id
+  for update;
+  if not found or v_scan.status <> 'ready' or v_scan.purchase_id is not null then
+    raise exception 'Invoice scan is no longer available for price approval';
+  end if;
+  select selling_price into v_old_price
+  from public.product_variants
+  where id=p_variant_id and organization_id=p_organization_id
+  for update;
+  if not found then raise exception 'Product variant was not found in this organisation'; end if;
+
+  update public.product_variants
+  set selling_price=p_selling_price
+  where id=p_variant_id and organization_id=p_organization_id;
+
+  update public.invoice_scans
+  set extracted_data=coalesce(extracted_data,'{}'::jsonb) || jsonb_build_object(
+    'pricing_approvals',coalesce(extracted_data->'pricing_approvals','[]'::jsonb) || jsonb_build_array(
+      jsonb_build_object(
+        'variant_id',p_variant_id,'previous_selling_price',v_old_price,
+        'approved_selling_price',p_selling_price,'pricing_method',p_pricing_method,
+        'target_percent',p_target_percent,'approved_by',auth.uid(),'approved_at',now()
+      )
+    )
+  ),updated_at=now()
+  where id=p_scan_id and organization_id=p_organization_id;
+
+  return jsonb_build_object('previous_selling_price',v_old_price,'selling_price',p_selling_price);
+end;
+$function$;
+
+revoke all on function public.invoice_scanner_apply_selling_price(uuid,uuid,uuid,numeric,text,numeric) from public,anon;
+grant execute on function public.invoice_scanner_apply_selling_price(uuid,uuid,uuid,numeric,text,numeric) to authenticated;
 
 create or replace function public.invoice_scanner_create_purchase_draft(
   p_organization_id uuid,
   p_scan_id uuid,
+  p_reviewed_data jsonb,
   p_supplier_id uuid,
   p_items jsonb,
   p_discount_amount numeric,
@@ -374,7 +511,7 @@ begin
     and invoice_number_key=v_invoice_key;
 
   update public.invoice_scans
-  set status='linked',purchase_id=v_purchase_id,updated_at=now()
+  set status='linked',purchase_id=v_purchase_id,extracted_data=coalesce(p_reviewed_data,extracted_data),updated_at=now()
   where id=p_scan_id and organization_id=p_organization_id;
 
   insert into public.purchase_audit_logs(
@@ -390,5 +527,5 @@ begin
 end;
 $function$;
 
-revoke all on function public.invoice_scanner_create_purchase_draft(uuid,uuid,uuid,jsonb,numeric,numeric,text,date,date,date,numeric,numeric,boolean,text,text) from public,anon;
-grant execute on function public.invoice_scanner_create_purchase_draft(uuid,uuid,uuid,jsonb,numeric,numeric,text,date,date,date,numeric,numeric,boolean,text,text) to authenticated;
+revoke all on function public.invoice_scanner_create_purchase_draft(uuid,uuid,jsonb,uuid,jsonb,numeric,numeric,text,date,date,date,numeric,numeric,boolean,text,text) from public,anon;
+grant execute on function public.invoice_scanner_create_purchase_draft(uuid,uuid,jsonb,uuid,jsonb,numeric,numeric,text,date,date,date,numeric,numeric,boolean,text,text) to authenticated;
