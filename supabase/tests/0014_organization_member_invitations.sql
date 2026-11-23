@@ -41,9 +41,9 @@ begin
     raise exception 'FAIL: invitation RPC execute grants are incorrect';
   end if;
 
-  if has_function_privilege('authenticated','public.attach_pending_organization_invitation(uuid,uuid)','execute')
-     or has_function_privilege('anon','public.attach_pending_organization_invitation(uuid,uuid)','execute')
-     or not has_function_privilege('service_role','public.attach_pending_organization_invitation(uuid,uuid)','execute') then
+  if has_function_privilege('authenticated','public.attach_pending_organization_invitation(uuid)','execute')
+     or has_function_privilege('anon','public.attach_pending_organization_invitation(uuid)','execute')
+     or not has_function_privilege('service_role','public.attach_pending_organization_invitation(uuid)','execute') then
     raise exception 'FAIL: privileged attachment helper must be service-role-only';
   end if;
 
