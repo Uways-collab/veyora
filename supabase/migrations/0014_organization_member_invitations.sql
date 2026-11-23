@@ -209,7 +209,7 @@ end;
 $$;
 
 revoke all on function public.attach_pending_organization_invitation(uuid) from public,anon,authenticated;
-grant execute on function public.attach_pending_organization_invitation(uuid,uuid) to service_role;
+grant execute on function public.attach_pending_organization_invitation(uuid) to service_role;
 
 -- Existing Auth users invited by email are attached by the same trusted Auth trigger
 -- that creates their profile. It consumes only a live, owner-created pending invite
