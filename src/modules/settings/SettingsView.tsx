@@ -83,7 +83,11 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
     switchOrganisation,
   } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<SettingsTab>(requestedTab ?? 'auth_orgs');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    requestedTab && ['auth_orgs', 'receipt_settings', 'members_roles'].includes(requestedTab)
+      ? requestedTab
+      : 'auth_orgs'
+  );
 
   useEffect(() => {
     if (requestedTab) {
