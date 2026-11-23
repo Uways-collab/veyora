@@ -11,6 +11,7 @@ import { searchSuppliers } from './suppliersService';
 import type { SupplierRecord } from './suppliersTypes';
 import {
   isPurchaseReceivableStatus,
+  type PersistedPendingReceiveSubmission,
   type PurchaseCatalogVariant,
   type PurchaseDraftFormInput,
   type PurchaseItemRecord,
@@ -19,6 +20,7 @@ import {
   type PurchaseReceiptItemRecord,
   type PurchaseReceiptRecord,
   type PurchaseReceiptsListResult,
+  type PurchaseReceiveErrorKind,
   type PurchaseReceiveFormInput,
   type PurchaseReceiveResult,
   type PurchaseReceiveRpcItem,
@@ -1651,6 +1653,212 @@ export async function fetchPurchaseReceipts(
   return { receipts, error: null };
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const PENDING_RECEIVE_STORAGE_PREFIX = 'veyora:purchases:receive_pending';
+
+export function generateReceivingIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  throw new Error('Secure UUID generation (crypto.randomUUID) is unavailable in this browser.');
+}
+
+export function buildReceivePayloadSignature(
+  organisationId: string,
+  purchaseId: string,
+  rpcItems: PurchaseReceiveRpcItem[],
+  notes: string | null
+): string {
+  return JSON.stringify({
+    organisationId: organisationId.trim().toLowerCase(),
+    purchaseId: purchaseId.trim().toLowerCase(),
+    notes: notes ?? null,
+    items: rpcItems.map((item) => ({
+      purchase_item_id: item.purchase_item_id,
+      location_id: item.location_id,
+      received_quantity: roundFourDecimals(item.received_quantity),
+      accepted_quantity: roundFourDecimals(item.accepted_quantity),
+      damaged_quantity: roundFourDecimals(item.damaged_quantity),
+    })),
+  });
+}
+
+export function getPendingReceiveStorageKey(organisationId: string, purchaseId: string): string {
+  return `${PENDING_RECEIVE_STORAGE_PREFIX}:${organisationId.trim().toLowerCase()}:${purchaseId.trim().toLowerCase()}`;
+}
+
+export function loadPendingReceiveSubmission(
+  organisationId: string,
+  purchaseId: string
+): PersistedPendingReceiveSubmission | null {
+  if (typeof window === 'undefined' || !organisationId.trim() || !purchaseId.trim()) {
+    return null;
+  }
+  const storageKey = getPendingReceiveStorageKey(organisationId, purchaseId);
+  try {
+    const raw = window.sessionStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      window.sessionStorage.removeItem(storageKey);
+      return null;
+    }
+    const obj = parsed as Partial<PersistedPendingReceiveSubmission>;
+    if (
+      obj.version !== 1 ||
+      typeof obj.organizationId !== 'string' ||
+      typeof obj.purchaseId !== 'string' ||
+      obj.organizationId.trim().toLowerCase() !== organisationId.trim().toLowerCase() ||
+      obj.purchaseId.trim().toLowerCase() !== purchaseId.trim().toLowerCase() ||
+      typeof obj.idempotencyKey !== 'string' ||
+      !UUID_PATTERN.test(obj.idempotencyKey) ||
+      typeof obj.payloadSignature !== 'string' ||
+      !Array.isArray(obj.rpcItems) ||
+      !Array.isArray(obj.lines) ||
+      typeof obj.unresolved !== 'boolean'
+    ) {
+      window.sessionStorage.removeItem(storageKey);
+      return null;
+    }
+
+    return {
+      version: 1,
+      organizationId: obj.organizationId,
+      purchaseId: obj.purchaseId,
+      idempotencyKey: obj.idempotencyKey,
+      payloadSignature: obj.payloadSignature,
+      rpcItems: obj.rpcItems,
+      notes: typeof obj.notes === 'string' ? obj.notes : null,
+      lines: obj.lines,
+      unresolved: obj.unresolved,
+      lastError: typeof obj.lastError === 'string' ? obj.lastError : null,
+      createdAt: typeof obj.createdAt === 'string' ? obj.createdAt : new Date().toISOString(),
+      updatedAt: typeof obj.updatedAt === 'string' ? obj.updatedAt : new Date().toISOString(),
+    };
+  } catch {
+    try {
+      window.sessionStorage.removeItem(storageKey);
+    } catch {
+      // Ignore storage cleanup error
+    }
+    return null;
+  }
+}
+
+export function savePendingReceiveSubmission(
+  submission: PersistedPendingReceiveSubmission
+): void {
+  if (typeof window === 'undefined') return;
+  const storageKey = getPendingReceiveStorageKey(
+    submission.organizationId,
+    submission.purchaseId
+  );
+  try {
+    window.sessionStorage.setItem(storageKey, JSON.stringify(submission));
+  } catch {
+    // Ignore storage quota or restricted-context failures
+  }
+}
+
+export function clearPendingReceiveSubmission(organisationId: string, purchaseId: string): void {
+  if (typeof window === 'undefined' || !organisationId.trim() || !purchaseId.trim()) {
+    return;
+  }
+  const storageKey = getPendingReceiveStorageKey(organisationId, purchaseId);
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+function isNetworkOrTimeoutError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('failed to fetch') ||
+    lower.includes('networkerror') ||
+    lower.includes('network request failed') ||
+    lower.includes('load failed') ||
+    lower.includes('timeout') ||
+    lower.includes('timed out') ||
+    lower.includes('aborted') ||
+    lower.includes('econnreset') ||
+    lower.includes('connection') ||
+    lower.includes('socket') ||
+    lower.includes('bad gateway') ||
+    lower.includes('service unavailable') ||
+    lower.includes('gateway') ||
+    lower.includes('502') ||
+    lower.includes('503') ||
+    lower.includes('504') ||
+    lower.includes('fetch')
+  );
+}
+
+function classifyReceiveRpcError(error: {
+  code?: string;
+  message?: string;
+  status?: number;
+} | null): PurchaseReceiveErrorKind {
+  if (!error) return 'ambiguous';
+
+  const message = (error.message ?? '').trim();
+  const code = (error.code ?? '').trim().toUpperCase();
+  const status = typeof error.status === 'number' ? error.status : null;
+
+  if (isNetworkOrTimeoutError(message)) {
+    return 'ambiguous';
+  }
+  if (status !== null && (status === 0 || status === 408 || status >= 500)) {
+    return 'ambiguous';
+  }
+
+  // Structured PostgreSQL / PostgREST client/validation/permission rejections are definite
+  if (
+    code === '42501' ||
+    code === '42883' ||
+    code.startsWith('P0') ||
+    code.startsWith('22') ||
+    code.startsWith('23') ||
+    code.startsWith('42') ||
+    code === 'PGRST202' ||
+    code === 'PGRST204' ||
+    code === 'PGRST301' ||
+    code === 'PGRST116'
+  ) {
+    return 'definite';
+  }
+
+  if (isPermissionDeniedError(error)) {
+    return 'definite';
+  }
+
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('exceeds') ||
+    lower.includes('must equal') ||
+    lower.includes('cannot be negative') ||
+    lower.includes('must be greater than') ||
+    lower.includes('only ordered and partially received') ||
+    lower.includes('not found') ||
+    lower.includes('invalid ')
+  ) {
+    return 'definite';
+  }
+
+  return 'ambiguous';
+}
+
 export async function receivePurchaseGoods(
   organisationId: string,
   purchase: PurchaseRecord,
@@ -1659,6 +1867,11 @@ export async function receivePurchaseGoods(
     activeLocations?: InventoryLocationRecord[];
     locationsById?: Record<string, InventoryLocationRecord>;
     catalogVariants?: PurchaseCatalogVariant[];
+    idempotencyKey?: string;
+    persistedRetryPayload?: {
+      rpcItems: PurchaseReceiveRpcItem[];
+      notes: string | null;
+    };
   } = {}
 ): Promise<PurchaseReceiveResult> {
   if (!purchase.id) {
@@ -1668,35 +1881,49 @@ export async function receivePurchaseGoods(
       receipt: null,
       stockUpdates: [],
       error: 'Purchase ID is required.',
+      errorKind: 'definite',
     };
   }
 
-  if (!isPurchaseReceivableStatus(purchase.status)) {
-    return {
-      receiptId: null,
-      receiptNumber: null,
-      receipt: null,
-      stockUpdates: [],
-      error: 'Goods can only be received for Ordered or Partially Received purchase orders.',
-    };
-  }
+  let submittedRpcItems: PurchaseReceiveRpcItem[];
+  let submittedNotes: string | null;
 
-  const activeLocationIds =
-    options.activeLocations && options.activeLocations.length > 0
-      ? new Set(options.activeLocations.map((loc) => loc.id))
-      : undefined;
+  if (options.persistedRetryPayload && options.persistedRetryPayload.rpcItems.length > 0) {
+    submittedRpcItems = options.persistedRetryPayload.rpcItems;
+    submittedNotes = options.persistedRetryPayload.notes;
+  } else {
+    if (!isPurchaseReceivableStatus(purchase.status)) {
+      return {
+        receiptId: null,
+        receiptNumber: null,
+        receipt: null,
+        stockUpdates: [],
+        error: 'Goods can only be received for Ordered or Partially Received purchase orders.',
+        errorKind: 'definite',
+      };
+    }
 
-  const validation = validatePurchaseReceiveInput(purchase.items, input, {
-    activeLocationIds,
-  });
-  if (!validation.ok) {
-    return {
-      receiptId: null,
-      receiptNumber: null,
-      receipt: null,
-      stockUpdates: [],
-      error: validation.error,
-    };
+    const activeLocationIds =
+      options.activeLocations && options.activeLocations.length > 0
+        ? new Set(options.activeLocations.map((loc) => loc.id))
+        : undefined;
+
+    const validation = validatePurchaseReceiveInput(purchase.items, input, {
+      activeLocationIds,
+    });
+    if (!validation.ok) {
+      return {
+        receiptId: null,
+        receiptNumber: null,
+        receipt: null,
+        stockUpdates: [],
+        error: validation.error,
+        errorKind: 'definite',
+      };
+    }
+
+    submittedRpcItems = validation.normalized.rpcItems;
+    submittedNotes = validation.normalized.notes;
   }
 
   const supabase = getSupabaseClient();
@@ -1707,36 +1934,101 @@ export async function receivePurchaseGoods(
       receipt: null,
       stockUpdates: [],
       error: 'Supabase client is not configured.',
+      errorKind: 'definite',
     };
   }
 
   const verified = await verifyActiveWorkspaceContext(organisationId, 'none');
   if (!verified.ok) {
+    const offlineOrNetwork =
+      (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+      isNetworkOrTimeoutError(verified.error);
     return {
       receiptId: null,
       receiptNumber: null,
       receipt: null,
       stockUpdates: [],
-      error: verified.error,
+      error: offlineOrNetwork
+        ? `Connection unavailable while verifying workspace (${verified.error}). Retry the original submission or verify Receipt History before submitting a new delivery.`
+        : verified.error,
+      errorKind: offlineOrNetwork ? 'ambiguous' : 'definite',
+    };
+  }
+
+  const providedKey = options.idempotencyKey?.trim();
+  if (providedKey && !UUID_PATTERN.test(providedKey)) {
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: 'Invalid delivery idempotency key format. Expected a valid UUID.',
+      errorKind: 'definite',
+    };
+  }
+
+  let idempotencyKey: string;
+  try {
+    idempotencyKey = providedKey || generateReceivingIdempotencyKey();
+  } catch (err) {
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: err instanceof Error ? err.message : 'Unable to generate a delivery idempotency UUID.',
+      errorKind: 'definite',
     };
   }
 
   const orgId = verified.organizationId;
 
-  const { data, error } = await supabase.rpc('purchases_v1_receive_goods', {
-    p_organization_id: orgId,
-    p_purchase_id: purchase.id,
-    p_items: validation.normalized.rpcItems,
-    p_notes: validation.normalized.notes,
-  });
+  let data: unknown = null;
+  let error: { code?: string; message?: string; status?: number } | null = null;
+
+  try {
+    const res = await supabase.rpc('purchases_v2_receive_goods', {
+      p_organization_id: orgId,
+      p_purchase_id: purchase.id,
+      p_items: submittedRpcItems,
+      p_notes: submittedNotes,
+      p_idempotency_key: idempotencyKey,
+    });
+    data = res.data;
+    error = res.error as { code?: string; message?: string; status?: number } | null;
+  } catch (err) {
+    const rawMsg = err instanceof Error ? err.message : 'Network error or request timeout.';
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: `Unable to confirm whether the goods receipt reached the server (${rawMsg}). Retry the original submission or verify Receipt History before submitting a new delivery.`,
+      errorKind: 'ambiguous',
+    };
+  }
 
   if (error) {
+    const errorKind = classifyReceiveRpcError(error);
+    if (errorKind === 'ambiguous') {
+      const rawMsg = error.message ?? 'Connection interrupted.';
+      return {
+        receiptId: null,
+        receiptNumber: null,
+        receipt: null,
+        stockUpdates: [],
+        error: `Connection interrupted while recording goods receipt (${rawMsg}). Retry the original submission or verify Receipt History before submitting a new delivery.`,
+        errorKind: 'ambiguous',
+      };
+    }
+
     return {
       receiptId: null,
       receiptNumber: null,
       receipt: null,
       stockUpdates: [],
       error: formatPurchaseRpcError(error.message, 'Unable to record goods receipt.'),
+      errorKind: 'definite',
     };
   }
 
@@ -1810,7 +2102,7 @@ export async function receivePurchaseGoods(
   const purchaseItemById = new Map(purchase.items.map((item) => [item.id, item]));
   const stockUpdates: PurchaseStockUpdateSummary[] = [];
 
-  for (const submitted of validation.normalized.rpcItems) {
+  for (const submitted of submittedRpcItems) {
     if (submitted.accepted_quantity <= 0) continue;
     const item = purchaseItemById.get(submitted.purchase_item_id);
     if (!item) continue;
@@ -1838,5 +2130,6 @@ export async function receivePurchaseGoods(
     receipt,
     stockUpdates,
     error: null,
+    errorKind: null,
   };
 }

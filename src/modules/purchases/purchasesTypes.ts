@@ -173,12 +173,30 @@ export interface PurchaseMutationResult {
   error: string | null;
 }
 
+export type PurchaseReceiveErrorKind = 'ambiguous' | 'definite';
+
+export interface PersistedPendingReceiveSubmission {
+  version: 1;
+  organizationId: string;
+  purchaseId: string;
+  idempotencyKey: string;
+  payloadSignature: string;
+  rpcItems: PurchaseReceiveRpcItem[];
+  notes: string | null;
+  lines: PurchaseReceiveLineInput[];
+  unresolved: boolean;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PurchaseReceiveResult {
   receiptId: string | null;
   receiptNumber: string | null;
   receipt: PurchaseReceiptRecord | null;
   stockUpdates: PurchaseStockUpdateSummary[];
   error: string | null;
+  errorKind?: PurchaseReceiveErrorKind | null;
 }
 
 export interface PurchaseReceiptsListResult {

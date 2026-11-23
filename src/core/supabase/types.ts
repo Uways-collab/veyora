@@ -1136,6 +1136,22 @@ export interface Database {
         };
         Returns: string;
       };
+      purchases_v2_receive_goods: {
+        Args: {
+          p_organization_id: string;
+          p_purchase_id: string;
+          p_items: Array<{
+            purchase_item_id: string;
+            location_id: string;
+            received_quantity: number;
+            accepted_quantity: number;
+            damaged_quantity: number;
+          }>;
+          p_notes: string | null;
+          p_idempotency_key: string;
+        };
+        Returns: string;
+      };
       purchases_v1_create_return_draft: {
         Args: {
           p_organization_id: string;

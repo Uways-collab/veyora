@@ -12,19 +12,26 @@ import {
 } from 'lucide-react';
 import type { InventoryLocationRecord } from '../inventory/inventoryService';
 import {
+  buildReceivePayloadSignature,
+  clearPendingReceiveSubmission,
   formatPurchaseNumberPrecision,
   formatPurchaseStatusLabel,
+  generateReceivingIdempotencyKey,
+  loadPendingReceiveSubmission,
   receivePurchaseGoods,
   roundFourDecimals,
+  savePendingReceiveSubmission,
   validatePurchaseReceiveInput,
 } from './purchasesService';
 import {
   isPurchaseReceivableStatus,
+  type PersistedPendingReceiveSubmission,
   type PurchaseCatalogVariant,
   type PurchaseItemRecord,
   type PurchaseReceiveFormInput,
   type PurchaseReceiveLineInput,
   type PurchaseReceiveResult,
+  type PurchaseReceiveRpcItem,
   type PurchaseRecord,
 } from './purchasesTypes';
 
@@ -68,6 +75,47 @@ function buildInitialLines(
   return rows;
 }
 
+function computeFormSignatureFromInputs(
+  organisationId: string,
+  purchaseId: string,
+  currentLines: PurchaseReceiveLineInput[],
+  currentNotes: string
+): string | null {
+  const candidateRpcItems: PurchaseReceiveRpcItem[] = [];
+  for (const line of currentLines) {
+    const receivedRaw = line.receivedQuantity.trim();
+    const acceptedRaw = line.acceptedQuantity.trim();
+    const damagedRaw = line.damagedQuantity.trim();
+    const rec = receivedRaw === '' ? 0 : Number(receivedRaw);
+    const acc = acceptedRaw === '' ? 0 : Number(acceptedRaw);
+    const dmg = damagedRaw === '' ? 0 : Number(damagedRaw);
+    if (!Number.isFinite(rec) || !Number.isFinite(acc) || !Number.isFinite(dmg)) {
+      return null;
+    }
+    if (rec === 0 && acc === 0 && dmg === 0) {
+      continue;
+    }
+    const locId = line.locationId.trim();
+    if (!locId) {
+      return null;
+    }
+    candidateRpcItems.push({
+      purchase_item_id: line.purchaseItemId,
+      location_id: locId,
+      received_quantity: roundFourDecimals(rec),
+      accepted_quantity: roundFourDecimals(acc),
+      damaged_quantity: roundFourDecimals(dmg),
+    });
+  }
+  if (candidateRpcItems.length === 0) return null;
+  return buildReceivePayloadSignature(
+    organisationId,
+    purchaseId,
+    candidateRpcItems,
+    currentNotes.trim() || null
+  );
+}
+
 export function PurchaseReceiveModal({
   open,
   organisationId,
@@ -85,8 +133,28 @@ export function PurchaseReceiveModal({
   const [step, setStep] = useState<'entry' | 'confirm'>('entry');
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingSubmission, setPendingSubmission] =
+    useState<PersistedPendingReceiveSubmission | null>(null);
 
   const submitLockRef = useRef(false);
+  const pendingSubmissionRef = useRef<PersistedPendingReceiveSubmission | null>(null);
+
+  const setAndPersistPending = (next: PersistedPendingReceiveSubmission) => {
+    pendingSubmissionRef.current = next;
+    setPendingSubmission(next);
+    savePendingReceiveSubmission(next);
+  };
+
+  const clearPendingState = (force = false) => {
+    if (!force && pendingSubmissionRef.current?.unresolved) {
+      return;
+    }
+    pendingSubmissionRef.current = null;
+    setPendingSubmission(null);
+    if (purchase?.id) {
+      clearPendingReceiveSubmission(organisationId, purchase.id);
+    }
+  };
 
   const activeLocationIds = useMemo(
     () => new Set(activeLocations.map((loc) => loc.id)),
@@ -108,13 +176,34 @@ export function PurchaseReceiveModal({
 
   useEffect(() => {
     if (!open || !purchase) return;
+    setSubmitting(false);
+    submitLockRef.current = false;
+
+    const restored = loadPendingReceiveSubmission(organisationId, purchase.id);
+    if (restored && restored.unresolved) {
+      pendingSubmissionRef.current = restored;
+      setPendingSubmission(restored);
+      setLines(
+        restored.lines.length > 0
+          ? restored.lines
+          : buildInitialLines(purchase.items, defaultLocationId)
+      );
+      setNotes(restored.notes ?? '');
+      setStep('entry');
+      setFormError(restored.lastError);
+      return;
+    }
+
+    if (restored && !restored.unresolved) {
+      clearPendingReceiveSubmission(organisationId, purchase.id);
+    }
+    pendingSubmissionRef.current = null;
+    setPendingSubmission(null);
     setLines(buildInitialLines(purchase.items, defaultLocationId));
     setNotes('');
     setStep('entry');
     setFormError(null);
-    setSubmitting(false);
-    submitLockRef.current = false;
-  }, [open, purchase, defaultLocationId]);
+  }, [open, organisationId, purchase, defaultLocationId]);
 
   useEffect(() => {
     if (!open) return;
@@ -186,6 +275,7 @@ export function PurchaseReceiveModal({
     updater: (prev: PurchaseReceiveLineInput) => PurchaseReceiveLineInput
   ) => {
     setFormError(null);
+    clearPendingState(false);
     setLines((prev) => prev.map((row) => (row.rowKey === rowKey ? updater(row) : row)));
   };
 
@@ -222,6 +312,7 @@ export function PurchaseReceiveModal({
 
   const handleAddLocationSplit = (purchaseItemId: string) => {
     setFormError(null);
+    clearPendingState(false);
     const existingForItem = lines.filter((l) => l.purchaseItemId === purchaseItemId);
     const usedLocationIds = new Set(existingForItem.map((l) => l.locationId).filter(Boolean));
     const suggestedLocation =
@@ -240,6 +331,7 @@ export function PurchaseReceiveModal({
 
   const handleRemoveLocationSplit = (rowKey: string, purchaseItemId: string) => {
     setFormError(null);
+    clearPendingState(false);
     setLines((prev) => {
       const forItem = prev.filter((l) => l.purchaseItemId === purchaseItemId);
       if (forItem.length <= 1) return prev;
@@ -249,6 +341,7 @@ export function PurchaseReceiveModal({
 
   const handleFillItemRemaining = (item: PurchaseItemRecord) => {
     setFormError(null);
+    clearPendingState(false);
     const remaining = Math.max(0, roundFourDecimals(item.orderedQuantity - item.receivedQuantity));
     if (remaining <= 0) return;
 
@@ -278,6 +371,7 @@ export function PurchaseReceiveModal({
 
   const handleFillAllRemaining = () => {
     setFormError(null);
+    clearPendingState(false);
     const nextRows: PurchaseReceiveLineInput[] = [];
     purchase.items.forEach((item, idx) => {
       const remaining = Math.max(
@@ -300,14 +394,202 @@ export function PurchaseReceiveModal({
 
   const handleClearAllQuantities = () => {
     setFormError(null);
+    clearPendingState(false);
     setLines(buildInitialLines(purchase.items, defaultLocationId));
   };
 
   const formInput: PurchaseReceiveFormInput = { notes, lines };
 
+  const currentFormSignature = computeFormSignatureFromInputs(
+    organisationId,
+    purchase.id,
+    lines,
+    notes
+  );
+  const isUnresolvedPayloadModified = Boolean(
+    pendingSubmission?.unresolved && currentFormSignature !== pendingSubmission.payloadSignature
+  );
+
+  const unresolvedTotals = useMemo(() => {
+    if (!pendingSubmission?.unresolved) return null;
+    let received = 0;
+    let accepted = 0;
+    let damaged = 0;
+    for (const item of pendingSubmission.rpcItems) {
+      received = roundFourDecimals(received + item.received_quantity);
+      accepted = roundFourDecimals(accepted + item.accepted_quantity);
+      damaged = roundFourDecimals(damaged + item.damaged_quantity);
+    }
+    return {
+      received,
+      accepted,
+      damaged,
+      allocationCount: pendingSubmission.rpcItems.length,
+    };
+  }, [pendingSubmission]);
+
+  const preparePendingSubmissionForValidForm = (
+    rpcItems: PurchaseReceiveRpcItem[],
+    normalizedNotes: string | null
+  ): PersistedPendingReceiveSubmission => {
+    const payloadSignature = buildReceivePayloadSignature(
+      organisationId,
+      purchase.id,
+      rpcItems,
+      normalizedNotes
+    );
+    const existing = pendingSubmissionRef.current;
+
+    if (
+      existing &&
+      existing.organizationId.toLowerCase() === organisationId.toLowerCase() &&
+      existing.purchaseId.toLowerCase() === purchase.id.toLowerCase()
+    ) {
+      if (existing.unresolved) {
+        if (existing.payloadSignature !== payloadSignature) {
+          throw new Error(
+            'An unresolved delivery submission exists for this order. Modified delivery details cannot be submitted as a new delivery until the unresolved submission is resolved. Retry the original submission or verify Receipt History first.'
+          );
+        }
+        return existing;
+      }
+
+      if (existing.payloadSignature === payloadSignature) {
+        return existing;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const created: PersistedPendingReceiveSubmission = {
+      version: 1,
+      organizationId: organisationId,
+      purchaseId: purchase.id,
+      idempotencyKey: generateReceivingIdempotencyKey(),
+      payloadSignature,
+      rpcItems,
+      notes: normalizedNotes,
+      lines: lines.map((line) => ({ ...line })),
+      unresolved: false,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    pendingSubmissionRef.current = created;
+    setPendingSubmission(created);
+    return created;
+  };
+
+  const handleRestoreOriginalPending = () => {
+    const existing = pendingSubmissionRef.current;
+    if (!existing || submitting) return;
+    setLines(existing.lines.map((line) => ({ ...line })));
+    setNotes(existing.notes ?? '');
+    setFormError(existing.lastError);
+  };
+
+  const handleDismissUnresolvedAfterVerification = () => {
+    if (submitting || submitLockRef.current) return;
+    clearPendingState(true);
+    setFormError(null);
+    if (step === 'confirm') {
+      setStep('entry');
+    }
+  };
+
+  const executeReceiveRpc = async (
+    targetPending: PersistedPendingReceiveSubmission,
+    usePersistedPayload: boolean
+  ) => {
+    if (submitLockRef.current || submitting) return;
+
+    submitLockRef.current = true;
+    setSubmitting(true);
+    setFormError(null);
+
+    const inFlightPending: PersistedPendingReceiveSubmission = {
+      ...targetPending,
+      unresolved: true,
+      lastError: null,
+      updatedAt: new Date().toISOString(),
+    };
+    setAndPersistPending(inFlightPending);
+
+    try {
+      const result = await receivePurchaseGoods(organisationId, purchase, formInput, {
+        activeLocations,
+        locationsById,
+        catalogVariants,
+        idempotencyKey: inFlightPending.idempotencyKey,
+        persistedRetryPayload: usePersistedPayload
+          ? { rpcItems: inFlightPending.rpcItems, notes: inFlightPending.notes }
+          : undefined,
+      });
+
+      if (!result.error) {
+        clearPendingState(true);
+        await onSuccess(result, purchase);
+        return;
+      }
+
+      if (result.errorKind === 'definite') {
+        clearPendingState(true);
+        setFormError(result.error);
+        setStep('entry');
+        return;
+      }
+
+      const ambiguousPending: PersistedPendingReceiveSubmission = {
+        ...inFlightPending,
+        unresolved: true,
+        lastError: result.error,
+        updatedAt: new Date().toISOString(),
+      };
+      setAndPersistPending(ambiguousPending);
+      setFormError(result.error);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? `Unable to confirm whether the goods receipt reached the server (${err.message}). Retry the original submission or verify Receipt History before submitting a new delivery.`
+          : 'Unable to confirm whether the goods receipt reached the server. Retry the original submission or verify Receipt History before submitting a new delivery.';
+      const ambiguousPending: PersistedPendingReceiveSubmission = {
+        ...inFlightPending,
+        unresolved: true,
+        lastError: message,
+        updatedAt: new Date().toISOString(),
+      };
+      setAndPersistPending(ambiguousPending);
+      setFormError(message);
+    } finally {
+      submitLockRef.current = false;
+      setSubmitting(false);
+    }
+  };
+
+  const handleRetryPersistedSubmission = async () => {
+    const existing = pendingSubmissionRef.current;
+    if (!existing || !existing.unresolved || submitLockRef.current || submitting) return;
+
+    setLines(existing.lines.map((line) => ({ ...line })));
+    setNotes(existing.notes ?? '');
+
+    await executeReceiveRpc(existing, true);
+  };
+
   const handleProceedToConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting || submitLockRef.current) return;
+
+    const existingPending = pendingSubmissionRef.current;
+    if (
+      existingPending?.unresolved &&
+      currentFormSignature !== existingPending.payloadSignature
+    ) {
+      setFormError(
+        'An unresolved delivery submission exists for this order. Modified delivery details cannot be submitted as a new delivery until the unresolved submission is resolved. Retry the original submission, restore the original details, or verify Receipt History first.'
+      );
+      return;
+    }
+
     if (!isReceivable) {
       setFormError('Goods can only be received for Ordered or Partially Received orders.');
       return;
@@ -323,7 +605,23 @@ export function PurchaseReceiveModal({
       activeLocationIds,
     });
     if (!validation.ok) {
-      setFormError(validation.error);
+      setFormError(
+        existingPending?.unresolved
+          ? `${validation.error} Use "Retry Original Submission" above to check the unresolved request idempotently, or verify Receipt History first.`
+          : validation.error
+      );
+      return;
+    }
+
+    try {
+      preparePendingSubmissionForValidForm(
+        validation.normalized.rpcItems,
+        validation.normalized.notes
+      );
+    } catch (err) {
+      setFormError(
+        err instanceof Error ? err.message : 'Unable to prepare delivery idempotency UUID.'
+      );
       return;
     }
 
@@ -333,6 +631,18 @@ export function PurchaseReceiveModal({
 
   const handleConfirmSubmit = async () => {
     if (submitLockRef.current || submitting) return;
+
+    const existingPending = pendingSubmissionRef.current;
+    if (
+      existingPending?.unresolved &&
+      currentFormSignature !== existingPending.payloadSignature
+    ) {
+      setFormError(
+        'An unresolved delivery submission exists for this order. Modified delivery details cannot be submitted as a new delivery until it is resolved. Retry the original submission or verify Receipt History first.'
+      );
+      return;
+    }
+
     if (!isReceivable) {
       setFormError('Goods can only be received for Ordered or Partially Received orders.');
       return;
@@ -347,33 +657,109 @@ export function PurchaseReceiveModal({
       return;
     }
 
-    submitLockRef.current = true;
-    setSubmitting(true);
-    setFormError(null);
-
+    let activePending: PersistedPendingReceiveSubmission;
     try {
-      const result = await receivePurchaseGoods(organisationId, purchase, formInput, {
-        activeLocations,
-        locationsById,
-        catalogVariants,
-      });
-
-      if (result.error) {
-        setFormError(result.error);
-        return;
-      }
-
-      await onSuccess(result, purchase);
-    } finally {
-      submitLockRef.current = false;
-      setSubmitting(false);
+      activePending = preparePendingSubmissionForValidForm(
+        validation.normalized.rpcItems,
+        validation.normalized.notes
+      );
+    } catch (err) {
+      setFormError(
+        err instanceof Error ? err.message : 'Unable to prepare delivery idempotency UUID.'
+      );
+      return;
     }
+
+    await executeReceiveRpc(activePending, Boolean(existingPending?.unresolved));
   };
 
   const confirmationValidation =
     step === 'confirm'
       ? validatePurchaseReceiveInput(purchase.items, formInput, { activeLocationIds })
       : null;
+
+  const renderUnresolvedBanner = () => {
+    if (!pendingSubmission?.unresolved) return null;
+    const message =
+      formError ??
+      pendingSubmission.lastError ??
+      'A previous delivery submission for this order did not finish confirming on the server. Retry the original submission using the same idempotency reference or verify Receipt History before submitting a new delivery.';
+
+    return (
+      <div
+        role="alert"
+        className="p-3.5 rounded-md border border-amber-300 bg-amber-50 text-amber-950 space-y-2.5"
+      >
+        <div className="flex items-start gap-2">
+          <AlertTriangle
+            className="h-4 w-4 text-amber-700 shrink-0 mt-0.5"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="font-semibold text-amber-950">
+              Unresolved Goods Receipt Submission
+            </div>
+            <p className="text-xs text-amber-900 leading-relaxed">{message}</p>
+            <div className="text-[11px] text-amber-800 flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+              <span>
+                Idempotency Ref:{' '}
+                <span className="font-mono font-medium">{pendingSubmission.idempotencyKey}</span>
+              </span>
+              {unresolvedTotals && (
+                <span>
+                  Original Payload: {unresolvedTotals.allocationCount} allocation
+                  {unresolvedTotals.allocationCount === 1 ? '' : 's'} ·{' '}
+                  {formatPurchaseNumberPrecision(unresolvedTotals.received)} received (
+                  {formatPurchaseNumberPrecision(unresolvedTotals.accepted)} accepted,{' '}
+                  {formatPurchaseNumberPrecision(unresolvedTotals.damaged)} damaged)
+                </span>
+              )}
+            </div>
+            {isUnresolvedPayloadModified && (
+              <p className="text-[11px] font-medium text-red-800 pt-1">
+                Delivery details were modified. Submitting a changed payload as a new delivery is
+                blocked until this unresolved submission is retried or cleared after verifying
+                Receipt History.
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 pl-6">
+          <button
+            type="button"
+            onClick={() => void handleRetryPersistedSubmission()}
+            disabled={submitting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-800 text-white text-[11px] font-semibold hover:bg-amber-900 disabled:opacity-50"
+          >
+            {submitting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <PackageCheck className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+            <span>{submitting ? 'Retrying...' : 'Retry Original Submission'}</span>
+          </button>
+          {isUnresolvedPayloadModified && (
+            <button
+              type="button"
+              onClick={handleRestoreOriginalPending}
+              disabled={submitting}
+              className="px-3 py-1.5 rounded-md border border-amber-300 bg-white text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            >
+              Restore Original Details
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleDismissUnresolvedAfterVerification}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-md border border-amber-300 bg-white text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+          >
+            I&apos;ve Verified Receipt History — Clear Lock
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -415,7 +801,8 @@ export function PurchaseReceiveModal({
         {step === 'entry' ? (
           <form onSubmit={handleProceedToConfirm} className="flex flex-col flex-1 min-h-0">
             <div className="p-5 overflow-y-auto space-y-5 text-xs flex-1">
-              {formError && (
+              {renderUnresolvedBanner()}
+              {!pendingSubmission?.unresolved && formError && (
                 <div
                   role="alert"
                   className="p-3.5 rounded-md border border-red-200 bg-red-50 text-red-900 flex items-start gap-2"
@@ -756,6 +1143,7 @@ export function PurchaseReceiveModal({
                   disabled={submitting}
                   onChange={(e) => {
                     setFormError(null);
+                    clearPendingState(false);
                     setNotes(e.target.value);
                   }}
                   placeholder="Delivery docket reference, carrier details, or condition notes..."
@@ -828,7 +1216,8 @@ export function PurchaseReceiveModal({
           /* Step 2: Final Confirmation */
           <div className="flex flex-col flex-1 min-h-0">
             <div className="p-5 overflow-y-auto space-y-4 text-xs flex-1">
-              {formError && (
+              {renderUnresolvedBanner()}
+              {!pendingSubmission?.unresolved && formError && (
                 <div
                   role="alert"
                   className="p-3.5 rounded-md border border-red-200 bg-red-50 text-red-900 flex items-start gap-2"
@@ -837,7 +1226,15 @@ export function PurchaseReceiveModal({
                     className="h-4 w-4 text-red-700 shrink-0 mt-0.5"
                     aria-hidden="true"
                   />
-                  <span>{formError}</span>
+                  <div className="space-y-1">
+                    <div>{formError}</div>
+                    {pendingSubmission && (
+                      <div className="text-[11px] text-red-800">
+                        Delivery idempotency reference:{' '}
+                        <span className="font-mono">{pendingSubmission.idempotencyKey}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1011,7 +1408,7 @@ export function PurchaseReceiveModal({
               <button
                 type="button"
                 onClick={() => void handleConfirmSubmit()}
-                disabled={submitting}
+                disabled={submitting || isUnresolvedPayloadModified}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-blue-700 text-white text-xs font-semibold hover:bg-blue-800 disabled:opacity-50"
               >
                 {submitting ? (
@@ -1019,7 +1416,13 @@ export function PurchaseReceiveModal({
                 ) : (
                   <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                 )}
-                <span>{submitting ? 'Recording Receipt...' : 'Confirm & Record Delivery'}</span>
+                <span>
+                  {submitting
+                    ? 'Recording Receipt...'
+                    : pendingSubmission?.unresolved
+                      ? 'Retry & Confirm Delivery'
+                      : 'Confirm & Record Delivery'}
+                </span>
               </button>
             </div>
           </div>
