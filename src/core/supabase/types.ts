@@ -541,6 +541,8 @@ export interface Database {
         };
         Relationships: [];
       };
+      purchase_returns: InventoryTableRecord;
+      purchase_return_items: InventoryTableRecord;
     };
     Views: Record<string, never>;
     Functions: {
@@ -1133,6 +1135,38 @@ export interface Database {
           p_notes?: string | null;
         };
         Returns: string;
+      };
+      purchases_v1_create_return_draft: {
+        Args: {
+          p_organization_id: string;
+          p_purchase_id: string;
+          p_reason: string;
+          p_items: Array<{
+            purchase_item_id: string;
+            variant_id: string;
+            location_id: string;
+            quantity: number;
+            unit_cost: number;
+            line_total: number;
+          }>;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_complete_return: {
+        Args: {
+          p_organization_id: string;
+          p_return_id: string;
+          p_supplier_credit_reference: string | null;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_cancel_return: {
+        Args: {
+          p_organization_id: string;
+          p_return_id: string;
+          p_reason: string;
+        };
+        Returns: unknown;
       };
     };
     Enums: Record<string, never>;

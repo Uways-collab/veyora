@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
+import { PurchaseReturnsPanel } from './PurchaseReturnsPanel';
 import { PurchasesListPanel } from './PurchasesListPanel';
 import { canManagePurchases } from './purchasesTypes';
 import { SuppliersPanel } from './SuppliersPanel';
 import { canManageSuppliers } from './suppliersTypes';
 
-type PurchasesTab = 'orders' | 'suppliers';
+type PurchasesTab = 'orders' | 'returns' | 'suppliers';
 
 export function PurchasesView() {
   const { status, activeMembership, activeOrganisation, activeRole } = useAuth();
@@ -24,17 +25,43 @@ export function PurchasesView() {
   const [refreshOrdersSignal, setRefreshOrdersSignal] = useState(0);
   const [isOrdersRefreshing, setIsOrdersRefreshing] = useState(false);
 
+  const [createReturnSignal, setCreateReturnSignal] = useState(0);
+  const [refreshReturnsSignal, setRefreshReturnsSignal] = useState(0);
+  const [isReturnsRefreshing, setIsReturnsRefreshing] = useState(false);
+
   const [createSupplierSignal, setCreateSupplierSignal] = useState(0);
   const [refreshSuppliersSignal, setRefreshSuppliersSignal] = useState(0);
   const [isSuppliersRefreshing, setIsSuppliersRefreshing] = useState(false);
 
   const isOrdersTab = activeTab === 'orders';
-  const isRefreshing = isOrdersTab ? isOrdersRefreshing : isSuppliersRefreshing;
-  const canCreateInActiveTab = isOrdersTab ? canManageOrders : canManageVendorDirectory;
+  const isReturnsTab = activeTab === 'returns';
+  const isSuppliersTab = activeTab === 'suppliers';
+
+  const isRefreshing = isOrdersTab
+    ? isOrdersRefreshing
+    : isReturnsTab
+      ? isReturnsRefreshing
+      : isSuppliersRefreshing;
+
+  const canCreateInActiveTab = isSuppliersTab ? canManageVendorDirectory : canManageOrders;
+
+  const sectionLabel = isOrdersTab
+    ? 'Purchase Orders'
+    : isReturnsTab
+      ? 'Purchase Returns'
+      : 'Suppliers';
+
+  const primaryCreateLabel = isOrdersTab
+    ? 'New Purchase Draft'
+    : isReturnsTab
+      ? 'New Return Draft'
+      : 'Add Supplier';
 
   const handlePrimaryCreate = () => {
     if (isOrdersTab) {
       setCreateOrderSignal((prev) => prev + 1);
+    } else if (isReturnsTab) {
+      setCreateReturnSignal((prev) => prev + 1);
     } else {
       setCreateSupplierSignal((prev) => prev + 1);
     }
@@ -43,6 +70,8 @@ export function PurchasesView() {
   const handleHeaderRefresh = () => {
     if (isOrdersTab) {
       setRefreshOrdersSignal((prev) => prev + 1);
+    } else if (isReturnsTab) {
+      setRefreshReturnsSignal((prev) => prev + 1);
     } else {
       setRefreshSuppliersSignal((prev) => prev + 1);
     }
@@ -59,7 +88,7 @@ export function PurchasesView() {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
             <span>Operations</span>
             <span aria-hidden="true">·</span>
-            <span>{isOrdersTab ? 'Purchase Orders' : 'Suppliers'}</span>
+            <span>{sectionLabel}</span>
             <span aria-hidden="true">·</span>
             <span>Currency: {currencyCode}</span>
           </div>
@@ -70,8 +99,8 @@ export function PurchasesView() {
             Purchases
           </h1>
           <p className="text-sm text-slate-600 max-w-2xl">
-            Prepare purchase drafts, confirm supplier purchase orders, and manage vendor contacts for{' '}
-            {activeOrganisation?.name ?? 'your workspace'}.
+            Prepare purchase drafts, confirm supplier purchase orders, manage returns, and maintain
+            vendor contacts for {activeOrganisation?.name ?? 'your workspace'}.
           </p>
         </div>
 
@@ -84,7 +113,7 @@ export function PurchasesView() {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>{isOrdersTab ? 'New Purchase Draft' : 'Add Supplier'}</span>
+              <span>{primaryCreateLabel}</span>
             </button>
           )}
           <button
@@ -124,10 +153,23 @@ export function PurchasesView() {
         <button
           type="button"
           role="tab"
-          aria-selected={!isOrdersTab}
+          aria-selected={isReturnsTab}
+          onClick={() => setActiveTab('returns')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
+            isReturnsTab
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Purchase Returns
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isSuppliersTab}
           onClick={() => setActiveTab('suppliers')}
           className={`px-3.5 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
-            !isOrdersTab
+            isSuppliersTab
               ? 'bg-white text-slate-900 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
@@ -150,6 +192,19 @@ export function PurchasesView() {
           onRefreshingChange={setIsOrdersRefreshing}
           onSwitchToSuppliers={() => setActiveTab('suppliers')}
         />
+      ) : isReturnsTab ? (
+        <PurchaseReturnsPanel
+          organisationId={activeOrgId}
+          organisationName={activeOrganisation?.name}
+          currencyCode={currencyCode}
+          timeZone={timeZone}
+          canManage={canManageOrders}
+          isAuthenticated={isAuthenticated}
+          externalCreateSignal={createReturnSignal}
+          externalRefreshSignal={refreshReturnsSignal}
+          onRefreshingChange={setIsReturnsRefreshing}
+          onReturnMutated={() => setRefreshOrdersSignal((prev) => prev + 1)}
+        />
       ) : (
         <SuppliersPanel
           organisationId={activeOrgId}
@@ -165,3 +220,4 @@ export function PurchasesView() {
     </div>
   );
 }
+

@@ -194,3 +194,134 @@ export function canManagePurchases(role: OrganisationRole | string | null | unde
 export function isPurchaseReceivableStatus(status: PurchaseStatusValue): boolean {
   return status === 'ordered' || status === 'partially_received';
 }
+
+export type PurchaseReturnStatusValue = 'draft' | 'completed' | 'cancelled';
+
+export type PurchaseReturnFilterStatus = 'all' | PurchaseReturnStatusValue;
+
+export interface PurchaseReturnItemRecord {
+  id: string;
+  organizationId: string;
+  returnId: string;
+  purchaseItemId: string;
+  variantId: string;
+  locationId: string;
+  locationName: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  unitOfMeasure: string;
+  quantity: number;
+  unitCost: number;
+  lineTotal: number;
+  createdAt: string | null;
+}
+
+export interface PurchaseReturnRecord {
+  id: string;
+  organizationId: string;
+  purchaseId: string;
+  purchaseNumber: string;
+  supplierId: string;
+  supplierName: string;
+  currencyCode: string;
+  returnNumber: string;
+  status: PurchaseReturnStatusValue;
+  reason: string;
+  supplierCreditReference: string | null;
+  cancellationReason: string | null;
+  totalAmount: number;
+  returnDate: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  createdBy: string | null;
+  createdByName: string;
+  completedBy: string | null;
+  completedByName: string | null;
+  cancelledBy: string | null;
+  cancelledByName: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  items: PurchaseReturnItemRecord[];
+}
+
+export interface PurchaseReturnDraftLineInput {
+  rowKey: string;
+  purchaseItemId: string;
+  locationId: string;
+  quantity: string;
+}
+
+export interface PurchaseReturnDraftFormInput {
+  reason: string;
+  lines: PurchaseReturnDraftLineInput[];
+}
+
+export interface PurchaseReturnCreateRpcItem {
+  purchase_item_id: string;
+  variant_id: string;
+  location_id: string;
+  quantity: number;
+  unit_cost: number;
+  line_total: number;
+}
+
+export interface PurchaseReturnLocationBalance {
+  locationId: string;
+  locationName: string;
+  locationIsActive: boolean;
+  acceptedReceivedQuantity: number;
+  completedReturnedQuantity: number;
+  draftReservedQuantity: number;
+  remainingReturnableQuantity: number;
+  currentStockQuantity: number | null;
+}
+
+export interface PurchaseReturnItemAvailability {
+  purchaseItemId: string;
+  variantId: string;
+  acceptedReceivedQuantity: number;
+  physicallyReceivedQuantity: number;
+  damagedQuantity: number;
+  completedReturnedQuantity: number;
+  draftReservedQuantity: number;
+  remainingReturnableQuantity: number;
+  byLocation: PurchaseReturnLocationBalance[];
+}
+
+export interface PurchaseReturnListResult {
+  returns: PurchaseReturnRecord[];
+  error: string | null;
+  itemsWarning?: string | null;
+}
+
+export interface PurchaseReturnMutationResult {
+  returnId: string | null;
+  returnRecord: PurchaseReturnRecord | null;
+  error: string | null;
+}
+
+export interface PurchaseReturnCompleteStockUpdate {
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  unitOfMeasure: string;
+  locationId: string;
+  locationName: string;
+  returnedQuantity: number;
+  newStockQuantity: number | null;
+}
+
+export interface PurchaseReturnCompleteResult {
+  returnId: string | null;
+  returnNumber: string | null;
+  returnRecord: PurchaseReturnRecord | null;
+  stockUpdates: PurchaseReturnCompleteStockUpdate[];
+  error: string | null;
+}
+
+export function isPurchaseReturnEligibleStatus(status: PurchaseStatusValue): boolean {
+  return status === 'partially_received' || status === 'received';
+}
+
