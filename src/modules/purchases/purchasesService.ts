@@ -448,6 +448,7 @@ export async function fetchPurchaseReferenceData(
       defaultCostPrice: roundFourDecimals(variant.costPrice),
       defaultSellingPrice: roundFourDecimals(variant.sellingPrice),
       barcode: variant.barcode,
+      attributes: variant.attributes ?? {},
       productTypeValue: product.productTypeValue,
       categoryName: product.categoryName,
     });
