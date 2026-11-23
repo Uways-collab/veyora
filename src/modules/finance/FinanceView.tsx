@@ -98,7 +98,7 @@ export function FinanceView() {
  const submitJournal=(e:FormEvent)=>{e.preventDefault();void run(()=>postManualJournal({organizationId:orgId,date:entryDate,description,key:uuid(),lines:[{ledger_account_id:journalDebit,debit:Number(journalAmount),credit:0},{ledger_account_id:journalCredit,debit:0,credit:Number(journalAmount)}]}),'Journal entry posted.');};
  const doReverse=(entry:FinanceJournalEntry)=>{const reason=reverseReason.trim();if(!reason)return;void run(()=>reverseJournal(orgId,entry.id,reason,uuid()),'Reversal posted.');setReverseReason('');};
  const fmt=(v:number)=>money(v,currency);
- const tabItems:[Tab,string][]=[['overview','Overview'],['accounts','Accounts'],['ledger','General ledger'],['journals','Journal entries'],['reports','Reports']];
+ const tabItems:[Tab,string][]=[['overview','Overview'],['accounts','Accounts'],['ledger','Chart of accounts'],['journals','Journal entries'],['reports','Reports']];
  if(status!=='authenticated'||!orgId)return <div className="rounded-lg border border-slate-200 bg-white p-8 text-sm text-slate-600">Sign in and select an organisation to access Finance.</div>;
 
  return <div className="space-y-6">
