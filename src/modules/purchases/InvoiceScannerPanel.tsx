@@ -343,7 +343,7 @@ export function InvoiceScannerPanel({
 
   const createNewProduct = async (line: InvoiceLine) => {
     const supabase = getSupabaseClient();
-    if (!supabase || !organisationId) return;
+    if (!supabase || !organisationId || !scan) return;
     const cost = Number(line.unitCost);
     if (!line.productName.trim() || !line.newVariant.trim() || !line.newUnit.trim() || !line.newSku.trim() || !Number.isFinite(cost) || cost < 0) {
       setError('Complete the new product name, variant, SKU, unit and purchase cost first.');
@@ -352,7 +352,7 @@ export function InvoiceScannerPanel({
     setBusy(true); setError(null);
     const { data, error: rpcError } = await supabase.rpc('invoice_scanner_create_product_variant', {
       p_organization_id: organisationId,
-      p_scan_id: scan?.id,
+      p_scan_id: scan.id,
       p_product_name: line.productName,
       p_description: line.description || null,
       p_variant_name: line.newVariant,
@@ -628,6 +628,12 @@ export function InvoiceScannerPanel({
                 <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Match existing product / variant</span><select value={line.variantId} onChange={(e) => updateLine(line.rowKey, { variantId: e.target.value })} className="w-full rounded-md border border-slate-200 p-2"><option value="">No match — create new product below</option>{variants.map((variant) => <option key={variant.variantId} value={variant.variantId}>{variant.productName} · {variant.variantName}{variant.sku ? ` · ${variant.sku}` : ''}</option>)}</select></label>
                 <label className="space-y-1"><span className="text-slate-500">Quantity</span><input type="number" min="0.0001" step="0.0001" value={line.quantity} onChange={(e) => updateLine(line.rowKey, { quantity: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
                 <label className="space-y-1"><span className="text-slate-500">Unit purchase cost</span><input type="number" min="0" step="0.0001" value={line.unitCost} onChange={(e) => updateLine(line.rowKey, { unitCost: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+                <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Product description</span><input value={line.description} onChange={(e) => updateLine(line.rowKey, { description: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Line discount</span><input type="number" min="0" step="0.01" value={line.discount ?? ''} onChange={(e) => updateLine(line.rowKey, { discount: e.target.value === '' ? null : Number(e.target.value) })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Line tax</span><input type="number" min="0" step="0.01" value={line.tax ?? ''} onChange={(e) => updateLine(line.rowKey, { tax: e.target.value === '' ? null : Number(e.target.value) })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Invoice line total</span><input type="number" min="0" step="0.01" value={line.lineTotal ?? ''} onChange={(e) => updateLine(line.rowKey, { lineTotal: e.target.value === '' ? null : Number(e.target.value) })} className="w-full rounded-md border border-slate-200 p-2" /></label>
               </div>
               {line.lineTotal !== null && lineDifference > 0.01 && <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">Extracted line total differs from quantity × unit cost by {formatPurchaseMoney(lineDifference, invoiceCurrency)}. Check the invoice discount/tax fields.</div>}
               {match && cost > 0 && match.defaultCostPrice > 0 && Math.abs(cost - match.defaultCostPrice) / match.defaultCostPrice >= 0.3 && <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">This invoice unit cost differs from the current product cost by {(((cost - match.defaultCostPrice) / match.defaultCostPrice) * 100).toFixed(1)}%. Review the price before confirming.</div>}
