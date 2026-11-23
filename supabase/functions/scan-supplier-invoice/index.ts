@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const MAX_BYTES = 15 * 1024 * 1024;
+const MAX_BYTES = 10 * 1024 * 1024;
 const MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 const MODEL = 'gemini-2.5-flash';
 
@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
   try {
     const { data: file, error: downloadError } = await supabase.storage.from('invoice-documents').download(scan.file_path);
     if (downloadError || !file) throw new Error('The private invoice file could not be opened');
-    if (file.size > MAX_BYTES) throw new Error('Invoice file exceeds the 15 MB limit');
+    if (file.size > MAX_BYTES) throw new Error('Invoice file exceeds the 10 MB limit');
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!matchesFileSignature(bytes, scan.mime_type)) throw new Error('The file content does not match its declared invoice file type');
     let binary = '';
