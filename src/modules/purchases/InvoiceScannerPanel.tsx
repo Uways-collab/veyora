@@ -10,6 +10,9 @@ type InvoiceLine = {
   productName: string;
   description: string;
   sku: string;
+  barcode: string;
+  brand: string;
+  size: string;
   variant: string;
   quantity: string;
   unit: string;
@@ -20,6 +23,7 @@ type InvoiceLine = {
   confidence: string;
   variantId: string;
   newSku: string;
+  newBarcode: string;
   newVariant: string;
   newUnit: string;
   newSellingPrice: string;
@@ -66,6 +70,8 @@ function bestVariantMatch(line: Record<string, unknown>, variants: PurchaseCatal
   const name = normalize(cleanText(line.product_name));
   const barcode = cleanText(line.barcode);
   const variant = normalize(cleanText(line.variant));
+  const brand = normalize(cleanText(line.brand));
+  const size = normalize(cleanText(line.size));
   if (barcode) {
     const exactBarcode = variants.find((item) => (item.barcode ?? '').trim() === barcode);
     if (exactBarcode) return exactBarcode;
@@ -74,10 +80,13 @@ function bestVariantMatch(line: Record<string, unknown>, variants: PurchaseCatal
     const exactSku = variants.find((item) => item.sku.trim().toLowerCase() === sku);
     if (exactSku) return exactSku;
   }
-  const exact = variants.find((item) =>
-    normalize(item.productName) === name &&
-    (!variant || normalize(item.variantName) === variant)
-  );
+  const exact = variants.find((item) => {
+    const attributes = normalize(Object.values(item.attributes ?? {}).join(' '));
+    return normalize(item.productName) === name &&
+      (!variant || normalize(item.variantName) === variant) &&
+      (!brand || attributes.includes(brand)) &&
+      (!size || attributes.includes(size) || normalize(item.variantName).includes(size));
+  });
   return exact ?? null;
 }
 function suggestedPrice(cost: number, method: 'markup' | 'margin', percent: number): number | null {
@@ -183,6 +192,9 @@ export function InvoiceScannerPanel({
         productName: cleanText(raw.product_name) || 'Unclear product name',
         description: cleanText(raw.description),
         sku: cleanText(raw.sku),
+        barcode: cleanText(raw.barcode),
+        brand: cleanText(raw.brand),
+        size: cleanText(raw.size),
         variant: cleanText(raw.variant),
         quantity: numericText(raw.quantity, '1'),
         unit: cleanText(raw.unit_of_measure) || 'piece',
@@ -193,6 +205,7 @@ export function InvoiceScannerPanel({
         confidence: cleanText(raw.confidence) || 'low',
         variantId: match?.variantId ?? '',
         newSku: cleanText(raw.sku),
+        newBarcode: cleanText(raw.barcode),
         newVariant: cleanText(raw.variant) || 'Default',
         newUnit: cleanText(raw.unit_of_measure) || 'piece',
         newSellingPrice: '',
@@ -278,8 +291,8 @@ export function InvoiceScannerPanel({
     const supabase = getSupabaseClient();
     if (!supabase || !organisationId) return;
     const cost = Number(line.unitCost);
-    if (!line.productName.trim() || !line.newVariant.trim() || !line.newUnit.trim() || !Number.isFinite(cost) || cost < 0) {
-      setError('Complete the new product name, variant, unit and purchase cost first.');
+    if (!line.productName.trim() || !line.newVariant.trim() || !line.newUnit.trim() || !line.newSku.trim() || !Number.isFinite(cost) || cost < 0) {
+      setError('Complete the new product name, variant, SKU, unit and purchase cost first.');
       return;
     }
     setBusy(true); setError(null);
@@ -289,11 +302,11 @@ export function InvoiceScannerPanel({
       p_description: line.description || null,
       p_variant_name: line.newVariant,
       p_sku: line.newSku || null,
-      p_barcode: null,
+      p_barcode: line.newBarcode || null,
       p_unit_of_measure: line.newUnit,
       p_cost_price: cost,
       p_selling_price: Math.max(0, Number(line.newSellingPrice) || 0),
-      p_attributes: {},
+      p_attributes: { brand: line.brand, size: line.size },
     });
     if (rpcError || !data) {
       setError(rpcError?.message || 'The new product could not be created.');
@@ -371,9 +384,9 @@ export function InvoiceScannerPanel({
   };
 
   const addManualLine = () => setLines((current) => [...current, {
-    rowKey: `manual-${Date.now()}`, productName: '', description: '', sku: '', variant: '',
+    rowKey: `manual-${Date.now()}`, productName: '', description: '', sku: '', barcode: '', brand: '', size: '', variant: '',
     quantity: '1', unit: 'piece', unitCost: '', discount: null, tax: null, lineTotal: null,
-    confidence: 'manual', variantId: '', newSku: '', newVariant: 'Default', newUnit: 'piece', newSellingPrice: '', edited: true,
+    confidence: 'manual', variantId: '', newSku: '', newBarcode: '', newVariant: 'Default', newUnit: 'piece', newSellingPrice: '', edited: true,
   }]);
 
   if (!canManage) return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">Invoice scanning is available to Owners, Admins and Managers.</div>;
@@ -441,17 +454,18 @@ export function InvoiceScannerPanel({
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-slate-900">Invoice line items</h2><p className="mt-1 text-xs text-slate-500">Choose the exact variant for each line. Similar names are not treated as confirmed matches.</p></div><button type="button" onClick={addManualLine} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-700"><Plus className="h-3.5 w-3.5" /> Add missing item</button></div>
           {lines.map((line) => {
             const match = variants.find((variant) => variant.variantId === line.variantId);
+            const possibleMatches = !match ? variants.filter((variant) => normalize(variant.productName).includes(normalize(line.productName)) || normalize(line.productName).includes(normalize(variant.productName))).slice(0, 3) : [];
             const cost = Number(line.unitCost);
             const suggested = suggestedPrice(cost, pricingMethod, Number(pricingPercent));
             const existingPrice = match?.defaultSellingPrice ?? 0;
             return <div key={line.rowKey} className="rounded-md border border-slate-200 p-3 space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-semibold text-slate-900">{line.productName || 'New line item'}</div><div className="mt-1 text-[10px] text-slate-500">{line.sku ? `SKU ${line.sku} · ` : ''}{line.edited ? 'Edited by you' : line.confidence === 'high' ? 'AI extracted · high confidence' : line.confidence === 'medium' ? 'AI extracted · review details' : 'AI extracted · needs manual review'}</div></div><button type="button" onClick={() => setLines((current) => current.filter((item) => item.rowKey !== line.rowKey))} aria-label="Remove invoice line" className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></div>
+              <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-semibold text-slate-900">{line.productName || 'New line item'}</div><div className="mt-1 text-[10px] text-slate-500">{line.sku ? `SKU ${line.sku} · ` : ''}{line.edited ? 'Edited by you' : line.confidence === 'high' ? 'AI extracted · high confidence' : line.confidence === 'medium' ? 'AI extracted · review details' : 'AI extracted · needs manual review'}</div>{match ? <div className="mt-1 text-[10px] text-emerald-700">Existing product match selected · confirm the variant</div> : possibleMatches.length > 0 ? <div className="mt-1 text-[10px] text-amber-700">Possible match · choose the correct product/variant below</div> : <div className="mt-1 text-[10px] text-slate-500">No existing match found · create a new product if required</div>}</div><button type="button" onClick={() => setLines((current) => current.filter((item) => item.rowKey !== line.rowKey))} aria-label="Remove invoice line" className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
                 <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Match existing product / variant</span><select value={line.variantId} onChange={(e) => updateLine(line.rowKey, { variantId: e.target.value })} className="w-full rounded-md border border-slate-200 p-2"><option value="">No match — create new product below</option>{variants.map((variant) => <option key={variant.variantId} value={variant.variantId}>{variant.productName} · {variant.variantName}{variant.sku ? ` · ${variant.sku}` : ''}</option>)}</select></label>
                 <label className="space-y-1"><span className="text-slate-500">Quantity</span><input type="number" min="0.0001" step="0.0001" value={line.quantity} onChange={(e) => updateLine(line.rowKey, { quantity: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
                 <label className="space-y-1"><span className="text-slate-500">Unit purchase cost</span><input type="number" min="0" step="0.0001" value={line.unitCost} onChange={(e) => updateLine(line.rowKey, { unitCost: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
               </div>
-              {!line.variantId && <div className="rounded-md bg-slate-50 p-3 space-y-2"><div className="text-xs font-medium text-slate-800">Create new product after review</div>{suggested !== null && <div className="text-[11px] text-slate-600">Suggested selling price ({pricingMethod === 'markup' ? 'markup' : 'gross margin'}): <strong>{formatPurchaseMoney(suggested, invoiceCurrency)}</strong> · You must enter or approve a price separately.</div>}<div className="grid grid-cols-1 sm:grid-cols-3 gap-2"><label className="text-[11px] text-slate-500">Product name<input value={line.productName} onChange={(e) => updateLine(line.rowKey, { productName: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Variant name<input value={line.newVariant} onChange={(e) => updateLine(line.rowKey, { newVariant: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">SKU<input value={line.newSku} onChange={(e) => updateLine(line.rowKey, { newSku: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Unit of measure<input value={line.newUnit} onChange={(e) => updateLine(line.rowKey, { newUnit: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Selling price (optional)<input type="number" min="0" step="0.01" value={line.newSellingPrice} onChange={(e) => updateLine(line.rowKey, { newSellingPrice: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" />{suggested !== null && <button type="button" onClick={() => updateLine(line.rowKey, { newSellingPrice: suggested.toFixed(2) })} className="mt-1 text-blue-700 underline">Use suggested price</button>}</label></div><button type="button" disabled={busy} onClick={() => void createNewProduct(line)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-40">Approve and create product</button><p className="text-[10px] text-slate-500">This saves the new product and variant now; it does not add stock.</p></div>}
+              {!line.variantId && <div className="rounded-md bg-slate-50 p-3 space-y-2"><div className="text-xs font-medium text-slate-800">Create new product after review</div>{suggested !== null && <div className="text-[11px] text-slate-600">Suggested selling price ({pricingMethod === 'markup' ? 'markup' : 'gross margin'}): <strong>{formatPurchaseMoney(suggested, invoiceCurrency)}</strong> · You must enter or approve a price separately.</div>}<div className="grid grid-cols-1 sm:grid-cols-3 gap-2"><label className="text-[11px] text-slate-500">Product name<input value={line.productName} onChange={(e) => updateLine(line.rowKey, { productName: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Variant name<input value={line.newVariant} onChange={(e) => updateLine(line.rowKey, { newVariant: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">SKU *<input value={line.newSku} onChange={(e) => updateLine(line.rowKey, { newSku: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Barcode<input value={line.newBarcode} onChange={(e) => updateLine(line.rowKey, { newBarcode: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Unit of measure<input value={line.newUnit} onChange={(e) => updateLine(line.rowKey, { newUnit: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Selling price (optional)<input type="number" min="0" step="0.01" value={line.newSellingPrice} onChange={(e) => updateLine(line.rowKey, { newSellingPrice: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" />{suggested !== null && <button type="button" onClick={() => updateLine(line.rowKey, { newSellingPrice: suggested.toFixed(2) })} className="mt-1 text-blue-700 underline">Use suggested price</button>}</label></div><button type="button" disabled={busy || !line.newSku.trim()} onClick={() => void createNewProduct(line)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-40">Approve and create product</button><p className="text-[10px] text-slate-500">This saves the new product and variant now; it does not add stock.</p></div>}
               {line.variantId && <div className="rounded-md bg-slate-50 p-3 space-y-2"><div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]"><span className="text-slate-600">Purchase cost: <strong className="text-slate-900">{formatPurchaseMoney(Number.isFinite(cost) ? cost : 0, invoiceCurrency)}</strong></span><span className="text-slate-600">Existing selling price: <strong className="text-slate-900">{formatPurchaseMoney(existingPrice, invoiceCurrency)}</strong></span><span className="text-slate-600">Suggested price: <strong className="text-slate-900">{suggested === null ? 'Not available' : formatPurchaseMoney(suggested, invoiceCurrency)}</strong></span>{suggested !== null && <span className="text-slate-600">Expected profit: <strong className="text-slate-900">{formatPurchaseMoney(suggested - cost, invoiceCurrency)} ({suggested > 0 ? (((suggested - cost) / suggested) * 100).toFixed(1) : '0.0'}% margin)</strong></span>}</div><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] text-slate-500">Custom selling price<input type="number" min="0" step="0.01" value={line.newSellingPrice || (suggested === null ? '' : suggested.toFixed(2))} onChange={(e) => updateLine(line.rowKey, { newSellingPrice: e.target.value })} className="mt-1 block w-36 rounded border border-slate-200 bg-white p-2 text-xs" /></label><button type="button" disabled={busy || !line.newSellingPrice.trim()} onClick={() => void applySellingPrice(line, Number(line.newSellingPrice || suggested))} className="rounded-md bg-white border border-slate-300 px-3 py-2 text-[11px] font-medium text-slate-700 disabled:opacity-40">Apply price (explicit)</button></div><p className="text-[10px] text-slate-500">No selling price changes unless you press Apply price. Leaving it untouched preserves the current price.</p></div>}
             </div>;
           })}
