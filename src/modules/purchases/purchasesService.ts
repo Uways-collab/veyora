@@ -446,6 +446,8 @@ export async function fetchPurchaseReferenceData(
       sku: variant.sku,
       unitOfMeasure: formatUnitOfMeasureLabel(variant.unitOfMeasure),
       defaultCostPrice: roundFourDecimals(variant.costPrice),
+      defaultSellingPrice: roundFourDecimals(variant.sellingPrice),
+      barcode: variant.barcode,
       productTypeValue: product.productTypeValue,
       categoryName: product.categoryName,
     });
