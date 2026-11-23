@@ -11,6 +11,16 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+function matchesFileSignature(bytes: Uint8Array, mimeType: string): boolean {
+  if (mimeType === 'application/pdf') return new TextDecoder().decode(bytes.subarray(0, 5)) === '%PDF-';
+  if (mimeType === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mimeType === 'image/png') return bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  if (mimeType === 'image/webp') return bytes.length >= 12 &&
+    new TextDecoder().decode(bytes.subarray(0, 4)) === 'RIFF' &&
+    new TextDecoder().decode(bytes.subarray(8, 12)) === 'WEBP';
+  return false;
+}
+
 function invoicePrompt() {
   return `Read this supplier invoice carefully. Extract only information visibly present.
 Do not guess missing values. Use null for missing or unreadable fields. Keep all amounts numeric
@@ -82,6 +92,7 @@ Deno.serve(async (req: Request) => {
     if (downloadError || !file) throw new Error('The private invoice file could not be opened');
     if (file.size > MAX_BYTES) throw new Error('Invoice file exceeds the 15 MB limit');
     const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!matchesFileSignature(bytes, scan.mime_type)) throw new Error('The file content does not match its declared invoice file type');
     let binary = '';
     for (let offset = 0; offset < bytes.length; offset += 0x8000) {
       binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
