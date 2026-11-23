@@ -53,7 +53,11 @@ function normalizeCurrencyCode(value: string, fallback: string): string {
   const raw = value.trim().toUpperCase();
   if (!raw) return fallback.toUpperCase();
   if (raw === '₦' || raw === 'NGN' || raw === 'NAIRA' || raw === 'N') return 'NGN';
-  if (raw === '
+  if (raw === '£' || raw === 'GBP' || raw === 'POUND') return 'GBP';
+  if (raw === '€' || raw === 'EUR' || raw === 'EURO') return 'EUR';
+  if (raw === '$' || raw === 'US$' || raw === 'USD') return fallback.toUpperCase() === 'USD' ? 'USD' : raw;
+  return raw;
+}
 const ACCEPTED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 
 function cleanText(value: unknown): string {
@@ -128,6 +132,7 @@ export function InvoiceScannerPanel({
   const [createdPurchaseId, setCreatedPurchaseId] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<{ purchase_number: string; status: string } | null>(null);
   const [duplicateChecking, setDuplicateChecking] = useState(false);
+  const [priceMessage, setPriceMessage] = useState<string | null>(null);
   const [editedFields, setEditedFields] = useState<string[]>([]);
   const markEdited = (field: string) => setEditedFields((current) => current.includes(field) ? current : [...current, field]);
 
@@ -322,12 +327,12 @@ export function InvoiceScannerPanel({
   const applySellingPrice = async (line: InvoiceLine, price: number) => {
     const supabase = getSupabaseClient();
     if (!supabase || !organisationId || !line.variantId || !Number.isFinite(price) || price < 0) return;
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setPriceMessage(null);
     const { error: updateError } = await supabase.from('product_variants')
       .update({ selling_price: price })
       .eq('organization_id', organisationId).eq('id', line.variantId);
     if (updateError) setError(updateError.message);
-    else setError(null);
+    else setPriceMessage('Selling price updated by your explicit approval.');
     setBusy(false);
   };
 
@@ -419,6 +424,7 @@ export function InvoiceScannerPanel({
           </div>
         )}
         {busy && <div className="rounded-md border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{stage === 'uploading' ? 'Uploading securely…' : stage === 'extracting' ? 'Reading invoice pages and extracting details…' : 'Preparing the purchase draft…'}</div>}
+        {priceMessage && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">{priceMessage}</div>}
         {error && <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 flex items-start gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</div>}
         {scan && scan.status !== 'ready' && scan.status !== 'linked' && scan.status !== 'cancelled' && <button type="button" disabled={busy} onClick={() => void retryScan()} className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-xs text-slate-700"><RefreshCw className="h-3.5 w-3.5" /> Retry extraction</button>}
       </section>
@@ -445,7 +451,7 @@ export function InvoiceScannerPanel({
               <label className="space-y-1"><span className="text-slate-500">Delivery / extra charges</span><input type="number" min="0" value={delivery} onChange={(e) => { setDelivery(e.target.value); markEdited('delivery'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
               <label className="space-y-1"><span className="text-slate-500">Invoice grand total</span><input type="number" min="0" value={grandTotal} onChange={(e) => { setGrandTotal(e.target.value); markEdited('grand total'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
             </div>
-            {duplicateChecking && <p className="text-[11px] text-slate-500">Checking for duplicate invoice…</p>}{!invoiceNumber.trim() && <p className="text-[11px] text-amber-700">No invoice number is recorded. Duplicate detection will be less reliable; do not invent a reference.</p>}
+            {editedFields.length > 0 && <p className="text-[11px] text-slate-500">Edited by you: {editedFields.join(', ')}</p>}{duplicateChecking && <p className="text-[11px] text-slate-500">Checking for duplicate invoice…</p>}{!invoiceNumber.trim() && <p className="text-[11px] text-amber-700">No invoice number is recorded. Duplicate detection will be less reliable; do not invent a reference.</p>}
             {duplicate && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"><strong>Possible duplicate:</strong> {duplicate.purchase_number} ({duplicate.status}). Review the existing purchase before creating another.</div>}
             {!invoiceCurrency.trim() && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice currency was not readable. Confirm it from the original document; it is not assumed.</div>}{currencyMismatch && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice currency differs from this workspace ({currencyCode}). The purchase cannot be created until the currency issue is resolved.</div>}
             {subtotal.trim() && subtotalDifference > 0.01 && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice subtotal differs from the product line calculation by {formatPurchaseMoney(subtotalDifference, invoiceCurrency)}.</div>}{grandTotal.trim() && totalDifference > 0.01 && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice total differs from the current line calculation by {formatPurchaseMoney(totalDifference, invoiceCurrency)}. Veyora will not silently adjust the values.</div>}
