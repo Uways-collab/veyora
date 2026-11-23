@@ -1080,10 +1080,10 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               <Database className="h-4 w-4 text-slate-500" aria-hidden="true" />
               <div>
                 <h2 className="text-sm font-semibold text-slate-900">
-                  Supabase Migrations (<span className="font-mono">0001</span> &amp; <span className="font-mono">0002</span>)
+                  Supabase Schema &amp; Migrations
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Apply both SQL files in <span className="font-mono">supabase/migrations/</span> in numerical order.
+                  Migration history is maintained in <span className="font-mono">supabase/migrations/</span>. Review and apply only migrations compatible with the connected database schema.
                 </p>
               </div>
             </div>
@@ -1111,13 +1111,13 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               <h3 className="font-semibold text-slate-900">Core Tables</h3>
               <ul className="space-y-1.5 text-slate-600">
                 <li>
-                  <span className="font-mono text-slate-900">public.profiles</span> — Synced from <span className="font-mono">auth.users</span>; visible only to self &amp; org peers.
+                  <span className="font-mono text-slate-900">public.profiles</span> — User display name and avatar metadata. Auth email addresses remain in <span className="font-mono">auth.users</span>.
                 </li>
                 <li>
                   <span className="font-mono text-slate-900">public.organizations</span> — Business name, type, country, currency, timezone, email, phone.
                 </li>
                 <li>
-                  <span className="font-mono text-slate-900">public.organization_memberships</span> — Tenant memberships and role assignments (<span className="font-mono">owner | admin | manager | staff</span>).
+                  <span className="font-mono text-slate-900">public.organization_memberships</span> — Tenant memberships and role assignments (<span className="font-mono">owner | manager | staff</span>; legacy Admin rows may exist).
                 </li>
               </ul>
             </div>
@@ -1126,10 +1126,10 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               <h3 className="font-semibold text-slate-900">Anti-Privilege-Escalation Controls</h3>
               <ul className="space-y-1.5 text-slate-600">
                 <li>
-                  <span className="font-mono text-slate-900">enforce_membership_rbac()</span> — Blocks users from modifying their own role or removing the last active Owner.
+                  <span className="font-mono text-slate-900">enforce_membership_rbac()</span> — Membership changes are constrained by database policies and role checks.
                 </li>
                 <li>
-                  <span className="font-mono text-slate-900">org_members_*_privileged</span> — Prevents Admins from inserting or promoting Owners/Admins.
+                  <span className="font-mono text-slate-900">organization_memberships_*_privileged</span> — Constrains membership role changes to prevent privilege escalation.
                 </li>
                 <li>
                   <span className="font-mono text-slate-900">create_business_workspace()</span> — Atomic <span className="font-mono">SECURITY DEFINER</span> RPC assigning Owner server-side.
