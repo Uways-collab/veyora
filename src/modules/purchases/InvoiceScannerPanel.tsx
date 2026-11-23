@@ -264,7 +264,11 @@ export function InvoiceScannerPanel({
     const { data: saved, error: readError } = await supabase.from('invoice_scans')
       .select('id,file_path,status,extracted_data,error_message').eq('id', scanId).single();
     if (readError || !saved) throw new Error(readError?.message || 'Could not load the saved invoice scan.');
-    if (activeOrgIdRef.current !== organisationId) return;
+    if (activeOrgIdRef.current !== organisationId) {
+      await supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scanId);
+      await supabase.storage.from('invoice-documents').remove([saved.file_path]);
+      return;
+    }
     setScan(saved as ScanRow);
     applyExtraction(extracted);
     const { data: signed, error: signedError } = await supabase.storage.from('invoice-documents')
@@ -299,13 +303,21 @@ export function InvoiceScannerPanel({
         await supabase.storage.from('invoice-documents').remove([filePath]);
         throw new Error(insertError.message);
       }
-      if (activeOrgIdRef.current !== organisationId) return;
+      if (activeOrgIdRef.current !== organisationId) {
+        await supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scanId);
+        await supabase.storage.from('invoice-documents').remove([filePath]);
+        return;
+      }
       setScan({ id: scanId, file_path: filePath, status: 'uploaded', extracted_data: {}, error_message: null });
       await processExistingScan(scanId);
     } catch (err) {
-      if (activeOrgIdRef.current === organisationId) setError(err instanceof Error ? err.message : 'Invoice scanning failed. Try again.');
+      if (activeOrgIdRef.current !== organisationId) {
+        await supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scanId);
+        await supabase.storage.from('invoice-documents').remove([filePath]);
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Invoice scanning failed. Try again.');
       setStage('idle');
-      if (activeOrgIdRef.current !== organisationId) return;
       const { data: row } = await supabase.from('invoice_scans')
         .select('id,file_path,status,extracted_data,error_message').eq('id', scanId).maybeSingle();
       if (row) setScan(row as ScanRow);
