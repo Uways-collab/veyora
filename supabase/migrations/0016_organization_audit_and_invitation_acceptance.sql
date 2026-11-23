@@ -70,7 +70,7 @@ begin
   if p_organization_id is null then
     raise exception 'Organisation context is required' using errcode = '22023';
   end if;
-  if p_role not in ('manager','staff') then
+  if p_role is null or p_role not in ('manager','staff') then
     raise exception 'Invited role must be manager or staff' using errcode = '22023';
   end if;
   if v_email !~* '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$' or length(v_email) > 254 then
