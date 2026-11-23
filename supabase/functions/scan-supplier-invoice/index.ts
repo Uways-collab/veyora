@@ -67,8 +67,8 @@ Deno.serve(async (req: Request) => {
   if (!anonKey) {
     const publishableKeys = Deno.env.get('SUPABASE_PUBLISHABLE_KEYS');
     if (publishableKeys) {
-      try { anonKey = (JSON.parse(publishableKeys) as Record<string, string>).default ?? null; }
-      catch { anonKey = null; }
+      try { anonKey = (JSON.parse(publishableKeys) as Record<string, string>).default; }
+      catch { anonKey = undefined; }
     }
   }
   const geminiKey = Deno.env.get('GEMINI_API_KEY');
