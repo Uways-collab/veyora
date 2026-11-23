@@ -77,21 +77,23 @@ function bestVariantMatch(line: Record<string, unknown>, variants: PurchaseCatal
   const brand = normalize(cleanText(line.brand));
   const size = normalize(cleanText(line.size));
   if (barcode) {
-    const exactBarcode = variants.find((item) => (item.barcode ?? '').trim() === barcode);
-    if (exactBarcode) return exactBarcode;
+    const barcodeMatches = variants.filter((item) => (item.barcode ?? '').trim() === barcode);
+    if (barcodeMatches.length === 1) return barcodeMatches[0];
+    if (barcodeMatches.length > 1) return null;
   }
   if (sku) {
-    const exactSku = variants.find((item) => item.sku.trim().toLowerCase() === sku);
-    if (exactSku) return exactSku;
+    const skuMatches = variants.filter((item) => item.sku.trim().toLowerCase() === sku);
+    if (skuMatches.length === 1) return skuMatches[0];
+    if (skuMatches.length > 1) return null;
   }
-  const exact = variants.find((item) => {
+  const exactMatches = variants.filter((item) => {
     const attributes = normalize(Object.values(item.attributes ?? {}).join(' '));
     return normalize(item.productName) === name &&
       (!variant || normalize(item.variantName) === variant) &&
       (!brand || attributes.includes(brand)) &&
       (!size || attributes.includes(size) || normalize(item.variantName).includes(size));
   });
-  return exact ?? null;
+  return exactMatches.length === 1 ? exactMatches[0] : null;
 }
 function suggestedPrice(cost: number, method: 'markup' | 'margin', percent: number): number | null {
   if (!Number.isFinite(cost) || cost <= 0 || !Number.isFinite(percent) || percent < 0) return null;
@@ -536,13 +538,14 @@ export function InvoiceScannerPanel({
           {lines.map((line) => {
             const match = variants.find((variant) => variant.variantId === line.variantId);
             const possibleMatches = !match ? variants.filter((variant) => normalize(variant.productName).includes(normalize(line.productName)) || normalize(line.productName).includes(normalize(variant.productName))).slice(0, 3) : [];
+            const ambiguousIdentifier = !match && ((line.sku && variants.filter((variant) => variant.sku.trim().toLowerCase() === line.sku.toLowerCase()).length > 1) || (line.barcode && variants.filter((variant) => variant.barcode === line.barcode).length > 1));
             const cost = Number(line.unitCost);
             const suggested = suggestedPrice(cost, pricingMethod, Number(pricingPercent));
             const lineCalc = Number(line.quantity) * cost;
             const lineDifference = line.lineTotal === null ? 0 : Math.abs(line.lineTotal - lineCalc);
             const existingPrice = match?.defaultSellingPrice ?? 0;
             return <div key={line.rowKey} className="rounded-md border border-slate-200 p-3 space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-semibold text-slate-900">{line.productName || 'New line item'}</div><div className="mt-1 text-[10px] text-slate-500">{line.sku ? `SKU ${line.sku} · ` : ''}{line.barcode ? `Barcode ${line.barcode} · ` : ''}{line.edited ? 'Edited by you' : line.confidence === 'high' ? 'AI extracted · high confidence' : line.confidence === 'medium' ? 'AI extracted · review details' : 'AI extracted · needs manual review'}</div>{match ? <div className="mt-1 text-[10px] text-emerald-700">Existing product match selected · confirm the variant</div> : possibleMatches.length > 0 ? <div className="mt-1 text-[10px] text-amber-700">Possible match · choose the correct product/variant below</div> : <div className="mt-1 text-[10px] text-slate-500">No existing match found · create a new product if required</div>}</div><button type="button" onClick={() => setLines((current) => current.filter((item) => item.rowKey !== line.rowKey))} aria-label="Remove invoice line" className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></div>
+              <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-semibold text-slate-900">{line.productName || 'New line item'}</div><div className="mt-1 text-[10px] text-slate-500">{line.sku ? `SKU ${line.sku} · ` : ''}{line.barcode ? `Barcode ${line.barcode} · ` : ''}{line.edited ? 'Edited by you' : line.confidence === 'high' ? 'AI extracted · high confidence' : line.confidence === 'medium' ? 'AI extracted · review details' : 'AI extracted · needs manual review'}</div>{match ? <div className="mt-1 text-[10px] text-emerald-700">Existing product match selected · confirm the variant</div> : ambiguousIdentifier ? <div className="mt-1 text-[10px] text-amber-700">Multiple records share this SKU/barcode · choose the correct variant below</div> : possibleMatches.length > 0 ? <div className="mt-1 text-[10px] text-amber-700">Possible match · choose the correct product/variant below</div> : <div className="mt-1 text-[10px] text-slate-500">No existing match found · create a new product if required</div>}</div><button type="button" onClick={() => setLines((current) => current.filter((item) => item.rowKey !== line.rowKey))} aria-label="Remove invoice line" className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
                 <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Match existing product / variant</span><select value={line.variantId} onChange={(e) => updateLine(line.rowKey, { variantId: e.target.value })} className="w-full rounded-md border border-slate-200 p-2"><option value="">No match — create new product below</option>{variants.map((variant) => <option key={variant.variantId} value={variant.variantId}>{variant.productName} · {variant.variantName}{variant.sku ? ` · ${variant.sku}` : ''}</option>)}</select></label>
                 <label className="space-y-1"><span className="text-slate-500">Quantity</span><input type="number" min="0.0001" step="0.0001" value={line.quantity} onChange={(e) => updateLine(line.rowKey, { quantity: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
