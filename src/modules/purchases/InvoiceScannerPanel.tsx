@@ -122,6 +122,10 @@ export function InvoiceScannerPanel({
   const [stage, setStage] = useState<'idle' | 'uploading' | 'extracting' | 'saving'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [supplierId, setSupplierId] = useState('');
+  const [supplierName, setSupplierName] = useState('');
+  const [supplierEmail, setSupplierEmail] = useState('');
+  const [supplierPhone, setSupplierPhone] = useState('');
+  const [supplierAddress, setSupplierAddress] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [invoiceDate, setInvoiceDate] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -149,6 +153,7 @@ export function InvoiceScannerPanel({
     setPreviewUrl('');
     setError(null);
     setSupplierId('');
+    setSupplierName(''); setSupplierEmail(''); setSupplierPhone(''); setSupplierAddress('');
     setInvoiceNumber('');
     setInvoiceDate('');
     setDueDate('');
@@ -201,7 +206,7 @@ export function InvoiceScannerPanel({
       }
     }
     setFile(null); setScan(null); setPreviewUrl(''); setError(null); setStage('idle');
-    setSupplierId(''); setInvoiceNumber(''); setInvoiceDate(''); setDueDate('');
+    setSupplierId(''); setSupplierName(''); setSupplierEmail(''); setSupplierPhone(''); setSupplierAddress(''); setInvoiceNumber(''); setInvoiceDate(''); setDueDate('');
     setInvoiceCurrency(currencyCode); setSubtotal(''); setDiscount('0'); setTax('0');
     setDelivery(''); setGrandTotal(''); setLines([]); setCreatedPurchaseId(null);
     setDuplicate(null); setDuplicateOverride(false); setEditedFields([]);
@@ -217,9 +222,13 @@ export function InvoiceScannerPanel({
     setTax(numericText(data.tax_amount));
     setDelivery(numericText(data.delivery_charges));
     setGrandTotal(numericText(data.grand_total));
-    const supplierName = cleanText(data.supplier?.name);
-    const supplierMatch = supplierName ? (suppliers.find((supplier) => normalize(supplier.name) === normalize(supplierName))
-      ?? suppliers.find((supplier) => normalize(supplier.name).includes(normalize(supplierName)) || normalize(supplierName).includes(normalize(supplier.name)))) : undefined;
+    const extractedSupplierName = cleanText(data.supplier?.name);
+    setSupplierName(extractedSupplierName);
+    setSupplierEmail(cleanText(data.supplier?.email));
+    setSupplierPhone(cleanText(data.supplier?.phone));
+    setSupplierAddress(cleanText(data.supplier?.address));
+    const supplierMatch = extractedSupplierName ? (suppliers.find((supplier) => normalize(supplier.name) === normalize(extractedSupplierName))
+      ?? suppliers.find((supplier) => normalize(supplier.name).includes(normalize(extractedSupplierName)) || normalize(extractedSupplierName).includes(normalize(supplier.name)))) : undefined;
     setSupplierId(supplierMatch?.id ?? '');
     setDuplicate(null); setDuplicateOverride(false);
     setEditedFields([]);
@@ -464,13 +473,14 @@ export function InvoiceScannerPanel({
     if (duplicate?.kind === 'exact') { setError('This supplier invoice number already exists. Review the existing purchase instead of creating another.'); return; }
     if (duplicate?.kind === 'possible' && !duplicateOverride) { setError('Review the possible duplicate and explicitly confirm if this is a different invoice.'); return; }
     setBusy(true); setError(null); setStage('saving');
-    const supplierName = suppliers.find((supplier) => supplier.id === supplierId)?.name ?? null;
+    const selectedSupplierName = suppliers.find((supplier) => supplier.id === supplierId)?.name ?? null;
     const reviewedData: Record<string, unknown> = {
       ...scan.extracted_data,
       ai_extraction: scan.extracted_data.ai_extraction ?? scan.extracted_data,
       reviewed_invoice: {
         supplier_id: supplierId,
-        supplier_name: supplierName,
+        supplier_name: selectedSupplierName,
+        supplier_invoice_details: { name: supplierName || null, email: supplierEmail || null, phone: supplierPhone || null, address: supplierAddress || null },
         invoice_number: invoiceNumber.trim() || null,
         invoice_date: invoiceDate || null,
         due_date: dueDate || null,
@@ -590,7 +600,16 @@ export function InvoiceScannerPanel({
           <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-slate-900">Review invoice details</h2><span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] text-blue-700">AI extracted · editable</span><span className="text-[10px] text-slate-500">Fields marked “Edited by you” were changed manually.</span></div>
             {scan.extracted_data.warnings?.length ? <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Review needed</strong><ul className="mt-1 list-disc pl-4">{scan.extracted_data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></div> : null}
-            {scan.extracted_data.supplier && <p className="text-[11px] text-slate-500">Supplier details found on invoice: {[scan.extracted_data.supplier.contact_person, scan.extracted_data.supplier.email, scan.extracted_data.supplier.phone, scan.extracted_data.supplier.address].filter(Boolean).join(' · ') || 'No additional contact details extracted'}</p>}
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-slate-700">Supplier details extracted from invoice · correct if needed</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <label className="space-y-1"><span className="text-slate-500">Invoice supplier name</span><input value={supplierName} onChange={(e) => { setSupplierName(e.target.value); markEdited('supplier name'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Supplier email</span><input type="email" value={supplierEmail} onChange={(e) => { setSupplierEmail(e.target.value); markEdited('supplier email'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Supplier phone</span><input value={supplierPhone} onChange={(e) => { setSupplierPhone(e.target.value); markEdited('supplier phone'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+                <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Supplier address</span><input value={supplierAddress} onChange={(e) => { setSupplierAddress(e.target.value); markEdited('supplier address'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+              </div>
+              <p className="text-[10px] text-slate-500">These corrections are saved with this invoice review; they do not silently change the supplier’s saved contact record.</p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <label className="space-y-1"><span className="text-slate-500">Supplier <span className="text-rose-600">*</span> {editedFields.includes('supplier') ? '· Edited by you' : '· AI match / review'}</span><select value={supplierId} onChange={(e) => { setSupplierId(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('supplier'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2"><option value="">Select existing supplier</option>{suppliers.map((supplier: SupplierRecord) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
               <label className="space-y-1"><span className="text-slate-500">Supplier invoice number (if present)</span><input value={invoiceNumber} onChange={(e) => { setInvoiceNumber(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('invoice number'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
