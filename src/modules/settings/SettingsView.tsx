@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Loader2, LogOut, RefreshCw, Users } from 'lucide-react';
+import { CheckCircle2, Loader2, LogOut, RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import {
   BUSINESS_TYPE_OPTIONS,
@@ -27,7 +27,9 @@ export type SettingsTab =
   | 'auth_orgs'
   | 'receipt_settings'
   | 'members_roles'
-;
+  | 'schema_rls'
+  | 'environment'
+  | 'security_storage';
 
 
 interface SettingsViewProps {
@@ -335,10 +337,6 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
       setInviteSubmitting(false);
     }
   };
-
-  const maskedUrl = runtime.supabaseUrl
-    ? runtime.supabaseUrl.replace(/(https?:\/\/[^.]+)\./, '$1.')
-    : 'Not configured';
 
   return (
     <div className="space-y-8">
