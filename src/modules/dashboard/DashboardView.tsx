@@ -106,11 +106,18 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
     setAuditLoading(true);
     setAuditError(null);
     setAuditErrorKind(null);
-    const result = await fetchOrganisationAuditLogs(orgId, 8);
-    setAuditLogs(result.logs);
-    setAuditError(result.error);
-    setAuditErrorKind(result.errorKind);
-    setAuditLoading(false);
+    try {
+      const result = await fetchOrganisationAuditLogs(orgId, 8);
+      setAuditLogs(result.logs);
+      setAuditError(result.error);
+      setAuditErrorKind(result.errorKind);
+    } catch (error) {
+      setAuditLogs([]);
+      setAuditError(error instanceof Error ? error.message : 'Unable to load workspace activity.');
+      setAuditErrorKind('other');
+    } finally {
+      setAuditLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -468,7 +475,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
                 Workspace Activity
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Verified events from <span className="font-mono">public.audit_logs</span>.
+                Verified organisation events from <span className="font-mono">public.organization_audit_log</span>.
               </p>
             </div>
             {activeOrganisation && (
@@ -497,7 +504,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
                   Activity log not yet configured
                 </div>
                 <p>
-                  <span className="font-mono">public.audit_logs</span> is not present in this Supabase project yet.
+                  <span className="font-mono">public.organization_audit_log</span> is not present in this Supabase project yet.
                 </p>
               </div>
             ) : (
