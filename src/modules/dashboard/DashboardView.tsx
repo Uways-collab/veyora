@@ -24,6 +24,22 @@ interface DashboardViewProps {
 }
 
 type ChartWindow = '7D' | '30D' | '90D' | '12M';
+interface DashboardMetrics {
+  totalSales: number;
+  orders: number;
+  inventoryItems: number;
+  customers: number;
+  currency: string;
+}
+
+const EMPTY_METRICS: DashboardMetrics = {
+  totalSales: 0,
+  orders: 0,
+  inventoryItems: 0,
+  customers: 0,
+  currency: 'USD',
+};
+
 
 interface OverviewCardSpec {
   id: string;
@@ -97,6 +113,9 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
   } = useAuth();
 
   const [chartWindow, setChartWindow] = useState<ChartWindow>('30D');
+  const [metrics, setMetrics] = useState<DashboardMetrics>(EMPTY_METRICS);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -127,6 +146,70 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
       setAuditLogs([]);
       setAuditError(null);
     }
+  }, [status, activeOrganisation]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadMetrics = async (organisationId: string) => {
+      const supabase = (await import('../../core/supabase/client')).getSupabaseClient();
+      if (!supabase) {
+        if (!cancelled) setMetricsError('Supabase client is not configured.');
+        return;
+      }
+      setMetricsLoading(true);
+      setMetricsError(null);
+      try {
+        const [salesResult, productsResult, customersResult] = await Promise.all([
+          supabase
+            .from('sales')
+            .select('total_amount, status')
+            .eq('organization_id', organisationId)
+            .neq('status', 'cancelled'),
+          supabase
+            .from('products')
+            .select('id', { count: 'exact', head: true })
+            .eq('organization_id', organisationId)
+            .eq('is_active', true),
+          supabase
+            .from('customers')
+            .select('id', { count: 'exact', head: true })
+            .eq('organization_id', organisationId)
+            .eq('is_active', true),
+        ]);
+        const failure = salesResult.error ?? productsResult.error ?? customersResult.error;
+        if (failure) throw failure;
+        const salesRows = salesResult.data ?? [];
+        const totalSales = salesRows.reduce((sum, row) => {
+          const amount = Number(row.total_amount);
+          return sum + (Number.isFinite(amount) ? amount : 0);
+        }, 0);
+        if (!cancelled) {
+          setMetrics({
+            totalSales,
+            orders: salesRows.length,
+            inventoryItems: productsResult.count ?? 0,
+            customers: customersResult.count ?? 0,
+            currency: activeOrganisation?.base_currency ?? 'USD',
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMetrics(EMPTY_METRICS);
+          setMetricsError(error instanceof Error ? error.message : 'Unable to load workspace metrics.');
+        }
+      } finally {
+        if (!cancelled) setMetricsLoading(false);
+      }
+    };
+
+    if (status === 'authenticated' && activeOrganisation) {
+      setMetrics(EMPTY_METRICS);
+      void loadMetrics(activeOrganisation.id);
+    } else {
+      setMetrics(EMPTY_METRICS);
+      setMetricsError(null);
+    }
+    return () => { cancelled = true; };
   }, [status, activeOrganisation]);
 
   const welcomeName = profile?.full_name?.trim() || user?.email || 'there';
@@ -219,6 +302,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
           )}
         </div>
 
+        {metricsError && <p role="status" className="text-xs text-amber-700">{metricsError}</p>}
         <div className="bg-white border border-slate-200 rounded-lg grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
           {OVERVIEW_CARDS.map((card) => (
             <div key={card.id} className="p-5 flex flex-col justify-between gap-4">
@@ -229,10 +313,18 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
 
               <div className="space-y-1">
                 <div className="font-mono text-2xl font-semibold text-slate-900 tabular-nums">
-                  —
+                  {metricsLoading ? '…' : metricsError ? '—' : card.id === 'total_sales'
+                    ? new Intl.NumberFormat('en-NG', { style: 'currency', currency: metrics.currency, maximumFractionDigits: 0 }).format(metrics.totalSales)
+                    : card.id === 'orders' ? metrics.orders.toLocaleString()
+                    : card.id === 'inventory_items' ? metrics.inventoryItems.toLocaleString()
+                    : metrics.customers.toLocaleString()}
                 </div>
                 <div className="text-xs font-medium text-slate-700">
-                  {card.emptyHeadline}
+                  {metricsError ? 'Metrics unavailable' : metricsLoading ? 'Loading workspace data' :
+                    card.id === 'total_sales' ? (metrics.totalSales > 0 ? 'Recorded sales value' : card.emptyHeadline)
+                    : card.id === 'orders' ? (metrics.orders > 0 ? 'Recorded orders' : card.emptyHeadline)
+                    : card.id === 'inventory_items' ? (metrics.inventoryItems > 0 ? 'Active products' : card.emptyHeadline)
+                    : (metrics.customers > 0 ? 'Active customers' : card.emptyHeadline)}
                 </div>
               </div>
 
