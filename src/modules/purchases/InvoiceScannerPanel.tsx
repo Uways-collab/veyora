@@ -48,7 +48,7 @@ type ExtractedInvoice = {
   [key: string]: unknown;
 };
 
-type ScanRow = { id: string; file_path: string; status: string; extracted_data: ExtractedInvoice; error_message: string | null };
+type ScanRow = { id: string; file_path: string; status: string; extracted_data: ExtractedInvoice; error_message: string | null; updated_at: string };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 function normalizeCurrencyCode(value: string, fallback: string): string {
