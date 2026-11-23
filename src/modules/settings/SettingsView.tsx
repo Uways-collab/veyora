@@ -340,7 +340,8 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
 
   const handleInviteMember = async (e: FormEvent) => {
     e.preventDefault();
-    if (!activeOrganisation || activeRole !== 'owner' || inviteSubmitting) return;
+    if (!activeOrganisation || (activeRole !== 'owner' && activeRole !== 'manager') || inviteSubmitting) return;
+    if (activeRole === 'manager' && inviteRole !== 'staff') return;
     setInviteSubmitting(true);
     setMemberActionMsg(null);
     try {
@@ -722,6 +723,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               </ul>
             </section>
 
+{activeRole === 'owner' && (
             <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
               <div className="border-b border-slate-200 pb-3">
                 <h2 className="text-sm font-semibold text-slate-900">
@@ -853,6 +855,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                 </button>
               </form>
             </section>
+            )}
           </div>
         </div>
       )}
@@ -893,12 +896,12 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               </button>
             </div>
 
-            {activeRole === 'owner' && (
+            {(activeRole === 'owner' || activeRole === 'manager') && (
               <form onSubmit={(e) => void handleInviteMember(e)} className="px-5 py-4 border-b border-slate-200 bg-slate-50/50 space-y-3">
                 <div>
                   <h3 className="text-xs font-semibold text-slate-900">Invite a team member</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Only the organisation owner can add members. New invitations are limited to Manager and Staff.
+                    Owners can invite Manager or Staff. Managers can invite Staff only.
                   </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_150px_auto] gap-2">
@@ -922,7 +925,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                     className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
                   >
                     <option value="staff">Staff</option>
-                    <option value="manager">Manager</option>
+                    {activeRole === 'owner' && <option value="manager">Manager</option>}
                   </select>
                   <button
                     type="submit"
