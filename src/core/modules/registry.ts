@@ -79,11 +79,11 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     group: 'operations',
     stage: 'foundation_active',
     summary:
-      'Supplier directory, vendor contacts, payment terms, and procurement workflow foundation.',
-    primaryEntities: ['Suppliers Directory', 'Vendor Contacts', 'Payment Terms'],
-    plannedTables: ['suppliers'],
+      'Supplier directory, purchase drafts, confirmed purchase orders, and procurement tracking.',
+    primaryEntities: ['Purchase Orders', 'Purchase Drafts', 'Suppliers Directory', 'Payment Terms'],
+    plannedTables: ['suppliers', 'purchases', 'purchase_items'],
     connectedModules: ['inventory', 'finance', 'reports'],
-    targetPhase: 'Active Suppliers',
+    targetPhase: 'Active Purchase Orders & Suppliers',
   },
   {
     id: 'suppliers',

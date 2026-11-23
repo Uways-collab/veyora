@@ -478,6 +478,11 @@ export interface Database {
       expenses: InventoryTableRecord;
       expense_audit_logs: InventoryTableRecord;
       suppliers: InventoryTableRecord;
+      purchases: InventoryTableRecord;
+      purchase_orders: InventoryTableRecord;
+      purchase_items: InventoryTableRecord;
+      purchase_order_items: InventoryTableRecord;
+      purchase_order_lines: InventoryTableRecord;
     };
     Views: Record<string, never>;
     Functions: {
@@ -940,6 +945,61 @@ export interface Database {
           p_organization_id: string;
           p_supplier_id?: string;
           p_id?: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_create_draft: {
+        Args: {
+          p_organization_id: string;
+          p_supplier_id: string;
+          p_items: Array<{
+            variant_id: string;
+            quantity: number;
+            ordered_quantity?: number;
+            unit_cost: number;
+          }>;
+          p_discount_amount?: number;
+          p_tax_amount?: number;
+          p_supplier_invoice_number?: string | null;
+          p_invoice_number?: string | null;
+          p_expected_delivery_date?: string | null;
+          p_expected_date?: string | null;
+          p_order_date?: string | null;
+          p_notes?: string | null;
+          p_idempotency_key?: string | null;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_update_draft: {
+        Args: {
+          p_organization_id: string;
+          p_purchase_id?: string;
+          p_purchase_order_id?: string;
+          p_supplier_id: string;
+          p_items: Array<{
+            variant_id: string;
+            quantity: number;
+            ordered_quantity?: number;
+            unit_cost: number;
+          }>;
+          p_discount_amount?: number;
+          p_tax_amount?: number;
+          p_supplier_invoice_number?: string | null;
+          p_invoice_number?: string | null;
+          p_expected_delivery_date?: string | null;
+          p_expected_date?: string | null;
+          p_order_date?: string | null;
+          p_notes?: string | null;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_confirm_order: {
+        Args: {
+          p_organization_id: string;
+          p_purchase_id?: string;
+          p_purchase_order_id?: string;
+          p_id?: string;
+          p_idempotency_key?: string | null;
         };
         Returns: unknown;
       };
