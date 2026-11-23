@@ -72,7 +72,8 @@ for select to authenticated
 using (public.has_inventory_role(organization_id,array['owner','admin','manager']::text[]));
 
 alter table public.purchases
-  add column if not exists invoice_document_path text;
+  add column if not exists invoice_document_path text,
+  add column if not exists supplier_invoice_date date;
 
 insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
 values (
@@ -143,14 +144,19 @@ begin
   if nullif(btrim(p_product_name),'') is null
      or nullif(btrim(p_variant_name),'') is null
      or nullif(btrim(p_unit_of_measure),'') is null
+     or nullif(btrim(p_sku),'') is null
      or p_cost_price is null or p_cost_price < 0
      or p_selling_price is null or p_selling_price < 0 then
     raise exception 'Product name, variant, unit and valid prices are required';
   end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_organization_id::text || ':sku:' || lower(btrim(p_sku)),0));
   if nullif(btrim(p_sku),'') is not null and exists (
     select 1 from public.product_variants
     where organization_id=p_organization_id and lower(sku)=lower(btrim(p_sku))
   ) then raise exception 'That SKU already exists in this organisation'; end if;
+  if nullif(btrim(p_barcode),'') is not null then
+    perform pg_advisory_xact_lock(hashtextextended(p_organization_id::text || ':barcode:' || btrim(p_barcode),0));
+  end if;
   if nullif(btrim(p_barcode),'') is not null and exists (
     select 1 from public.product_variants
     where organization_id=p_organization_id and barcode=btrim(p_barcode)
@@ -259,7 +265,7 @@ begin
 
   update public.purchases
   set invoice_document_path=v_scan.file_path,
-      order_date=coalesce(p_invoice_date,order_date),
+      supplier_invoice_date=p_invoice_date,
       due_date=coalesce(p_due_date,due_date),
       updated_at=now()
   where id=v_purchase_id and organization_id=p_organization_id;
