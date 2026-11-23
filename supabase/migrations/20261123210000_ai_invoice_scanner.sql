@@ -358,7 +358,8 @@ begin
       using errcode = '42501';
   end if;
   if p_selling_price is null or p_selling_price < 0
-     or p_pricing_method not in ('markup','margin','custom')
+     or p_pricing_method is null or p_pricing_method not in ('markup','margin','custom')
+     or (p_pricing_method in ('markup','margin') and p_target_percent is null)
      or (p_target_percent is not null and p_target_percent < 0)
      or (p_pricing_method='margin' and p_target_percent is not null and p_target_percent >= 100)
      or (p_pricing_method='markup' and p_target_percent is not null and p_target_percent > 1000) then
