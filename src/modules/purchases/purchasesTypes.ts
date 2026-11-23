@@ -36,8 +36,10 @@ export interface PurchaseRecord {
   supplierId: string;
   supplierName: string;
   orderDate: string | null;
+  supplierInvoiceDate: string | null;
   expectedDeliveryDate: string | null;
   supplierInvoiceNumber: string | null;
+  invoiceDocumentPath: string | null;
   notes: string | null;
   status: PurchaseStatusValue;
   currencyCode: string;
