@@ -47,6 +47,8 @@ jobs:
           deno-version: v2.x
       - name: Type-check invitation Edge Function
         run: deno check supabase/functions/invite-organization-member/index.ts
+      - name: Type-check invoice scanner Edge Function
+        run: deno check supabase/functions/scan-supplier-invoice/index.ts
 
   production-build:
     name: Vite production build
