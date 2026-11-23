@@ -127,7 +127,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     group: 'financial',
     stage: 'foundation_active',
     summary:
-      'Central operational reporting workspace. Inventory reports are active with read-only metrics and CSV exports; Sales, Purchases, and Finance reports are upcoming.',
+      'Central operational reporting workspace. Inventory reports are active with read-only metrics and CSV exports; Sales, Purchases, and Finance reports are planned and not yet available.',
     primaryEntities: [
       'Inventory Reports (Active)',
       'Sales Reports (Upcoming)',
@@ -150,8 +150,8 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     group: 'administration',
     stage: 'foundation_active',
     summary:
-      'Supabase connection status, authentication, organisation profile, member roles, and RLS security inspection.',
-    primaryEntities: ['Organisation Profile', 'Authentication', 'Supabase & RLS', 'Storage Policies'],
+      'Manage account details, business profile, receipt preferences, and team roles.',
+    primaryEntities: ['User Profile', 'Business Profile', 'Receipt Settings', 'Members & Roles'],
     plannedTables: ['organizations', 'organization_memberships', 'profiles'],
     connectedModules: ['dashboard'],
     targetPhase: 'Stage 1 (Active Foundation)',
