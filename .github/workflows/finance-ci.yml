@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    name: TypeScript and production build
+  browser-typecheck:
+    name: Browser TypeScript check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,15 +22,37 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: TypeScript check
         run: npm run lint
+
+  edge-function-typecheck:
+    name: Supabase Edge Function Deno check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Check Supabase Edge Function
+      - name: Type-check invitation Edge Function
         run: deno check supabase/functions/invite-organization-member/index.ts
-      - name: Production build
+
+  production-build:
+    name: Vite production build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Build production bundle
         run: npm run build
