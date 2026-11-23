@@ -159,12 +159,14 @@ export function InvoiceScannerPanel({
     setLines([]);
     setCreatedPurchaseId(null);
     setDuplicate(null);
+    setDuplicateOverride(false);
     setEditedFields([]);
     setPriceMessage(null);
   }, [organisationId, currencyCode]);
 
   useEffect(() => {
     let active = true;
+    setReferenceData(null);
     if (!organisationId || !canManage) {
       setReferenceData(null);
       return;
@@ -482,6 +484,9 @@ export function InvoiceScannerPanel({
           </div>
           {scan && !createdPurchaseId && <button type="button" disabled={busy} onClick={resetScan} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"><X className="h-3.5 w-3.5" /> Cancel scan</button>}
         </div>
+        {!referenceData && <p className="text-[11px] text-slate-500">Loading this workspace’s suppliers and product catalogue…</p>}
+        {referenceData?.suppliersError && <p className="text-[11px] text-amber-700">Supplier list could not be loaded: {referenceData.suppliersError}</p>}
+        {referenceData?.catalogError && <p className="text-[11px] text-amber-700">Product catalogue could not be loaded: {referenceData.catalogError}</p>}
         {!scan && (
           <div className="rounded-md border-2 border-dashed border-slate-200 bg-slate-50/70 p-5 text-center">
             <Upload className="mx-auto h-6 w-6 text-slate-400" />
@@ -490,6 +495,7 @@ export function InvoiceScannerPanel({
               <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
             </label>
             <p className="mt-2 text-[11px] text-slate-500">JPG, PNG, WebP or multi-page PDF · Up to 10 MB</p>
+            {referenceData?.activeSuppliers.length === 0 && <p className="mt-2 text-[11px] text-amber-700">Add an active supplier in the Suppliers section before creating a purchase draft.</p>}
             {file && <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-700"><FileText className="h-4 w-4" />{file.name}<span className="text-slate-400">({(file.size / 1024 / 1024).toFixed(2)} MB)</span></div>}
             <button type="button" disabled={!file || busy || !organisationId || !referenceData} onClick={() => void handleUploadAndScan()} className="mt-4 inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-xs font-medium text-white disabled:opacity-40">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />} Scan invoice
