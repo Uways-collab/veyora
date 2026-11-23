@@ -11,6 +11,7 @@ export type FinanceAccount = {
   account_number_last4: string|null; is_active: boolean;
 };
 export type FinancePaymentMethod = { id:string; name:string; method_code:string; finance_account_id:string|null; is_active:boolean };
+export type FinanceExpenseCategory = { id:string; name:string; is_active:boolean; ledger_account_id:string|null };
 export type FinanceSourceStatus = { posted:number; pending:number; reversed:number; skipped:number; events:Array<{id:string;event_type:string;source_id:string;status:string;last_error:string|null;created_at:string;journal_entry_id:string|null}> };
 export type FinanceJournalEntry = {
   id: string; journal_number: string; entry_date: string; description: string;
@@ -41,13 +42,15 @@ function unwrap<T>(result: {data:T|null;error:{message:string}|null}):T {
 
 export async function loadFinanceWorkspace(orgId:string, from:string, to:string) {
   const db = client() as any;
-  const [ledgerRes, accountRes, entryRes, balanceRes, paymentMethodRes, sourceStatusRes] = await Promise.all([
+  const [ledgerRes, accountRes, entryRes, balanceRes, paymentMethodRes, sourceStatusRes, expenseCategoryRes, expenseMappingRes] = await Promise.all([
     db.from('finance_ledger_accounts').select('id,organization_id,account_code,account_name,account_type,normal_balance,is_system_account,is_active').eq('organization_id',orgId).order('account_code'),
     db.from('finance_accounts').select('id,organization_id,account_name,account_type,currency_code,ledger_account_id,institution_name,account_number_last4,is_active').eq('organization_id',orgId).order('account_name'),
     db.from('finance_journal_entries').select('id,journal_number,entry_date,description,currency_code,status,source_type,source_id,reversal_of_entry_id,created_at,posted_at').eq('organization_id',orgId).order('entry_date',{ascending:false}).order('created_at',{ascending:false}).limit(100),
     db.rpc('finance_get_balances',{p_organization_id:orgId,p_date_from:from||null,p_date_to:to||null}),
     db.from('payment_methods').select('id,name,method_code,finance_account_id,is_active').eq('organization_id',orgId).order('name'),
     db.rpc('finance_get_source_status',{p_organization_id:orgId}),
+    db.from('expense_categories').select('id,name,is_active').eq('organization_id',orgId).order('name'),
+    db.from('finance_expense_category_mappings').select('expense_category_id,ledger_account_id').eq('organization_id',orgId),
   ]);
   return {
     ledgerAccounts: unwrap<FinanceLedgerAccount[]>(ledgerRes),
@@ -56,9 +59,13 @@ export async function loadFinanceWorkspace(orgId:string, from:string, to:string)
     balances: unwrap<FinanceBalances>(balanceRes),
     paymentMethods: unwrap<FinancePaymentMethod[]>(paymentMethodRes),
     sourceStatus: unwrap<FinanceSourceStatus>(sourceStatusRes),
+    expenseCategories: unwrap<Array<{id:string;name:string;is_active:boolean}>>(expenseCategoryRes).map(category=>({ ...category, ledger_account_id: unwrap<Array<{expense_category_id:string;ledger_account_id:string}>>(expenseMappingRes).find(mapping=>mapping.expense_category_id===category.id)?.ledger_account_id??null })),
   };
 }
 
+export async function mapExpenseCategory(orgId:string,categoryId:string,ledgerAccountId:string) {
+  return unwrap<void>(await client().rpc('finance_map_expense_category',{p_organization_id:orgId,p_expense_category_id:categoryId,p_ledger_account_id:ledgerAccountId}));
+}
 export async function retryFinanceSourceEvents(orgId:string) {
   return unwrap<{posted:number;pending:number;skipped:number;reversed:number}>(await client().rpc('finance_retry_pending_events',{p_organization_id:orgId}));
 }
