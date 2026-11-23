@@ -28,8 +28,8 @@ Deno.serve(async (req: Request) => {
     return response({ error: 'Server Auth configuration is incomplete' }, 500);
   }
 
-  // Validate the caller against Supabase Auth. Do not trust JWT payload decoding,
-  // user_metadata, caller-supplied actor IDs, or a frontend-provided role.
+  // Validate the caller against Supabase Auth. Do not trust decoded JWT claims,
+  // user_metadata, caller-supplied actor IDs, or frontend-provided roles.
   const userClient = createClient(supabaseUrl, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -43,6 +43,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     return response({ error: 'Request body must be valid JSON' }, 400);
   }
+
   const organizationId = typeof input.organization_id === 'string' ? input.organization_id : '';
   const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
   const role = typeof input.role === 'string' ? input.role : '';
@@ -56,9 +57,6 @@ Deno.serve(async (req: Request) => {
     return response({ error: 'Only manager and staff roles may be invited' }, 400);
   }
 
-  // The actor id comes only from the Auth-verified user object above.
-  // The database RPC is callable only by service_role and re-checks owner
-  // membership for the exact organisation before creating any membership/invite.
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -68,13 +66,22 @@ Deno.serve(async (req: Request) => {
     p_role: role,
     p_actor_id: authData.user.id,
   });
+
   if (rpcError) {
     const denied = rpcError.code === '42501';
     const duplicate = rpcError.code === '23505';
     return response({ error: rpcError.message }, denied ? 403 : duplicate ? 409 : 400);
   }
 
-  const payload = result as { status?: string; invitation_id?: string; membership_id?: string } | null;
+  const payload = result as {
+    status?: string;
+    invitation_id?: string;
+    membership_id?: string;
+    target_user_id?: string | null;
+    requires_email_confirmation?: boolean;
+    already_pending?: boolean;
+  } | null;
+
   if (payload?.status === 'added') {
     return response({ status: 'added', membership_id: payload.membership_id });
   }
@@ -82,30 +89,38 @@ Deno.serve(async (req: Request) => {
     return response({ error: 'Unexpected invitation result' }, 500);
   }
 
+  // A pre-existing unconfirmed Auth account already has its own confirmation
+  // flow. Keep the org invitation pending; the Auth email-confirmation trigger
+  // provisions membership and records acceptance only after confirmation.
+  if (payload.target_user_id && payload.requires_email_confirmation) {
+    return response({
+      status: 'invited',
+      invitation_id: payload.invitation_id,
+      awaiting_existing_account_confirmation: true,
+      already_pending: Boolean(payload.already_pending),
+    }, 202);
+  }
+
   const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     data: { organization_invitation_id: payload.invitation_id },
   });
 
   if (!inviteError) {
+    // inviteUserByEmail creates an unconfirmed Auth identity. Do not provision
+    // membership or mark the organisation invitation accepted here.
     return response({
       status: 'invited',
       invitation_id: payload.invitation_id,
-      already_pending: Boolean((result as { already_pending?: boolean }).already_pending),
+      awaiting_email_confirmation: true,
+      already_pending: Boolean(payload.already_pending),
     }, 202);
   }
 
-  // Handle the narrow race where the account was registered after the SQL lookup
-  // but before Auth invitation creation. Attach only if Auth confirms exact email.
-  const { data: membershipId, error: attachError } = await adminClient.rpc(
-    'attach_pending_organization_invitation',
-    { p_invitation_id: payload.invitation_id },
-  );
-  if (!attachError) {
-    return response({ status: 'added', membership_id: membershipId, existing_account: true });
-  }
-
+  // No service-role shortcut may attach membership on an invitation-send error.
+  // Keep the pending invitation for safe diagnosis/retry; only Auth's verified
+  // email-confirmation transition may consume it.
   return response({
-    error: 'The invitation could not be sent. The pending invitation is retained; retry from Members & Roles.',
+    error: 'The invitation email could not be sent. The pending invitation is retained; resolve the Auth email issue before retrying.',
     invitation_id: payload.invitation_id,
   }, 502);
 });
