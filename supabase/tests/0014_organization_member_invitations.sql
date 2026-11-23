@@ -1,5 +1,5 @@
--- Static security contract checks for migration 0014.
--- These tests do not fabricate Auth sessions or alter tenant memberships.
+-- Static security contract checks for migrations 0014 and 0015.
+-- No Auth identities, tenant memberships, or invitation rows are fabricated.
 do $$
 declare
   v record;
@@ -11,6 +11,7 @@ begin
   ) then raise exception 'FAIL: invitation table must have RLS enabled'; end if;
 
   if has_table_privilege('anon','public.organization_invitations','select')
+     or has_table_privilege('authenticated','public.organization_invitations','select')
      or has_table_privilege('authenticated','public.organization_invitations','insert')
      or has_table_privilege('authenticated','public.organization_invitations','update')
      or has_table_privilege('authenticated','public.organization_invitations','delete') then
@@ -18,30 +19,31 @@ begin
   end if;
 
   if not exists (
+    select 1 from pg_policies
+    where schemaname='public' and tablename='organization_invitations'
+      and policyname='organization_invitations_deny_client_access'
+  ) then raise exception 'FAIL: explicit deny policy is missing'; end if;
+
+  if not exists (
     select 1 from pg_indexes
     where schemaname='public' and indexname='organization_invitations_one_pending_per_email'
   ) then raise exception 'FAIL: duplicate pending invitation guard is missing'; end if;
 
-  select pg_get_functiondef('public.create_organization_invitation(uuid,text,text)'::regprocedure) into v_def;
-  if position('auth.uid()' in v_def)=0
+  select pg_get_functiondef('public.create_organization_invitation(uuid,text,text,uuid)'::regprocedure) into v_def;
+  if position('p_actor_id' in v_def)=0
+     or position('service_role' in v_def)=0
      or position('v_actor_role is distinct from ''owner''' in lower(v_def))=0
      or position('p_role not in (''manager'',''staff'')' in lower(v_def))=0
-     or position('organization_memberships' in v_def)=0
      or position('v_email = v_actor_email' in v_def)=0
      or position('insert into public.finance_audit_log' in lower(v_def))=0
-     or position('p_organization_id' in v_def)=0 then
-    raise exception 'FAIL: owner, role and membership checks must remain in the server RPC';
+     or position('organization_memberships' in v_def)=0 then
+    raise exception 'FAIL: server owner, role, self-invite and audit checks are missing';
   end if;
 
-  select prosecdef,proconfig into v
-  from pg_proc where oid='public.create_organization_invitation(uuid,text,text)'::regprocedure;
-  if not v.prosecdef or not ('search_path=""' = any(v.proconfig)) then
-    raise exception 'FAIL: invitation RPC must be SECURITY DEFINER with empty search_path';
-  end if;
-
-  if has_function_privilege('anon','public.create_organization_invitation(uuid,text,text)','execute')
-     or not has_function_privilege('authenticated','public.create_organization_invitation(uuid,text,text)','execute') then
-    raise exception 'FAIL: invitation RPC execute grants are incorrect';
+  if has_function_privilege('anon','public.create_organization_invitation(uuid,text,text,uuid)','execute')
+     or has_function_privilege('authenticated','public.create_organization_invitation(uuid,text,text,uuid)','execute')
+     or not has_function_privilege('service_role','public.create_organization_invitation(uuid,text,text,uuid)','execute') then
+    raise exception 'FAIL: invitation RPC must be service-role-only';
   end if;
 
   if has_function_privilege('authenticated','public.attach_pending_organization_invitation(uuid)','execute')
@@ -56,5 +58,5 @@ begin
     where n.nspname='auth' and c.relname='users' and t.tgname='on_auth_user_created'
   ) then raise exception 'FAIL: Auth user creation trigger is missing'; end if;
 
-  raise notice 'PASS: invitation RLS, grants, owner/role checks, deduplication and Auth trigger contracts';
+  raise notice 'PASS: RLS, deny policy, grants, service-role-only RPC, owner/role/self-invite, deduplication, audit and Auth trigger contracts';
 end $$;
