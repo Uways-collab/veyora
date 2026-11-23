@@ -9,12 +9,13 @@ import { canManageSuppliers } from './suppliersTypes';
 type PurchasesTab = 'orders' | 'suppliers';
 
 export function PurchasesView() {
-  const { status, activeOrganisation, activeRole } = useAuth();
-  const activeOrgId = activeOrganisation?.id ?? null;
+  const { status, activeMembership, activeOrganisation, activeRole } = useAuth();
+  const activeOrgId = activeMembership?.organisation_id ?? activeOrganisation?.id ?? null;
+  const effectiveRole = activeMembership?.role ?? activeRole;
   const currencyCode = activeOrganisation?.base_currency ?? 'USD';
   const timeZone = activeOrganisation?.timezone;
-  const canManageOrders = canManagePurchases(activeRole);
-  const canManageVendorDirectory = canManageSuppliers(activeRole);
+  const canManageOrders = canManagePurchases(effectiveRole);
+  const canManageVendorDirectory = canManageSuppliers(effectiveRole);
   const isAuthenticated = status === 'authenticated';
 
   const [activeTab, setActiveTab] = useState<PurchasesTab>('orders');

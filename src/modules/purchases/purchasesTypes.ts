@@ -1,4 +1,8 @@
 import type { OrganisationRole } from '../../core/types/domain';
+import type {
+  InventoryBalanceRecord,
+  InventoryLocationRecord,
+} from '../inventory/inventoryService';
 import type { SupplierRecord } from './suppliersTypes';
 
 export type PurchaseStatusValue =
@@ -77,17 +81,90 @@ export interface PurchaseDraftFormInput {
   items: PurchaseDraftLineInput[];
 }
 
+export interface PurchaseReceiveLineInput {
+  rowKey: string;
+  purchaseItemId: string;
+  locationId: string;
+  receivedQuantity: string;
+  acceptedQuantity: string;
+  damagedQuantity: string;
+}
+
+export interface PurchaseReceiveFormInput {
+  notes: string;
+  lines: PurchaseReceiveLineInput[];
+}
+
+export interface PurchaseReceiveRpcItem {
+  purchase_item_id: string;
+  location_id: string;
+  received_quantity: number;
+  accepted_quantity: number;
+  damaged_quantity: number;
+}
+
+export interface PurchaseReceiptItemRecord {
+  id: string;
+  organizationId: string;
+  receiptId: string;
+  purchaseItemId: string;
+  variantId: string;
+  locationId: string;
+  locationName: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  unitOfMeasure: string;
+  receivedQuantity: number;
+  acceptedQuantity: number;
+  damagedQuantity: number;
+  createdAt: string | null;
+}
+
+export interface PurchaseReceiptRecord {
+  id: string;
+  organizationId: string;
+  purchaseId: string;
+  receiptNumber: string;
+  receivedAt: string | null;
+  receivedBy: string | null;
+  receivedByName: string;
+  notes: string | null;
+  createdAt: string | null;
+  items: PurchaseReceiptItemRecord[];
+  totalReceived: number;
+  totalAccepted: number;
+  totalDamaged: number;
+}
+
+export interface PurchaseStockUpdateSummary {
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  unitOfMeasure: string;
+  locationId: string;
+  locationName: string;
+  acceptedQuantity: number;
+  newStockQuantity: number | null;
+}
+
 export interface PurchaseReferenceData {
   activeSuppliers: SupplierRecord[];
   allSuppliersById: Record<string, SupplierRecord>;
   catalogVariants: PurchaseCatalogVariant[];
+  activeLocations: InventoryLocationRecord[];
+  locationsById: Record<string, InventoryLocationRecord>;
+  inventoryBalances: InventoryBalanceRecord[];
   catalogError: string | null;
+  locationsError: string | null;
   suppliersError: string | null;
 }
 
 export interface PurchaseListResult {
   purchases: PurchaseRecord[];
   error: string | null;
+  itemsWarning?: string | null;
 }
 
 export interface PurchaseMutationResult {
@@ -96,6 +173,24 @@ export interface PurchaseMutationResult {
   error: string | null;
 }
 
-export function canManagePurchases(role: OrganisationRole | null | undefined): boolean {
-  return role === 'owner' || role === 'admin' || role === 'manager';
+export interface PurchaseReceiveResult {
+  receiptId: string | null;
+  receiptNumber: string | null;
+  receipt: PurchaseReceiptRecord | null;
+  stockUpdates: PurchaseStockUpdateSummary[];
+  error: string | null;
+}
+
+export interface PurchaseReceiptsListResult {
+  receipts: PurchaseReceiptRecord[];
+  error: string | null;
+}
+
+export function canManagePurchases(role: OrganisationRole | string | null | undefined): boolean {
+  const normalized = typeof role === 'string' ? role.trim().toLowerCase() : '';
+  return normalized === 'owner' || normalized === 'admin' || normalized === 'manager';
+}
+
+export function isPurchaseReceivableStatus(status: PurchaseStatusValue): boolean {
+  return status === 'ordered' || status === 'partially_received';
 }

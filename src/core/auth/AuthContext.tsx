@@ -276,11 +276,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!orgId) continue;
 
           if (!dedupedMap.has(orgId)) {
+            const rawRole = typeof row.role === 'string' ? row.role.trim().toLowerCase() : '';
+            const normalizedRole: OrganisationRole =
+              rawRole === 'owner' ||
+              rawRole === 'admin' ||
+              rawRole === 'manager' ||
+              rawRole === 'staff'
+                ? rawRole
+                : 'staff';
             dedupedMap.set(orgId, {
               id: row.id,
               organisation_id: orgId,
               user_id: row.user_id,
-              role: row.role,
+              role: normalizedRole,
               is_active: row.is_active ?? true,
               created_at: row.created_at,
               organisation: org,

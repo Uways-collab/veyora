@@ -1,21 +1,31 @@
 import { getSupabaseClient } from '../../core/supabase/client';
+import { fetchOrganisationMembers } from '../../core/supabase/organisations';
 import {
   fetchInventoryOverview,
   formatUnitOfMeasureLabel,
   verifyActiveWorkspaceContext,
+  type InventoryLocationRecord,
 } from '../inventory/inventoryService';
 import { generateIdempotencyKey } from '../sales/salesFormatters';
 import { searchSuppliers } from './suppliersService';
 import type { SupplierRecord } from './suppliersTypes';
-import type {
-  PurchaseCatalogVariant,
-  PurchaseDraftFormInput,
-  PurchaseItemRecord,
-  PurchaseListResult,
-  PurchaseMutationResult,
-  PurchaseRecord,
-  PurchaseReferenceData,
-  PurchaseStatusValue,
+import {
+  isPurchaseReceivableStatus,
+  type PurchaseCatalogVariant,
+  type PurchaseDraftFormInput,
+  type PurchaseItemRecord,
+  type PurchaseListResult,
+  type PurchaseMutationResult,
+  type PurchaseReceiptItemRecord,
+  type PurchaseReceiptRecord,
+  type PurchaseReceiptsListResult,
+  type PurchaseReceiveFormInput,
+  type PurchaseReceiveResult,
+  type PurchaseReceiveRpcItem,
+  type PurchaseRecord,
+  type PurchaseReferenceData,
+  type PurchaseStatusValue,
+  type PurchaseStockUpdateSummary,
 } from './purchasesTypes';
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -217,6 +227,18 @@ function isMissingColumnError(error: { code?: string; message?: string } | null)
   return lower.includes('column') && lower.includes('does not exist');
 }
 
+function isPermissionDeniedError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === '42501') return true;
+  const lower = (error.message ?? '').toLowerCase();
+  return (
+    lower.includes('permission denied') ||
+    lower.includes('not authorized') ||
+    lower.includes('row-level security') ||
+    lower.includes('policy')
+  );
+}
+
 function isMissingRpcSignatureError(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   if (error.code === 'PGRST202' || error.code === '42883') return true;
@@ -226,6 +248,15 @@ function isMissingRpcSignatureError(error: { code?: string; message?: string } |
     lower.includes('schema cache') ||
     (lower.includes('function') && lower.includes('does not exist'))
   );
+}
+
+export function formatPurchaseReadError(
+  rawMessage: string | undefined | null,
+  fallback: string
+): string {
+  const msg = (rawMessage ?? '').trim();
+  if (!msg) return fallback;
+  return msg;
 }
 
 export function formatPurchaseRpcError(
@@ -242,10 +273,97 @@ export function formatPurchaseRpcError(
     lower.includes('row-level security') ||
     lower.includes('policy')
   ) {
-    return 'Permission denied. Only Owners, Admins, and Managers can create, edit, or confirm purchase orders in the active organization.';
+    return 'Permission denied. Only Owners, Admins, and Managers can create, edit, confirm, or receive purchase orders in the active organization.';
   }
 
   return msg;
+}
+
+function extractPurchaseListRowsFromRpc(data: unknown): Record<string, unknown>[] {
+  let parsed = data;
+  if (typeof parsed === 'string') {
+    const trimmed = parsed.trim();
+    if (!trimmed) return [];
+    try {
+      parsed = JSON.parse(trimmed) as unknown;
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(parsed)) {
+    return parsed.filter(
+      (row): row is Record<string, unknown> =>
+        Boolean(row) && typeof row === 'object' && !Array.isArray(row)
+    );
+  }
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+    const nested = obj.purchases ?? obj.orders ?? obj.items ?? obj.rows ?? obj.data ?? obj.results;
+    if (Array.isArray(nested)) {
+      return nested.filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === 'object' && !Array.isArray(row)
+      );
+    }
+  }
+  return [];
+}
+
+function normalizePurchaseItemRecord(
+  rawItem: Record<string, unknown>,
+  fallbackPurchaseId: string,
+  index: number,
+  variantLookup: Map<string, PurchaseCatalogVariant>,
+  orgId: string
+): PurchaseItemRecord | null {
+  const itemOrg = readString(rawItem.organization_id, rawItem.organisation_id);
+  if (itemOrg && itemOrg.toLowerCase() !== orgId.toLowerCase()) return null;
+
+  const purchaseId =
+    readString(rawItem.purchase_id, rawItem.purchase_order_id) ?? fallbackPurchaseId;
+  const variantId = readString(rawItem.variant_id, rawItem.product_variant_id);
+  if (!purchaseId || !variantId) return null;
+
+  const id =
+    readString(rawItem.id, rawItem.purchase_item_id) ?? `${purchaseId}-${index}`;
+  const catalogVariant = variantLookup.get(variantId);
+  const orderedQuantity = roundFourDecimals(
+    readNumber(rawItem.ordered_quantity, rawItem.quantity) ?? 0
+  );
+  const receivedQuantity = roundFourDecimals(
+    readNumber(rawItem.received_quantity, rawItem.qty_received) ?? 0
+  );
+  const unitCost = roundFourDecimals(
+    readNumber(rawItem.unit_cost, rawItem.cost_price, catalogVariant?.defaultCostPrice) ?? 0
+  );
+  const lineTotal = roundFourDecimals(
+    readNumber(rawItem.line_total, rawItem.subtotal) ?? orderedQuantity * unitCost
+  );
+
+  return {
+    id,
+    purchaseId,
+    productId: readString(rawItem.product_id) ?? catalogVariant?.productId ?? null,
+    variantId,
+    productName:
+      readString(rawItem.product_name, rawItem.product_name_snapshot) ??
+      catalogVariant?.productName ??
+      'Product',
+    variantName:
+      readString(rawItem.variant_name, rawItem.variant_name_snapshot) ??
+      catalogVariant?.variantName ??
+      'Variant',
+    sku: readString(rawItem.sku, rawItem.sku_snapshot) ?? catalogVariant?.sku ?? '—',
+    unitOfMeasure: formatUnitOfMeasureLabel(
+      readString(rawItem.unit_of_measure, rawItem.unit_of_measure_snapshot) ??
+        catalogVariant?.unitOfMeasure ??
+        'unit'
+    ),
+    orderedQuantity,
+    receivedQuantity,
+    unitCost,
+    lineTotal,
+  };
 }
 
 function extractPurchaseIdentifier(data: unknown): string | null {
@@ -285,7 +403,11 @@ export async function fetchPurchaseReferenceData(
       activeSuppliers: [],
       allSuppliersById: {},
       catalogVariants: [],
+      activeLocations: [],
+      locationsById: {},
+      inventoryBalances: [],
       catalogError: verified.error,
+      locationsError: verified.error,
       suppliersError: verified.error,
     };
   }
@@ -333,6 +455,16 @@ export async function fetchPurchaseReferenceData(
       a.variantName.localeCompare(b.variantName)
   );
 
+  const locationsById: Record<string, InventoryLocationRecord> = {};
+  const activeLocations: InventoryLocationRecord[] = [];
+  for (const loc of inventoryRes.locations) {
+    locationsById[loc.id] = loc;
+    if (loc.isActive) {
+      activeLocations.push(loc);
+    }
+  }
+  activeLocations.sort((a, b) => a.name.localeCompare(b.name));
+
   const catalogError =
     inventoryRes.errors.products ?? inventoryRes.errors.variants ?? null;
 
@@ -340,7 +472,11 @@ export async function fetchPurchaseReferenceData(
     activeSuppliers: activeSuppliersRes.suppliers,
     allSuppliersById,
     catalogVariants,
+    activeLocations,
+    locationsById,
+    inventoryBalances: inventoryRes.balances,
     catalogError,
+    locationsError: inventoryRes.errors.locations ?? null,
     suppliersError: activeSuppliersRes.error ?? allSuppliersRes.error ?? null,
   };
 }
@@ -369,6 +505,7 @@ export async function fetchPurchasesList(
   const headerTables = ['purchases', 'purchase_orders'] as const;
   let purchaseRows: Record<string, unknown>[] = [];
   let headerError: { code?: string; message?: string } | null = null;
+  let loadedHeaders = false;
 
   for (const table of headerTables) {
     const res = await supabase
@@ -383,19 +520,53 @@ export async function fetchPurchasesList(
         return !rowOrg || rowOrg.toLowerCase() === orgId.toLowerCase();
       });
       headerError = null;
+      loadedHeaders = true;
       break;
     }
 
-    headerError = res.error;
-    if (!isMissingRelationError(res.error)) {
+    if (!headerError) {
+      headerError = res.error;
+    }
+
+    if (!isMissingRelationError(res.error) && !isPermissionDeniedError(res.error)) {
+      headerError = res.error;
       break;
     }
   }
 
-  if (headerError) {
+  // Fallback to SECURITY DEFINER read RPCs only if direct RLS SELECT failed with missing table or permission denied
+  if (!loadedHeaders && headerError && (isMissingRelationError(headerError) || isPermissionDeniedError(headerError))) {
+    const readRpcNames = [
+      'purchases_v1_list',
+      'purchases_v1_list_purchases',
+      'purchases_v1_list_orders',
+      'purchases_v1_search',
+      'purchases_v1_search_purchases',
+      'purchases_v1_get_purchases',
+      'purchases_v1_get_orders',
+    ] as const;
+
+    for (const rpcName of readRpcNames) {
+      const rpcRes = await supabase.rpc(rpcName, { p_organization_id: orgId });
+      if (!rpcRes.error) {
+        purchaseRows = extractPurchaseListRowsFromRpc(rpcRes.data).filter((row) => {
+          const rowOrg = readString(row.organization_id, row.organisation_id);
+          return !rowOrg || rowOrg.toLowerCase() === orgId.toLowerCase();
+        });
+        headerError = null;
+        loadedHeaders = true;
+        break;
+      }
+      if (!isMissingRpcSignatureError(rpcRes.error) && !isPermissionDeniedError(rpcRes.error)) {
+        break;
+      }
+    }
+  }
+
+  if (!loadedHeaders && headerError) {
     return {
       purchases: [],
-      error: formatPurchaseRpcError(headerError.message, 'Unable to load purchase orders.'),
+      error: formatPurchaseReadError(headerError.message, 'Unable to load purchase orders.'),
     };
   }
 
@@ -403,113 +574,107 @@ export async function fetchPurchasesList(
     return { purchases: [], error: null };
   }
 
-  const purchaseIds = purchaseRows
-    .map((row) => readString(row.id, row.purchase_id))
-    .filter((id): id is string => Boolean(id));
-
-  const itemTables = ['purchase_items', 'purchase_order_items', 'purchase_order_lines'] as const;
-  let rawItemRows: Record<string, unknown>[] = [];
-  let itemError: { code?: string; message?: string } | null = null;
-
-  for (const table of itemTables) {
-    const res = await supabase
-      .from(table)
-      .select('*')
-      .eq('organization_id', orgId);
-
-    if (!res.error) {
-      rawItemRows = (res.data ?? []) as Record<string, unknown>[];
-      itemError = null;
-      break;
-    }
-
-    if (isMissingColumnError(res.error) && purchaseIds.length > 0) {
-      for (const fkCol of ['purchase_id', 'purchase_order_id'] as const) {
-        const fkRes = await supabase.from(table).select('*').in(fkCol, purchaseIds);
-        if (!fkRes.error) {
-          rawItemRows = (fkRes.data ?? []) as Record<string, unknown>[];
-          itemError = null;
-          break;
-        }
-        if (!isMissingColumnError(fkRes.error)) {
-          itemError = fkRes.error;
-          break;
-        }
-      }
-      if (!itemError) break;
-    }
-
-    itemError = res.error;
-    if (!isMissingRelationError(res.error)) {
-      break;
-    }
-  }
-
-  if (itemError) {
-    return {
-      purchases: [],
-      error: formatPurchaseRpcError(itemError.message, 'Unable to load purchase order items.'),
-    };
-  }
-
   const variantLookup = new Map(
     (options.catalogVariants ?? []).map((v) => [v.variantId, v])
   );
   const supplierLookup = options.suppliersById ?? {};
-
   const itemsByPurchaseId = new Map<string, PurchaseItemRecord[]>();
 
-  for (const rawItem of rawItemRows) {
-    const itemOrg = readString(rawItem.organization_id, rawItem.organisation_id);
-    if (itemOrg && itemOrg.toLowerCase() !== orgId.toLowerCase()) continue;
+  // Check if rows already include inline line items (e.g., from an RPC)
+  let hasInlineItems = false;
+  for (const row of purchaseRows) {
+    const purchaseId = readString(row.id, row.purchase_id);
+    if (!purchaseId) continue;
+    const inlineRaw = row.items ?? row.purchase_items ?? row.lines;
+    if (Array.isArray(inlineRaw)) {
+      hasInlineItems = true;
+      const mapped = inlineRaw
+        .filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item)
+        )
+        .map((item, idx) =>
+          normalizePurchaseItemRecord(item, purchaseId, idx, variantLookup, orgId)
+        )
+        .filter((item): item is PurchaseItemRecord => Boolean(item));
+      itemsByPurchaseId.set(purchaseId, mapped);
+    }
+  }
 
-    const purchaseId = readString(rawItem.purchase_id, rawItem.purchase_order_id);
-    const id = readString(rawItem.id, rawItem.purchase_item_id) ?? `${purchaseId}-${itemsByPurchaseId.get(purchaseId ?? '')?.length ?? 0}`;
-    const variantId = readString(rawItem.variant_id, rawItem.product_variant_id);
-    if (!purchaseId || !variantId) continue;
+  let itemsWarning: string | null = null;
 
-    const catalogVariant = variantLookup.get(variantId);
-    const orderedQuantity = roundFourDecimals(
-      readNumber(rawItem.ordered_quantity, rawItem.quantity) ?? 0
-    );
-    const receivedQuantity = roundFourDecimals(
-      readNumber(rawItem.received_quantity, rawItem.qty_received) ?? 0
-    );
-    const unitCost = roundFourDecimals(
-      readNumber(rawItem.unit_cost, rawItem.cost_price, catalogVariant?.defaultCostPrice) ?? 0
-    );
-    const lineTotal = roundFourDecimals(
-      readNumber(rawItem.line_total, rawItem.subtotal) ?? orderedQuantity * unitCost
-    );
+  if (!hasInlineItems) {
+    const purchaseIds = purchaseRows
+      .map((row) => readString(row.id, row.purchase_id))
+      .filter((id): id is string => Boolean(id));
 
-    const itemRecord: PurchaseItemRecord = {
-      id,
-      purchaseId,
-      productId: readString(rawItem.product_id) ?? catalogVariant?.productId ?? null,
-      variantId,
-      productName:
-        readString(rawItem.product_name, rawItem.product_name_snapshot) ??
-        catalogVariant?.productName ??
-        'Product',
-      variantName:
-        readString(rawItem.variant_name, rawItem.variant_name_snapshot) ??
-        catalogVariant?.variantName ??
-        'Variant',
-      sku: readString(rawItem.sku, rawItem.sku_snapshot) ?? catalogVariant?.sku ?? '—',
-      unitOfMeasure: formatUnitOfMeasureLabel(
-        readString(rawItem.unit_of_measure, rawItem.unit_of_measure_snapshot) ??
-          catalogVariant?.unitOfMeasure ??
-          'unit'
-      ),
-      orderedQuantity,
-      receivedQuantity,
-      unitCost,
-      lineTotal,
-    };
+    const itemTables = ['purchase_items', 'purchase_order_items', 'purchase_order_lines'] as const;
+    let rawItemRows: Record<string, unknown>[] = [];
+    let itemError: { code?: string; message?: string } | null = null;
+    let loadedItems = false;
 
-    const existing = itemsByPurchaseId.get(purchaseId) ?? [];
-    existing.push(itemRecord);
-    itemsByPurchaseId.set(purchaseId, existing);
+    for (const table of itemTables) {
+      const res = await supabase
+        .from(table)
+        .select('*')
+        .eq('organization_id', orgId);
+
+      if (!res.error) {
+        rawItemRows = (res.data ?? []) as Record<string, unknown>[];
+        itemError = null;
+        loadedItems = true;
+        break;
+      }
+
+      if (isMissingColumnError(res.error) && purchaseIds.length > 0) {
+        for (const fkCol of ['purchase_id', 'purchase_order_id'] as const) {
+          const fkRes = await supabase.from(table).select('*').in(fkCol, purchaseIds);
+          if (!fkRes.error) {
+            rawItemRows = (fkRes.data ?? []) as Record<string, unknown>[];
+            itemError = null;
+            loadedItems = true;
+            break;
+          }
+          if (!isMissingColumnError(fkRes.error)) {
+            if (!itemError) itemError = fkRes.error;
+            break;
+          }
+        }
+        if (loadedItems) break;
+      }
+
+      if (!itemError) {
+        itemError = res.error;
+      }
+
+      if (!isMissingRelationError(res.error) && !isPermissionDeniedError(res.error)) {
+        itemError = res.error;
+        break;
+      }
+    }
+
+    if (!loadedItems && itemError) {
+      itemsWarning = formatPurchaseReadError(
+        itemError.message,
+        'Purchase line items could not be loaded.'
+      );
+    } else {
+      rawItemRows.forEach((rawItem, idx) => {
+        const purchaseId = readString(rawItem.purchase_id, rawItem.purchase_order_id);
+        if (!purchaseId) return;
+        const normalized = normalizePurchaseItemRecord(
+          rawItem,
+          purchaseId,
+          idx,
+          variantLookup,
+          orgId
+        );
+        if (!normalized) return;
+        const existing = itemsByPurchaseId.get(purchaseId) ?? [];
+        existing.push(normalized);
+        itemsByPurchaseId.set(purchaseId, existing);
+      });
+    }
   }
 
   const purchases: PurchaseRecord[] = purchaseRows
@@ -575,7 +740,7 @@ export async function fetchPurchasesList(
     })
     .filter((record): record is PurchaseRecord => Boolean(record));
 
-  return { purchases, error: null };
+  return { purchases, error: null, itemsWarning };
 }
 
 export interface ValidatedPurchaseDraftPayload {
@@ -1084,6 +1249,594 @@ export async function confirmPurchaseOrder(
   return {
     purchase: null,
     purchaseId: extractPurchaseIdentifier(data) ?? cleanId,
+    error: null,
+  };
+}
+
+export interface ValidatedPurchaseReceivePayload {
+  notes: string | null;
+  rpcItems: PurchaseReceiveRpcItem[];
+  totalReceived: number;
+  totalAccepted: number;
+  totalDamaged: number;
+  distinctPurchaseItemCount: number;
+  selectedLocationIds: string[];
+}
+
+export function validatePurchaseReceiveInput(
+  purchaseItems: PurchaseItemRecord[],
+  input: PurchaseReceiveFormInput,
+  options: {
+    activeLocationIds?: Set<string>;
+  } = {}
+):
+  | { ok: true; normalized: ValidatedPurchaseReceivePayload }
+  | { ok: false; error: string } {
+  const notes = input.notes.trim() || null;
+  if (notes && notes.length > 1000) {
+    return { ok: false, error: 'Receiving notes must be 1,000 characters or fewer.' };
+  }
+
+  const itemById = new Map(purchaseItems.map((item) => [item.id, item]));
+  const accumulatedByItemId = new Map<string, number>();
+  const seenItemLocationPairs = new Set<string>();
+  const selectedLocationIds = new Set<string>();
+  const distinctPurchaseItemIds = new Set<string>();
+  const rpcItems: PurchaseReceiveRpcItem[] = [];
+
+  let totalReceived = 0;
+  let totalAccepted = 0;
+  let totalDamaged = 0;
+
+  for (const line of input.lines) {
+    const item = itemById.get(line.purchaseItemId);
+    if (!item) {
+      return { ok: false, error: 'A selected purchase item could not be found on this order.' };
+    }
+
+    const itemLabel = `${item.productName} (${item.variantName})`;
+    const receivedRaw = line.receivedQuantity.trim();
+    const acceptedRaw = line.acceptedQuantity.trim();
+    const damagedRaw = line.damagedQuantity.trim();
+
+    if (receivedRaw && hasMoreThanFourDecimals(receivedRaw)) {
+      return {
+        ok: false,
+        error: `${itemLabel}: physically received quantity supports up to 4 decimal places.`,
+      };
+    }
+    if (acceptedRaw && hasMoreThanFourDecimals(acceptedRaw)) {
+      return {
+        ok: false,
+        error: `${itemLabel}: accepted quantity supports up to 4 decimal places.`,
+      };
+    }
+    if (damagedRaw && hasMoreThanFourDecimals(damagedRaw)) {
+      return {
+        ok: false,
+        error: `${itemLabel}: damaged quantity supports up to 4 decimal places.`,
+      };
+    }
+
+    const parsedReceived = receivedRaw === '' ? 0 : Number(receivedRaw);
+    const parsedAccepted = acceptedRaw === '' ? 0 : Number(acceptedRaw);
+    const parsedDamaged = damagedRaw === '' ? 0 : Number(damagedRaw);
+
+    if (!Number.isFinite(parsedReceived) || parsedReceived < 0) {
+      return {
+        ok: false,
+        error: `${itemLabel}: physically received quantity must be 0 or greater.`,
+      };
+    }
+    if (!Number.isFinite(parsedAccepted) || parsedAccepted < 0) {
+      return {
+        ok: false,
+        error: `${itemLabel}: accepted quantity cannot be negative.`,
+      };
+    }
+    if (!Number.isFinite(parsedDamaged) || parsedDamaged < 0) {
+      return {
+        ok: false,
+        error: `${itemLabel}: damaged quantity cannot be negative.`,
+      };
+    }
+
+    const receivedQty = roundFourDecimals(parsedReceived);
+    const acceptedQty = roundFourDecimals(parsedAccepted);
+    const damagedQty = roundFourDecimals(parsedDamaged);
+
+    // Ignore untouched zero-received rows unless accepted/damaged has a positive number
+    if (receivedQty === 0) {
+      if (acceptedQty > 0 || damagedQty > 0) {
+        return {
+          ok: false,
+          error: `${itemLabel}: physically received quantity must be greater than 0 when accepted or damaged units are entered.`,
+        };
+      }
+      continue;
+    }
+
+    const locationId = line.locationId.trim();
+    if (!locationId) {
+      return {
+        ok: false,
+        error: `${itemLabel}: select an active receiving inventory location.`,
+      };
+    }
+    if (
+      options.activeLocationIds &&
+      options.activeLocationIds.size > 0 &&
+      !options.activeLocationIds.has(locationId)
+    ) {
+      return {
+        ok: false,
+        error: `${itemLabel}: the selected receiving location is inactive or unavailable.`,
+      };
+    }
+
+    const pairKey = `${item.id}:${locationId}`;
+    if (seenItemLocationPairs.has(pairKey)) {
+      return {
+        ok: false,
+        error: `${itemLabel}: combine quantities going to the same receiving location onto a single row.`,
+      };
+    }
+    seenItemLocationPairs.add(pairKey);
+
+    const accountedSum = roundFourDecimals(acceptedQty + damagedQty);
+    if (accountedSum !== receivedQty) {
+      return {
+        ok: false,
+        error: `${itemLabel}: accepted (${formatPurchaseNumberPrecision(acceptedQty)}) plus damaged (${formatPurchaseNumberPrecision(damagedQty)}) must equal physically received (${formatPurchaseNumberPrecision(receivedQty)}).`,
+      };
+    }
+
+    const prevAccumulated = accumulatedByItemId.get(item.id) ?? 0;
+    const nextAccumulated = roundFourDecimals(prevAccumulated + receivedQty);
+    accumulatedByItemId.set(item.id, nextAccumulated);
+
+    const remainingQty = Math.max(
+      0,
+      roundFourDecimals(item.orderedQuantity - item.receivedQuantity)
+    );
+    if (nextAccumulated > remainingQty) {
+      return {
+        ok: false,
+        error: `${itemLabel}: total receiving quantity (${formatPurchaseNumberPrecision(nextAccumulated)}) exceeds remaining quantity (${formatPurchaseNumberPrecision(remainingQty)}).`,
+      };
+    }
+
+    distinctPurchaseItemIds.add(item.id);
+    selectedLocationIds.add(locationId);
+    totalReceived = roundFourDecimals(totalReceived + receivedQty);
+    totalAccepted = roundFourDecimals(totalAccepted + acceptedQty);
+    totalDamaged = roundFourDecimals(totalDamaged + damagedQty);
+
+    rpcItems.push({
+      purchase_item_id: item.id,
+      location_id: locationId,
+      received_quantity: receivedQty,
+      accepted_quantity: acceptedQty,
+      damaged_quantity: damagedQty,
+    });
+  }
+
+  if (rpcItems.length === 0) {
+    return {
+      ok: false,
+      error: 'Enter a physically received quantity greater than 0 for at least one purchase line before submitting.',
+    };
+  }
+
+  return {
+    ok: true,
+    normalized: {
+      notes,
+      rpcItems,
+      totalReceived,
+      totalAccepted,
+      totalDamaged,
+      distinctPurchaseItemCount: distinctPurchaseItemIds.size,
+      selectedLocationIds: Array.from(selectedLocationIds),
+    },
+  };
+}
+
+function buildReceiptRecords(
+  rawReceipts: Array<{
+    id: string;
+    organization_id: string;
+    purchase_id: string;
+    receipt_number: string;
+    received_at: string;
+    received_by: string | null;
+    notes: string | null;
+    created_at: string;
+  }>,
+  rawReceiptItems: Array<{
+    id: string;
+    organization_id: string;
+    receipt_id: string;
+    purchase_item_id: string;
+    variant_id: string;
+    location_id: string;
+    received_quantity: number;
+    accepted_quantity: number;
+    damaged_quantity: number;
+    created_at: string;
+  }>,
+  options: {
+    purchaseItems?: PurchaseItemRecord[];
+    catalogVariants?: PurchaseCatalogVariant[];
+    locationsById?: Record<string, InventoryLocationRecord>;
+    memberNameByUserId?: Map<string, string>;
+  }
+): PurchaseReceiptRecord[] {
+  const purchaseItemById = new Map((options.purchaseItems ?? []).map((item) => [item.id, item]));
+  const variantById = new Map((options.catalogVariants ?? []).map((v) => [v.variantId, v]));
+  const locationsById = options.locationsById ?? {};
+  const memberNameByUserId = options.memberNameByUserId ?? new Map<string, string>();
+
+  const itemsByReceiptId = new Map<string, PurchaseReceiptItemRecord[]>();
+
+  for (const row of rawReceiptItems) {
+    const purchaseItem = purchaseItemById.get(row.purchase_item_id);
+    const catalogVariant = variantById.get(row.variant_id);
+    const location = locationsById[row.location_id];
+
+    const receivedQuantity = roundFourDecimals(Number(row.received_quantity) || 0);
+    const acceptedQuantity = roundFourDecimals(Number(row.accepted_quantity) || 0);
+    const damagedQuantity = roundFourDecimals(Number(row.damaged_quantity) || 0);
+
+    const mappedItem: PurchaseReceiptItemRecord = {
+      id: row.id,
+      organizationId: row.organization_id,
+      receiptId: row.receipt_id,
+      purchaseItemId: row.purchase_item_id,
+      variantId: row.variant_id,
+      locationId: row.location_id,
+      locationName: location?.name ?? 'Unknown Location',
+      productName: purchaseItem?.productName ?? catalogVariant?.productName ?? 'Product',
+      variantName: purchaseItem?.variantName ?? catalogVariant?.variantName ?? 'Variant',
+      sku: purchaseItem?.sku ?? catalogVariant?.sku ?? '—',
+      unitOfMeasure:
+        purchaseItem?.unitOfMeasure ?? catalogVariant?.unitOfMeasure ?? 'Unit',
+      receivedQuantity,
+      acceptedQuantity,
+      damagedQuantity,
+      createdAt: row.created_at ?? null,
+    };
+
+    const existing = itemsByReceiptId.get(row.receipt_id) ?? [];
+    existing.push(mappedItem);
+    itemsByReceiptId.set(row.receipt_id, existing);
+  }
+
+  return rawReceipts.map((receipt) => {
+    const items = itemsByReceiptId.get(receipt.id) ?? [];
+    const totalReceived = roundFourDecimals(
+      items.reduce((sum, item) => sum + item.receivedQuantity, 0)
+    );
+    const totalAccepted = roundFourDecimals(
+      items.reduce((sum, item) => sum + item.acceptedQuantity, 0)
+    );
+    const totalDamaged = roundFourDecimals(
+      items.reduce((sum, item) => sum + item.damagedQuantity, 0)
+    );
+
+    const receivedBy = receipt.received_by ?? null;
+    const resolvedName = receivedBy
+      ? memberNameByUserId.get(receivedBy) ?? `User ${receivedBy.slice(0, 8)}`
+      : 'System';
+
+    return {
+      id: receipt.id,
+      organizationId: receipt.organization_id,
+      purchaseId: receipt.purchase_id,
+      receiptNumber: receipt.receipt_number,
+      receivedAt: receipt.received_at ?? receipt.created_at ?? null,
+      receivedBy,
+      receivedByName: resolvedName,
+      notes: receipt.notes ?? null,
+      createdAt: receipt.created_at ?? null,
+      items,
+      totalReceived,
+      totalAccepted,
+      totalDamaged,
+    };
+  });
+}
+
+export async function fetchPurchaseReceipts(
+  organisationId: string,
+  purchaseId: string,
+  options: {
+    purchaseItems?: PurchaseItemRecord[];
+    catalogVariants?: PurchaseCatalogVariant[];
+    locationsById?: Record<string, InventoryLocationRecord>;
+  } = {}
+): Promise<PurchaseReceiptsListResult> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { receipts: [], error: 'Supabase client is not configured.' };
+  }
+
+  const cleanPurchaseId = purchaseId.trim();
+  if (!cleanPurchaseId) {
+    return { receipts: [], error: 'Purchase ID is required.' };
+  }
+
+  const verified = await verifyActiveWorkspaceContext(organisationId, 'none');
+  if (!verified.ok) {
+    return { receipts: [], error: verified.error };
+  }
+
+  const orgId = verified.organizationId;
+
+  const [receiptsRes, membersRes] = await Promise.all([
+    supabase
+      .from('purchase_receipts')
+      .select(
+        'id, organization_id, purchase_id, receipt_number, received_at, received_by, notes, created_at'
+      )
+      .eq('organization_id', orgId)
+      .eq('purchase_id', cleanPurchaseId)
+      .order('received_at', { ascending: false })
+      .order('created_at', { ascending: false }),
+    fetchOrganisationMembers(orgId),
+  ]);
+
+  if (receiptsRes.error) {
+    return {
+      receipts: [],
+      error: formatPurchaseReadError(
+        receiptsRes.error.message,
+        'Unable to load goods received history.'
+      ),
+    };
+  }
+
+  const rawReceipts = (receiptsRes.data ?? []).filter(
+    (row) => row.organization_id.toLowerCase() === orgId.toLowerCase()
+  );
+
+  if (rawReceipts.length === 0) {
+    return { receipts: [], error: null };
+  }
+
+  const receiptIds = rawReceipts.map((r) => r.id);
+  const itemsRes = await supabase
+    .from('purchase_receipt_items')
+    .select(
+      'id, organization_id, receipt_id, purchase_item_id, variant_id, location_id, received_quantity, accepted_quantity, damaged_quantity, created_at'
+    )
+    .eq('organization_id', orgId)
+    .in('receipt_id', receiptIds)
+    .order('created_at', { ascending: true });
+
+  if (itemsRes.error) {
+    return {
+      receipts: [],
+      error: formatPurchaseReadError(
+        itemsRes.error.message,
+        'Unable to load received item lines.'
+      ),
+    };
+  }
+
+  const memberNameByUserId = new Map<string, string>();
+  if (!membersRes.error) {
+    for (const member of membersRes.members) {
+      const displayName =
+        member.profile?.full_name?.trim() ||
+        member.profile?.email?.trim() ||
+        null;
+      if (displayName) {
+        memberNameByUserId.set(member.user_id, displayName);
+      }
+    }
+  }
+
+  const rawReceiptItems = (itemsRes.data ?? []).filter(
+    (row) => row.organization_id.toLowerCase() === orgId.toLowerCase()
+  );
+
+  const receipts = buildReceiptRecords(rawReceipts, rawReceiptItems, {
+    purchaseItems: options.purchaseItems,
+    catalogVariants: options.catalogVariants,
+    locationsById: options.locationsById,
+    memberNameByUserId,
+  });
+
+  return { receipts, error: null };
+}
+
+export async function receivePurchaseGoods(
+  organisationId: string,
+  purchase: PurchaseRecord,
+  input: PurchaseReceiveFormInput,
+  options: {
+    activeLocations?: InventoryLocationRecord[];
+    locationsById?: Record<string, InventoryLocationRecord>;
+    catalogVariants?: PurchaseCatalogVariant[];
+  } = {}
+): Promise<PurchaseReceiveResult> {
+  if (!purchase.id) {
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: 'Purchase ID is required.',
+    };
+  }
+
+  if (!isPurchaseReceivableStatus(purchase.status)) {
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: 'Goods can only be received for Ordered or Partially Received purchase orders.',
+    };
+  }
+
+  const activeLocationIds =
+    options.activeLocations && options.activeLocations.length > 0
+      ? new Set(options.activeLocations.map((loc) => loc.id))
+      : undefined;
+
+  const validation = validatePurchaseReceiveInput(purchase.items, input, {
+    activeLocationIds,
+  });
+  if (!validation.ok) {
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: validation.error,
+    };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: 'Supabase client is not configured.',
+    };
+  }
+
+  const verified = await verifyActiveWorkspaceContext(organisationId, 'none');
+  if (!verified.ok) {
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: verified.error,
+    };
+  }
+
+  const orgId = verified.organizationId;
+
+  const { data, error } = await supabase.rpc('purchases_v1_receive_goods', {
+    p_organization_id: orgId,
+    p_purchase_id: purchase.id,
+    p_items: validation.normalized.rpcItems,
+    p_notes: validation.normalized.notes,
+  });
+
+  if (error) {
+    return {
+      receiptId: null,
+      receiptNumber: null,
+      receipt: null,
+      stockUpdates: [],
+      error: formatPurchaseRpcError(error.message, 'Unable to record goods receipt.'),
+    };
+  }
+
+  const receiptId =
+    typeof data === 'string' && data.trim()
+      ? data.trim()
+      : extractPurchaseIdentifier(data);
+
+  // Retrieve the newly created purchase_receipts record & refresh Inventory overview
+  const [receiptRes, receiptItemsRes, inventoryRes, membersRes] = await Promise.all([
+    receiptId
+      ? supabase
+          .from('purchase_receipts')
+          .select(
+            'id, organization_id, purchase_id, receipt_number, received_at, received_by, notes, created_at'
+          )
+          .eq('organization_id', orgId)
+          .eq('id', receiptId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    receiptId
+      ? supabase
+          .from('purchase_receipt_items')
+          .select(
+            'id, organization_id, receipt_id, purchase_item_id, variant_id, location_id, received_quantity, accepted_quantity, damaged_quantity, created_at'
+          )
+          .eq('organization_id', orgId)
+          .eq('receipt_id', receiptId)
+      : Promise.resolve({ data: [], error: null }),
+    fetchInventoryOverview(orgId),
+    fetchOrganisationMembers(orgId),
+  ]);
+
+  const refreshedLocationsById: Record<string, InventoryLocationRecord> = {
+    ...(options.locationsById ?? {}),
+  };
+  for (const loc of inventoryRes.locations) {
+    refreshedLocationsById[loc.id] = loc;
+  }
+
+  const memberNameByUserId = new Map<string, string>();
+  if (!membersRes.error) {
+    for (const member of membersRes.members) {
+      const displayName =
+        member.profile?.full_name?.trim() ||
+        member.profile?.email?.trim() ||
+        null;
+      if (displayName) {
+        memberNameByUserId.set(member.user_id, displayName);
+      }
+    }
+  }
+
+  const receiptRow = receiptRes.data ?? null;
+  const receiptItemsRows = Array.isArray(receiptItemsRes.data) ? receiptItemsRes.data : [];
+
+  const receipt = receiptRow
+    ? buildReceiptRecords([receiptRow], receiptItemsRows, {
+        purchaseItems: purchase.items,
+        catalogVariants: options.catalogVariants,
+        locationsById: refreshedLocationsById,
+        memberNameByUserId,
+      })[0] ?? null
+    : null;
+
+  const balanceMap = new Map<string, number>();
+  for (const bal of inventoryRes.balances) {
+    balanceMap.set(`${bal.variantId}:${bal.locationId}`, roundFourDecimals(bal.quantity));
+  }
+
+  const purchaseItemById = new Map(purchase.items.map((item) => [item.id, item]));
+  const stockUpdates: PurchaseStockUpdateSummary[] = [];
+
+  for (const submitted of validation.normalized.rpcItems) {
+    if (submitted.accepted_quantity <= 0) continue;
+    const item = purchaseItemById.get(submitted.purchase_item_id);
+    if (!item) continue;
+
+    const locationName =
+      refreshedLocationsById[submitted.location_id]?.name ?? 'Selected Location';
+    const newQty = balanceMap.get(`${item.variantId}:${submitted.location_id}`) ?? null;
+
+    stockUpdates.push({
+      variantId: item.variantId,
+      productName: item.productName,
+      variantName: item.variantName,
+      sku: item.sku,
+      unitOfMeasure: item.unitOfMeasure,
+      locationId: submitted.location_id,
+      locationName,
+      acceptedQuantity: submitted.accepted_quantity,
+      newStockQuantity: newQty,
+    });
+  }
+
+  return {
+    receiptId,
+    receiptNumber: receiptRow?.receipt_number ?? receipt?.receiptNumber ?? null,
+    receipt,
+    stockUpdates,
     error: null,
   };
 }

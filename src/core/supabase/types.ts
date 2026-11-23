@@ -483,6 +483,64 @@ export interface Database {
       purchase_items: InventoryTableRecord;
       purchase_order_items: InventoryTableRecord;
       purchase_order_lines: InventoryTableRecord;
+      purchase_receipts: {
+        Row: {
+          id: string;
+          organization_id: string;
+          purchase_id: string;
+          receipt_number: string;
+          received_at: string;
+          received_by: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          purchase_id: string;
+          receipt_number: string;
+          received_at?: string;
+          received_by?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          notes?: string | null;
+        };
+        Relationships: [];
+      };
+      purchase_receipt_items: {
+        Row: {
+          id: string;
+          organization_id: string;
+          receipt_id: string;
+          purchase_item_id: string;
+          variant_id: string;
+          location_id: string;
+          received_quantity: number;
+          accepted_quantity: number;
+          damaged_quantity: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          receipt_id: string;
+          purchase_item_id: string;
+          variant_id: string;
+          location_id: string;
+          received_quantity: number;
+          accepted_quantity: number;
+          damaged_quantity: number;
+          created_at?: string;
+        };
+        Update: {
+          received_quantity?: number;
+          accepted_quantity?: number;
+          damaged_quantity?: number;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -1002,6 +1060,79 @@ export interface Database {
           p_idempotency_key?: string | null;
         };
         Returns: unknown;
+      };
+      purchases_v1_list: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_list_purchases: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_list_orders: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_search: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_search_purchases: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_get_purchases: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_get_orders: {
+        Args: {
+          p_organization_id: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_get_detail: {
+        Args: {
+          p_organization_id: string;
+          p_purchase_id?: string;
+          p_purchase_order_id?: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_get_purchase: {
+        Args: {
+          p_organization_id: string;
+          p_purchase_id?: string;
+          p_purchase_order_id?: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_receive_goods: {
+        Args: {
+          p_organization_id: string;
+          p_purchase_id: string;
+          p_items: Array<{
+            purchase_item_id: string;
+            location_id: string;
+            received_quantity: number;
+            accepted_quantity: number;
+            damaged_quantity: number;
+          }>;
+          p_notes?: string | null;
+        };
+        Returns: string;
       };
     };
     Enums: Record<string, never>;

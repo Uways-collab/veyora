@@ -14,22 +14,28 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
+import type { InventoryLocationRecord } from '../inventory/inventoryService';
 import { generateIdempotencyKey } from '../sales/salesFormatters';
 import { PurchaseDetailModal } from './PurchaseDetailModal';
 import { PurchaseFormModal } from './PurchaseFormModal';
+import { PurchaseReceiveModal } from './PurchaseReceiveModal';
 import {
   confirmPurchaseOrder,
   fetchPurchaseReferenceData,
   fetchPurchasesList,
   formatPurchaseDate,
   formatPurchaseMoney,
+  formatPurchaseNumberPrecision,
   formatPurchaseStatusLabel,
 } from './purchasesService';
-import type {
-  PurchaseCatalogVariant,
-  PurchaseListFilterStatus,
-  PurchaseRecord,
-  PurchaseStatusValue,
+import {
+  isPurchaseReceivableStatus,
+  type PurchaseCatalogVariant,
+  type PurchaseListFilterStatus,
+  type PurchaseReceiveResult,
+  type PurchaseRecord,
+  type PurchaseStatusValue,
+  type PurchaseStockUpdateSummary,
 } from './purchasesTypes';
 import type { SupplierRecord } from './suppliersTypes';
 
@@ -89,6 +95,8 @@ export function PurchasesListPanel({
   const [activeSuppliers, setActiveSuppliers] = useState<SupplierRecord[]>([]);
   const [suppliersById, setSuppliersById] = useState<Record<string, SupplierRecord>>({});
   const [catalogVariants, setCatalogVariants] = useState<PurchaseCatalogVariant[]>([]);
+  const [activeLocations, setActiveLocations] = useState<InventoryLocationRecord[]>([]);
+  const [locationsById, setLocationsById] = useState<Record<string, InventoryLocationRecord>>({});
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -97,6 +105,12 @@ export function PurchasesListPanel({
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null
   );
+  const [stockUpdateNotice, setStockUpdateNotice] = useState<{
+    purchaseId: string;
+    purchaseNumber: string;
+    receiptNumber: string | null;
+    updates: PurchaseStockUpdateSummary[];
+  } | null>(null);
 
   // Modals
   const [viewingPurchase, setViewingPurchase] = useState<PurchaseRecord | null>(null);
@@ -104,6 +118,8 @@ export function PurchasesListPanel({
   const [editingPurchase, setEditingPurchase] = useState<PurchaseRecord | null>(null);
   const [confirmingPurchase, setConfirmingPurchase] = useState<PurchaseRecord | null>(null);
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const [receivingPurchase, setReceivingPurchase] = useState<PurchaseRecord | null>(null);
+  const [receiptsRefreshSignal, setReceiptsRefreshSignal] = useState(0);
 
   const requestSeqRef = useRef(0);
   const confirmLockRef = useRef(false);
@@ -133,8 +149,14 @@ export function PurchasesListPanel({
         setActiveSuppliers(refData.activeSuppliers);
         setSuppliersById(refData.allSuppliersById);
         setCatalogVariants(refData.catalogVariants);
+        setActiveLocations(refData.activeLocations);
+        setLocationsById(refData.locationsById);
 
-        const warnings = [refData.suppliersError, refData.catalogError].filter(Boolean);
+        const warnings = [
+          refData.suppliersError,
+          refData.catalogError,
+          refData.locationsError,
+        ].filter(Boolean);
         if (warnings.length > 0) {
           setReferenceWarning(warnings.join(' · '));
         }
@@ -151,6 +173,11 @@ export function PurchasesListPanel({
           setPurchases([]);
         } else {
           setPurchases(listRes.purchases);
+          if (listRes.itemsWarning) {
+            setReferenceWarning((prev) =>
+              prev ? `${prev} · ${listRes.itemsWarning}` : (listRes.itemsWarning ?? null)
+            );
+          }
           setViewingPurchase((prev) =>
             prev ? (listRes.purchases.find((p) => p.id === prev.id) ?? null) : null
           );
@@ -174,14 +201,18 @@ export function PurchasesListPanel({
     setActiveSuppliers([]);
     setSuppliersById({});
     setCatalogVariants([]);
+    setActiveLocations([]);
+    setLocationsById({});
     setLoadError(null);
     setReferenceWarning(null);
     setFeedback(null);
+    setStockUpdateNotice(null);
     setViewingPurchase(null);
     setFormOpen(false);
     setEditingPurchase(null);
     setConfirmingPurchase(null);
     setConfirmSubmitting(false);
+    setReceivingPurchase(null);
     confirmLockRef.current = false;
 
     if (isAuthenticated && organisationId) {
@@ -289,10 +320,42 @@ export function PurchasesListPanel({
     setConfirmingPurchase(purchase);
   };
 
+  const openReceiveModal = (purchase: PurchaseRecord) => {
+    if (!canManage || !isPurchaseReceivableStatus(purchase.status)) return;
+    setFeedback(null);
+    setReceivingPurchase(purchase);
+  };
+
   const handleFormSuccess = async (message: string) => {
     setFormOpen(false);
     setEditingPurchase(null);
+    setStockUpdateNotice(null);
     setFeedback({ type: 'success', message });
+    if (organisationId) {
+      await loadWorkspacePurchases(organisationId, { isManualRefresh: true });
+    }
+  };
+
+  const handleReceiveSuccess = async (
+    result: PurchaseReceiveResult,
+    targetPurchase: PurchaseRecord
+  ) => {
+    setReceivingPurchase(null);
+    setReceiptsRefreshSignal((prev) => prev + 1);
+
+    const receiptLabel = result.receiptNumber ? `Receipt ${result.receiptNumber}` : 'Goods receipt';
+    setFeedback({
+      type: 'success',
+      message: `${receiptLabel} recorded for ${targetPurchase.purchaseNumber}. Inventory balances and purchase status have been updated.`,
+    });
+
+    setStockUpdateNotice({
+      purchaseId: targetPurchase.id,
+      purchaseNumber: targetPurchase.purchaseNumber,
+      receiptNumber: result.receiptNumber,
+      updates: result.stockUpdates,
+    });
+
     if (organisationId) {
       await loadWorkspacePurchases(organisationId, { isManualRefresh: true });
     }
@@ -305,6 +368,7 @@ export function PurchasesListPanel({
     confirmLockRef.current = true;
     setConfirmSubmitting(true);
     setFeedback(null);
+    setStockUpdateNotice(null);
 
     const target = confirmingPurchase;
     try {
@@ -343,28 +407,78 @@ export function PurchasesListPanel({
       {feedback && (
         <section
           role={feedback.type === 'error' ? 'alert' : 'status'}
-          className={`rounded-lg border p-4 flex items-start justify-between gap-3 text-xs ${
+          className={`rounded-lg border p-4 space-y-2.5 text-xs ${
             feedback.type === 'error'
               ? 'bg-red-50 border-red-200 text-red-900'
               : 'bg-emerald-50 border-emerald-200 text-emerald-900'
           }`}
         >
-          <div className="flex items-start gap-2.5">
-            {feedback.type === 'error' ? (
-              <AlertTriangle className="h-4 w-4 text-red-700 shrink-0 mt-0.5" aria-hidden="true" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" aria-hidden="true" />
-            )}
-            <span className="font-medium leading-relaxed">{feedback.message}</span>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              {feedback.type === 'error' ? (
+                <AlertTriangle className="h-4 w-4 text-red-700 shrink-0 mt-0.5" aria-hidden="true" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" aria-hidden="true" />
+              )}
+              <span className="font-medium leading-relaxed">{feedback.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFeedback(null);
+                setStockUpdateNotice(null);
+              }}
+              aria-label="Dismiss notification"
+              className="p-0.5 rounded text-slate-400 hover:text-slate-700 shrink-0"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setFeedback(null)}
-            aria-label="Dismiss notification"
-            className="p-0.5 rounded text-slate-400 hover:text-slate-700 shrink-0"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+
+          {feedback.type === 'success' && stockUpdateNotice && (
+            <div className="pl-6 space-y-2 text-[11px] text-emerald-950">
+              {stockUpdateNotice.updates.length > 0 && (
+                <div className="bg-white/80 border border-emerald-200 rounded-md p-3 space-y-1.5">
+                  <div className="font-semibold text-emerald-900">
+                    Updated Stock Balances ({stockUpdateNotice.receiptNumber ?? stockUpdateNotice.purchaseNumber})
+                  </div>
+                  <div className="divide-y divide-emerald-100">
+                    {stockUpdateNotice.updates.map((upd) => (
+                      <div
+                        key={`${upd.variantId}:${upd.locationId}`}
+                        className="py-1 flex flex-wrap items-center justify-between gap-2"
+                      >
+                        <span>
+                          <span className="font-medium">{upd.productName}</span> — {upd.variantName}{' '}
+                          (<span className="font-mono">{upd.sku}</span>) @{' '}
+                          <span className="font-medium">{upd.locationName}</span>
+                        </span>
+                        <span className="font-mono tabular-nums">
+                          +{formatPurchaseNumberPrecision(upd.acceptedQuantity)} accepted
+                          {upd.newStockQuantity !== null
+                            ? ` · New stock: ${formatPurchaseNumberPrecision(upd.newStockQuantity)} ${upd.unitOfMeasure}`
+                            : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const matched = purchases.find((p) => p.id === stockUpdateNotice.purchaseId);
+                    if (matched) setViewingPurchase(matched);
+                  }}
+                  className="font-medium text-emerald-800 hover:underline"
+                >
+                  View Purchase Order & Receipt Details →
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -492,12 +606,12 @@ export function PurchasesListPanel({
             </div>
             <div>
               <div className="text-sm font-semibold text-slate-900">
-                {canManage ? 'Create, Edit & Confirm' : 'View & Search Only'}
+                {canManage ? 'Create, Edit, Confirm & Receive' : 'View & Search Only'}
               </div>
               <div className="mt-1 text-xs text-slate-500">
                 {canManage
-                  ? 'Drafts and order confirmations enabled'
-                  : 'Owners, Admins, and Managers can manage orders'}
+                  ? 'Drafts, confirmations, and goods receiving enabled'
+                  : 'Owners, Admins, and Managers can manage orders & receive goods'}
               </div>
             </div>
           </div>
@@ -753,6 +867,16 @@ export function PurchasesListPanel({
                                 </button>
                               </>
                             )}
+                            {canManage && isPurchaseReceivableStatus(purchase.status) && (
+                              <button
+                                type="button"
+                                onClick={() => openReceiveModal(purchase)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-blue-200 bg-blue-50 text-[11px] font-medium text-blue-800 hover:bg-blue-100 whitespace-nowrap shrink-0"
+                              >
+                                <PackageCheck className="h-3 w-3" aria-hidden="true" />
+                                <span>Receive Goods</span>
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -846,6 +970,16 @@ export function PurchasesListPanel({
                           </button>
                         </>
                       )}
+                      {canManage && isPurchaseReceivableStatus(purchase.status) && (
+                        <button
+                          type="button"
+                          onClick={() => openReceiveModal(purchase)}
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-blue-200 bg-blue-50 text-xs font-medium text-blue-800 hover:bg-blue-100 whitespace-nowrap shrink-0"
+                        >
+                          <PackageCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span>Receive Goods</span>
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
@@ -857,13 +991,18 @@ export function PurchasesListPanel({
 
       {/* View Purchase Detail Modal */}
       <PurchaseDetailModal
+        organisationId={organisationId}
         purchase={viewingPurchase}
         timeZone={timeZone}
         canManage={canManage}
         suppliersById={suppliersById}
+        locationsById={locationsById}
+        catalogVariants={catalogVariants}
+        receiptsRefreshSignal={receiptsRefreshSignal}
         onClose={() => setViewingPurchase(null)}
         onEdit={openEditModal}
         onConfirmOrder={openConfirmModal}
+        onReceiveGoods={openReceiveModal}
       />
 
       {/* Create / Edit Purchase Draft Modal */}
@@ -882,6 +1021,20 @@ export function PurchasesListPanel({
           }}
           onSuccess={handleFormSuccess}
           onNavigateSuppliers={onSwitchToSuppliers}
+        />
+      )}
+
+      {/* Receive Goods Modal */}
+      {organisationId && canManage && (
+        <PurchaseReceiveModal
+          open={Boolean(receivingPurchase)}
+          organisationId={organisationId}
+          purchase={receivingPurchase}
+          activeLocations={activeLocations}
+          locationsById={locationsById}
+          catalogVariants={catalogVariants}
+          onClose={() => setReceivingPurchase(null)}
+          onSuccess={handleReceiveSuccess}
         />
       )}
 
