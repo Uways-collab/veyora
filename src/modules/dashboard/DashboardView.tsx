@@ -25,6 +25,15 @@ interface DashboardViewProps {
 }
 
 type ChartWindow = '7D' | '30D' | '90D' | '12M';
+interface RecentSale {
+  id: string;
+  sale_number: string | null;
+  customer_name: string | null;
+  sold_at: string | null;
+  total_amount: number | string;
+  payment_status: string | null;
+}
+
 interface DashboardMetrics {
   totalSales: number;
   orders: number;
@@ -129,6 +138,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
   const [metrics, setMetrics] = useState<DashboardMetrics>(EMPTY_METRICS);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -176,12 +186,19 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
       setMetricsLoading(true);
       setMetricsError(null);
       try {
-        const [salesResult, productsResult, customersResult] = await Promise.all([
+        const [salesResult, recentSalesResult, productsResult, customersResult] = await Promise.all([
           supabase
             .from('sales')
             .select('total_amount, status')
             .eq('organization_id', organisationId)
             .neq('status', 'cancelled'),
+          supabase
+            .from('sales')
+            .select('id, sale_number, customer_name, sold_at, total_amount, payment_status')
+            .eq('organization_id', organisationId)
+            .neq('status', 'cancelled')
+            .order('sold_at', { ascending: false })
+            .limit(5),
           supabase
             .from('products')
             .select('id', { count: 'exact', head: true })
@@ -193,7 +210,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
             .eq('organization_id', organisationId)
             .eq('is_active', true),
         ]);
-        const failure = salesResult.error ?? productsResult.error ?? customersResult.error;
+        const failure = salesResult.error ?? recentSalesResult.error ?? productsResult.error ?? customersResult.error;
         if (failure) throw failure;
         const salesRows = salesResult.data ?? [];
         const totalSales = salesRows.reduce((sum, row) => {
@@ -201,6 +218,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
           return sum + (Number.isFinite(amount) ? amount : 0);
         }, 0);
         if (!cancelled) {
+          setRecentSales((recentSalesResult.data ?? []) as RecentSale[]);
           setMetrics({
             totalSales,
             orders: salesRows.length,
@@ -212,6 +230,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
       } catch (error) {
         if (!cancelled) {
           setMetrics(EMPTY_METRICS);
+          setRecentSales([]);
           setMetricsError(error instanceof Error ? error.message : 'Unable to load workspace metrics.');
         }
       } finally {
@@ -221,9 +240,11 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
 
     if (status === 'authenticated' && activeOrganisation) {
       setMetrics(EMPTY_METRICS);
+      setRecentSales([]);
       void loadMetrics(activeOrganisation.id);
     } else {
       setMetrics(EMPTY_METRICS);
+      setRecentSales([]);
       setMetricsError(null);
     }
     return () => { cancelled = true; };
@@ -544,7 +565,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
               </p>
             </div>
             <span className="text-xs font-mono text-slate-400 whitespace-nowrap">
-              0 records
+              {metricsLoading ? 'Loading' : `${recentSales.length} latest`}
             </span>
           </div>
 
@@ -560,16 +581,26 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center space-y-1.5">
-                    <div className="text-xs font-semibold text-slate-900">
-                      No transactions recorded yet
-                    </div>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                      Recent sales, purchases, and payment entries will appear here once those business modules and database tables are implemented.
-                    </p>
-                  </td>
-                </tr>
+                {recentSales.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-10 text-center space-y-1.5">
+                      <div className="text-xs font-semibold text-slate-900">
+                        {metricsLoading ? 'Loading recent transactions…' : 'No sales recorded yet'}
+                      </div>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                        {metricsError ?? 'Completed and pending sales for this workspace will appear here.'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : recentSales.map((sale) => (
+                  <tr key={sale.id} className="border-b border-slate-100 last:border-0 text-xs">
+                    <td className="py-3 px-4 font-mono text-slate-800">{sale.sale_number || sale.id.slice(0, 8)}</td>
+                    <td className="py-3 px-4 capitalize text-slate-600">{sale.payment_status || 'Sale'}</td>
+                    <td className="py-3 px-4 text-slate-700">{sale.customer_name || 'Walk-in customer'}</td>
+                    <td className="py-3 px-4 whitespace-nowrap text-slate-500">{sale.sold_at ? formatTimestamp(sale.sold_at) : '—'}</td>
+                    <td className="py-3 px-4 text-right font-mono text-slate-800 whitespace-nowrap">{formatMetricCurrency(Number(sale.total_amount) || 0, metrics.currency)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
