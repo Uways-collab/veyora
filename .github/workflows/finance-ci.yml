@@ -26,5 +26,11 @@ jobs:
         run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: TypeScript check
         run: npm run lint
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check Supabase Edge Function
+        run: deno check supabase/functions/invite-organization-member/index.ts
       - name: Production build
         run: npm run build
