@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { CheckCircle2, Circle, Landmark, Plus, Wallet } from 'lucide-react';
-import { createConfiguredFinancialAccount, mapSetupExpenseCategory, mapSetupPaymentMethod, type SetupExpenseCategory, type SetupFinancialAccount, type SetupLedgerAccount, type SetupPaymentMethod } from './financeSetupService';
+import { createConfiguredFinancialAccount, createSetupLedgerAccount, mapSetupExpenseCategory, mapSetupPaymentMethod, type SetupExpenseCategory, type SetupFinancialAccount, type SetupLedgerAccount, type SetupPaymentMethod } from './financeSetupService';
 
 type Props = {
  organizationId:string; canManage:boolean; currency:string;
@@ -12,7 +12,7 @@ const input='w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-s
 const primary='rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50';
 const steps=['Financial accounts','Payment methods','Expense categories'];
 export function FinanceSetupView({organizationId,canManage,currency,ledger,accounts,paymentMethods,categories,onChanged}:Props) {
- const [step,setStep]=useState(0),[name,setName]=useState(''),[type,setType]=useState('cash'),[institution,setInstitution]=useState(''),[ledgerId,setLedgerId]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [step,setStep]=useState(0),[name,setName]=useState(''),[type,setType]=useState('cash'),[institution,setInstitution]=useState(''),[ledgerId,setLedgerId]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');\n const [ledgerCode,setLedgerCode]=useState(''),[ledgerName,setLedgerName]=useState(''),[ledgerType,setLedgerType]=useState<'asset'|'liability'|'equity'|'revenue'|'expense'>('asset');
  const [methodMap,setMethodMap]=useState<Record<string,string>>({}),[expenseMap,setExpenseMap]=useState<Record<string,string>>({});
  const assetLedger=ledger.filter(a=>a.is_active&&a.account_type==='asset');
  const expenseLedger=ledger.filter(a=>a.is_active&&a.account_type==='expense');
@@ -30,6 +30,7 @@ export function FinanceSetupView({organizationId,canManage,currency,ledger,accou
    {error&&<p role="alert" className="mt-3 rounded-md bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
   </div>
   {step===0&&<div className="rounded-lg border border-slate-200 bg-white p-4">
+   <details className="mb-4 rounded-md border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-medium">Add a ledger account (use your organisation’s approved code and name)</summary><form className="mt-3 grid gap-2 sm:grid-cols-3" onSubmit={e=>{e.preventDefault();if(!canManage)return;void perform(async()=>{await createSetupLedgerAccount({organizationId,code:ledgerCode,name:ledgerName,type:ledgerType});setLedgerCode('');setLedgerName('');});}}><input required className={input} maxLength={20} value={ledgerCode} onChange={e=>setLedgerCode(e.target.value)} placeholder="Account code"/><input required className={input} maxLength={120} value={ledgerName} onChange={e=>setLedgerName(e.target.value)} placeholder="Account name"/><select className={input} value={ledgerType} onChange={e=>setLedgerType(e.target.value as typeof ledgerType)}><option value="asset">Asset</option><option value="liability">Liability</option><option value="equity">Equity</option><option value="revenue">Revenue</option><option value="expense">Expense</option></select><button className={primary+' sm:col-span-3'} disabled={!canManage||busy}>Create ledger account</button></form></details>
    <h3 className="text-sm font-semibold">Add a financial account</h3><p className="mt-1 text-xs text-slate-500">Names and destinations are supplied by your organisation. No full bank account number is requested. Currency is the organisation base currency ({currency}).</p>
    {canManage?<form onSubmit={addAccount} className="mt-4 grid gap-3 sm:grid-cols-2">
     <label className="text-xs font-medium text-slate-600">Account display name<input required maxLength={120} className={input+' mt-1'} value={name} onChange={e=>setName(e.target.value)} placeholder="Enter your own account name"/></label>
