@@ -96,7 +96,14 @@ Deno.serve(async (req: Request) => {
   if (scanError || !scan) return json({ error: 'Invoice scan not found in the active organisation' }, 404);
   if (!MIME_TYPES.has(scan.mime_type) || scan.file_size > MAX_BYTES) return json({ error: 'This file type or size is not supported' }, 400);
   if (!scan.file_path.startsWith(`${scan.organization_id}/invoices/`)) return json({ error: 'Invoice file path is invalid' }, 400);
-  if (!['uploaded', 'failed'].includes(scan.status)) return json({ error: 'This invoice scan is already processing or has already been completed' }, 409);
+  if (scan.status === 'processing') {
+    const staleBefore = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: recovered } = await supabase.from('invoice_scans')
+      .update({ status: 'failed', error_message: 'The previous scan attempt timed out. You can safely retry.', updated_at: new Date().toISOString() })
+      .eq('id', scanId).eq('status', 'processing').lt('updated_at', staleBefore).select('id').maybeSingle();
+    if (recovered) scan.status = 'failed';
+  }
+  if (!['uploaded', 'failed'].includes(scan.status)) return json({ error: 'This invoice scan is already processing or has already been completed. If it remains stuck for more than five minutes, retry it.' }, 409);
 
   const { data: claimedScan, error: claimError } = await supabase.from('invoice_scans')
     .update({ status: 'processing', error_message: null, updated_at: new Date().toISOString() })
