@@ -87,7 +87,8 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
 
   useEffect(() => {
     if (requestedTab) {
-      setActiveTab(requestedTab);
+      const businessTabs: SettingsTab[] = ['auth_orgs', 'receipt_settings', 'members_roles'];
+      setActiveTab(businessTabs.includes(requestedTab) ? requestedTab : 'auth_orgs');
     }
   }, [requestedTab]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -388,13 +389,13 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
           <div className="text-xs font-medium text-slate-500">
             Workspace Administration
             <span aria-hidden="true"> · </span>
-            Supabase Auth &amp; Multi-Tenant Controls
+            Business Profile &amp; Team Access
           </div>
           <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">
             Settings &amp; Access Management
           </h1>
           <p className="text-sm text-slate-600 max-w-2xl">
-            Manage your authenticated account, business profile, organisation roles, and PostgreSQL Row Level Security policies.
+            Manage your profile, business details, receipts, and team access.
           </p>
         </div>
 
@@ -421,9 +422,6 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               ? [{ id: 'receipt_settings' as const, label: 'Receipt Settings' }]
               : []),
             { id: 'members_roles', label: 'Members & Roles' },
-            { id: 'schema_rls', label: 'Database Schema & RLS' },
-            { id: 'environment', label: 'Environment & Supabase' },
-            { id: 'security_storage', label: 'Security & Storage' },
           ] satisfies ReadonlyArray<{ id: SettingsTab; label: string }>
         ).map((tab) => (
           <button
@@ -1048,7 +1046,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                 Organisation Role Hierarchy
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Backed by <span className="font-mono">public.organisation_roles</span> and enforced via RLS triggers.
+                These roles determine what each team member can access and manage.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
@@ -1059,7 +1057,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                       {roleDef.label}
                     </span>
                     <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                      Rank {roleDef.rank}
+                      {roleDef.label}
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">
