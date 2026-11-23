@@ -101,6 +101,15 @@ Deno.serve(async (req: Request) => {
     }, 202);
   }
 
+  if (payload.already_pending) {
+    return response({
+      status: 'invited',
+      invitation_id: payload.invitation_id,
+      awaiting_email_confirmation: true,
+      already_pending: true,
+    }, 202);
+  }
+
   const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     data: { organization_invitation_id: payload.invitation_id },
   });
