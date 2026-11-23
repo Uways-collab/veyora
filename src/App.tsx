@@ -10,6 +10,7 @@ import { DashboardView } from './modules/dashboard/DashboardView';
 import { ExpensesView } from './modules/expenses/ExpensesView';
 import { InventoryView } from './modules/inventory/InventoryView';
 import { BusinessOnboardingScreen } from './modules/onboarding/BusinessOnboardingScreen';
+import { PurchasesView } from './modules/purchases/PurchasesView';
 import { ReportsView } from './modules/reports/ReportsView';
 import { SalesView } from './modules/sales/SalesView';
 import { SettingsView, type SettingsTab } from './modules/settings/SettingsView';
@@ -160,6 +161,8 @@ function ProtectedWorkspaceRouter() {
         return <SalesView onSelectModule={handleSelectModule} />;
       case 'customers':
         return <CustomersView />;
+      case 'purchases':
+        return <PurchasesView />;
       case 'expenses':
         return <ExpensesView />;
       case 'reports':

@@ -477,6 +477,7 @@ export interface Database {
       expense_sequences: InventoryTableRecord;
       expenses: InventoryTableRecord;
       expense_audit_logs: InventoryTableRecord;
+      suppliers: InventoryTableRecord;
     };
     Views: Record<string, never>;
     Functions: {
@@ -881,6 +882,64 @@ export interface Database {
           p_organization_id: string;
           p_date_from?: string | null;
           p_date_to?: string | null;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_search_suppliers: {
+        Args: {
+          p_organization_id: string;
+          p_search?: string | null;
+          p_is_active?: boolean | null;
+          p_include_archived?: boolean;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_create_supplier: {
+        Args: {
+          p_organization_id: string;
+          p_name: string;
+          p_contact_person?: string | null;
+          p_contact_name?: string | null;
+          p_email?: string | null;
+          p_phone?: string | null;
+          p_address?: string | null;
+          p_payment_terms_days?: number;
+          p_payment_terms?: number;
+          p_notes?: string | null;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_update_supplier: {
+        Args: {
+          p_organization_id: string;
+          p_supplier_id: string;
+          p_name: string;
+          p_contact_person?: string | null;
+          p_contact_name?: string | null;
+          p_email?: string | null;
+          p_phone?: string | null;
+          p_address?: string | null;
+          p_payment_terms_days?: number;
+          p_payment_terms?: number;
+          p_notes?: string | null;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_archive_supplier: {
+        Args: {
+          p_organization_id: string;
+          p_supplier_id?: string;
+          p_id?: string;
+        };
+        Returns: unknown;
+      };
+      purchases_v1_restore_supplier: {
+        Args: {
+          p_organization_id: string;
+          p_supplier_id?: string;
+          p_id?: string;
         };
         Returns: unknown;
       };
