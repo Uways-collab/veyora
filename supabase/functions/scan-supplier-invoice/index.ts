@@ -123,10 +123,25 @@ Deno.serve(async (req: Request) => {
     const aiPayload = await aiResponse.json();
     const text = aiPayload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('');
     if (typeof text !== 'string' || !text.trim()) throw new Error('The AI returned an empty extraction');
-    const extracted = JSON.parse(text);
-    if (!extracted || typeof extracted !== 'object' || !Array.isArray(extracted.line_items)) {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.line_items)) {
       throw new Error('The AI response did not contain a valid invoice line-item list');
     }
+    const extracted = {
+      ...parsed,
+      warnings: Array.isArray(parsed.warnings)
+        ? parsed.warnings.filter((warning: unknown): warning is string => typeof warning === 'string').slice(0, 100)
+        : [],
+      line_items: parsed.line_items
+        .filter((item: unknown) => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+        .slice(0, 500)
+        .map((item: Record<string, unknown>) => ({
+          ...item,
+          warnings: Array.isArray(item.warnings)
+            ? item.warnings.filter((warning: unknown): warning is string => typeof warning === 'string').slice(0, 20)
+            : [],
+        })),
+    };
     const { error: saveError } = await supabase.from('invoice_scans').update({
       status: 'ready',
       extracted_data: extracted,
