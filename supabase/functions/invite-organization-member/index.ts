@@ -132,7 +132,7 @@ Deno.serve(async (req: Request) => {
       invitation_id: payload.invitation_id,
       awaiting_email_confirmation: true,
       already_pending: true,
-    }, 202);
+    }, 202, requestOrigin);
   }
 
   const redirectUrl = new URL('/', requestOrigin);
@@ -150,7 +150,7 @@ Deno.serve(async (req: Request) => {
       invitation_id: payload.invitation_id,
       awaiting_email_confirmation: true,
       already_pending: Boolean(payload.already_pending),
-    }, 202);
+    }, 202, requestOrigin);
   }
 
   // No service-role shortcut may attach membership on an invitation-send error.
