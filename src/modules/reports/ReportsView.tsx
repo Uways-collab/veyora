@@ -17,7 +17,6 @@ interface ReportDomainDefinition {
   label: string;
   status: 'active' | 'upcoming';
   description: string;
-  targetPhase?: string;
 }
 
 const REPORT_DOMAINS: ReportDomainDefinition[] = [
@@ -143,7 +142,7 @@ export function ReportsView() {
                       : 'bg-slate-50 text-slate-600 border-slate-200'
                   }`}
                 >
-                  {isActive ? 'Active' : 'Upcoming'}
+                  {isActive ? 'Active' : 'Planned'}
                 </span>
               </div>
               <p className="mt-2 text-[11px] text-slate-500 leading-relaxed line-clamp-2">
@@ -184,8 +183,7 @@ export function ReportsView() {
             </div>
 
             <div className="p-3.5 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-600">
-              To avoid displaying estimated or unverified figures, no metrics are shown until
-              the underlying Supabase tables and transactions for this module are live.
+              These reports are still being developed. The related business module can be used independently; this reporting area will become available when its reports are ready. No estimated figures are shown.
             </div>
 
             <div>
