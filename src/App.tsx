@@ -67,7 +67,8 @@ function ProtectedWorkspaceRouter() {
   if (
     status === 'unconfigured' ||
     status === 'signed_out' ||
-    status === 'password_recovery'
+    status === 'password_recovery' ||
+    status === 'invitation_setup'
   ) {
     return <AuthScreen />;
   }
