@@ -570,6 +570,10 @@ export interface Database {
         };
         Returns: string | Database['public']['Tables']['organizations']['Row'];
       };
+      create_organization_invitation: {
+        Args: { p_organization_id: string; p_email: string; p_role: string };
+        Returns: Record<string, unknown>;
+      };
       get_organization_member_roster: {
         Args: {
           p_organization_id: string;
