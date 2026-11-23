@@ -18,6 +18,7 @@ import {
 import type { AuditLogEntry, ModuleId } from '../../core/types/domain';
 import type { SettingsTab } from '../settings/SettingsView';
 import { ModuleIcon } from '../../components/shared/ModuleIcon';
+import { getSupabaseClient } from '../../core/supabase/client';
 
 interface DashboardViewProps {
   onSelectModule: (moduleId: ModuleId, settingsTab?: SettingsTab) => void;
@@ -151,7 +152,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
   useEffect(() => {
     let cancelled = false;
     const loadMetrics = async (organisationId: string) => {
-      const supabase = (await import('../../core/supabase/client')).getSupabaseClient();
+      const supabase = getSupabaseClient();
       if (!supabase) {
         if (!cancelled) setMetricsError('Supabase client is not configured.');
         return;
