@@ -12,7 +12,8 @@ const input='w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-s
 const primary='rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50';
 const steps=['Financial accounts','Payment methods','Expense categories'];
 export function FinanceSetupView({organizationId,canManage,currency,ledger,accounts,paymentMethods,categories,onChanged}:Props) {
- const [step,setStep]=useState(0),[name,setName]=useState(''),[type,setType]=useState('cash'),[institution,setInstitution]=useState(''),[ledgerId,setLedgerId]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');\n const [ledgerCode,setLedgerCode]=useState(''),[ledgerName,setLedgerName]=useState(''),[ledgerType,setLedgerType]=useState<'asset'|'liability'|'equity'|'revenue'|'expense'>('asset');
+ const [step,setStep]=useState(0),[name,setName]=useState(''),[type,setType]=useState('cash'),[institution,setInstitution]=useState(''),[ledgerId,setLedgerId]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [ledgerCode,setLedgerCode]=useState(''),[ledgerName,setLedgerName]=useState(''),[ledgerType,setLedgerType]=useState<'asset'|'liability'|'equity'|'revenue'|'expense'>('asset');
  const [methodMap,setMethodMap]=useState<Record<string,string>>({}),[expenseMap,setExpenseMap]=useState<Record<string,string>>({});
  const assetLedger=ledger.filter(a=>a.is_active&&a.account_type==='asset');
  const expenseLedger=ledger.filter(a=>a.is_active&&a.account_type==='expense');
