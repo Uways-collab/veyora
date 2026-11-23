@@ -70,6 +70,9 @@ create table if not exists public.invoice_scan_audit_logs (
     references public.invoice_scans(organization_id,id)
 );
 
+create index if not exists invoice_scan_audit_scan_created_idx
+  on public.invoice_scan_audit_logs(organization_id,invoice_scan_id,created_at desc);
+
 alter table public.invoice_scan_audit_logs enable row level security;
 drop policy if exists invoice_scan_audit_select_managers on public.invoice_scan_audit_logs;
 create policy invoice_scan_audit_select_managers on public.invoice_scan_audit_logs
