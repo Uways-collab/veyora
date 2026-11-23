@@ -15,6 +15,7 @@ import { ReportsView } from './modules/reports/ReportsView';
 import { SalesView } from './modules/sales/SalesView';
 import { SettingsView, type SettingsTab } from './modules/settings/SettingsView';
 import { PlannedModuleView } from './modules/shared/PlannedModuleView';
+import { SuppliersView } from './modules/suppliers/SuppliersView';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
 
@@ -163,6 +164,8 @@ function ProtectedWorkspaceRouter() {
         return <CustomersView />;
       case 'purchases':
         return <PurchasesView />;
+      case 'suppliers':
+        return <SuppliersView />;
       case 'expenses':
         return <ExpensesView />;
       case 'reports':

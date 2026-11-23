@@ -89,13 +89,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     id: 'suppliers',
     label: 'Suppliers',
     group: 'operations',
-    stage: 'planned_module',
+    stage: 'foundation_active',
     summary:
-      'Vendor profiles, lead-time agreements, supplier SKU pricing, payment terms, and compliance documents.',
-    primaryEntities: ['Vendor Directory', 'Supplier Catalogs', 'Lead Times', 'Vendor Documents'],
-    plannedTables: ['suppliers', 'supplier_contacts', 'supplier_products'],
+      'Active supplier directory with contact details, payment terms, search, and archive or restore management.',
+    primaryEntities: ['Supplier Directory', 'Contact Details', 'Payment Terms'],
+    plannedTables: ['suppliers'],
     connectedModules: ['purchases', 'inventory', 'finance'],
-    targetPhase: 'Phase 2',
+    targetPhase: 'Active Suppliers Directory',
   },
   {
     id: 'expenses',
