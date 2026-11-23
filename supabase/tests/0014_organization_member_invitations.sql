@@ -59,7 +59,9 @@ begin
      or position('v_email = v_actor_email' in v_rpc)=0
      or position('email_confirmed_at' in lower(v_rpc))=0
      or position('insert into public.organization_audit_log' in lower(v_rpc))=0
-     or position('finance_audit_log' in lower(v_rpc))>0 then
+     or position('finance_audit_log' in lower(v_rpc))>0
+     or position(chr(92)||chr(92)||'.' in v_rpc)>0
+     or position(chr(92)||'.' in v_rpc)=0 then
     raise exception 'FAIL: invitation RPC owner/role/self-invite/confirmation/audit contracts missing'; end if;
 
   select pg_get_functiondef('public.accept_confirmed_organization_invitations()'::regprocedure)
