@@ -24,6 +24,17 @@ begin
       and policyname='organization_invitations_deny_client_access'
   ) then raise exception 'FAIL: explicit deny policy is missing'; end if;
 
+  if to_regprocedure('public.create_organization_invitation(uuid,text,text)') is not null then
+    raise exception 'FAIL: obsolete authenticated invitation RPC must not remain';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid='public.organization_invitations'::regclass
+      and conname='organization_invitations_role_check'
+      and pg_get_constraintdef(oid) like '%manager%staff%'
+  ) then raise exception 'FAIL: invitation role constraint must limit roles'; end if;
+
   if not exists (
     select 1 from pg_indexes
     where schemaname='public' and indexname='organization_invitations_one_pending_per_email'
