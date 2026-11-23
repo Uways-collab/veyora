@@ -1056,9 +1056,6 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                     <span className="text-xs font-semibold text-slate-900">
                       {roleDef.label}
                     </span>
-                    <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                      {roleDef.label}
-                    </span>
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">
                     {roleDef.description}
