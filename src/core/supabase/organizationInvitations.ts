@@ -4,7 +4,7 @@ export type InviteableOrganisationRole = 'manager' | 'staff';
 
 export type InviteOrganisationMemberResult =
   | { status: 'added'; membership_id: string }
-  | { status: 'invited'; invitation_id: string; already_pending?: boolean };
+  | { status: 'invited'; invitation_id: string; already_pending?: boolean; awaiting_email_confirmation?: boolean; awaiting_existing_account_confirmation?: boolean };
 
 export async function inviteOrganisationMember(
   organisationId: string,
