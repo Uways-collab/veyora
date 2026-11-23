@@ -359,7 +359,9 @@ begin
   end if;
   if p_selling_price is null or p_selling_price < 0
      or p_pricing_method not in ('markup','margin','custom')
-     or (p_target_percent is not null and p_target_percent < 0) then
+     or (p_target_percent is not null and p_target_percent < 0)
+     or (p_pricing_method='margin' and p_target_percent is not null and p_target_percent >= 100)
+     or (p_pricing_method='markup' and p_target_percent is not null and p_target_percent > 1000) then
     raise exception 'A valid selling price and pricing method are required';
   end if;
   select * into v_scan from public.invoice_scans
@@ -441,6 +443,11 @@ begin
   end if;
   if v_scan.file_path not like p_organization_id::text || '/invoices/%' then
     raise exception 'Invoice document does not belong to the active organisation';
+  end if;
+
+  if coalesce(p_discount_amount,0) < 0 or coalesce(p_tax_amount,0) < 0
+     or coalesce(p_delivery_charges,0) < 0 or (p_grand_total is not null and p_grand_total < 0) then
+    raise exception 'Invoice discount, tax, delivery and total values must not be negative';
   end if;
 
   select upper(currency) into v_currency
