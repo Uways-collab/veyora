@@ -28,6 +28,7 @@ type InvoiceLine = {
   newUnit: string;
   newSellingPrice: string;
   edited: boolean;
+  createdNewProduct: boolean;
 };
 
 type ExtractedInvoice = {
@@ -44,6 +45,7 @@ type ExtractedInvoice = {
   grand_total?: number | null;
   line_items?: Array<Record<string, unknown>>;
   warnings?: string[];
+  [key: string]: unknown;
 };
 
 type ScanRow = { id: string; file_path: string; status: string; extracted_data: ExtractedInvoice; error_message: string | null };
@@ -246,6 +248,7 @@ export function InvoiceScannerPanel({
         newUnit: cleanText(raw.unit_of_measure),
         newSellingPrice: '',
         edited: false,
+        createdNewProduct: false,
       };
     }));
   };
@@ -349,6 +352,7 @@ export function InvoiceScannerPanel({
     setBusy(true); setError(null);
     const { data, error: rpcError } = await supabase.rpc('invoice_scanner_create_product_variant', {
       p_organization_id: organisationId,
+      p_scan_id: scan?.id,
       p_product_name: line.productName,
       p_description: line.description || null,
       p_variant_name: line.newVariant,
@@ -362,23 +366,37 @@ export function InvoiceScannerPanel({
     if (activeOrgIdRef.current === organisationId && (rpcError || !data)) {
       setError(rpcError?.message || 'The new product could not be created.');
     } else if (activeOrgIdRef.current === organisationId) {
-      updateLine(line.rowKey, { variantId: String(data) });
+      updateLine(line.rowKey, { variantId: String(data), createdNewProduct: true });
       const refreshed = await fetchPurchaseReferenceData(organisationId);
       setReferenceData(refreshed);
+      if (scan) {
+        const { data: scanData } = await supabase.from('invoice_scans').select('extracted_data').eq('id', scan.id).single();
+        if (scanData && activeOrgIdRef.current === organisationId) setScan({ ...scan, extracted_data: scanData.extracted_data as ExtractedInvoice });
+      }
     }
     setBusy(false);
   };
 
   const applySellingPrice = async (line: InvoiceLine, price: number) => {
     const supabase = getSupabaseClient();
-    if (!supabase || !organisationId || !line.variantId || !Number.isFinite(price) || price < 0) return;
+    if (!supabase || !organisationId || !scan || !line.variantId || !Number.isFinite(price) || price < 0) return;
     setBusy(true); setError(null); setPriceMessage(null);
-    const { error: updateError } = await supabase.from('product_variants')
-      .update({ selling_price: price })
-      .eq('organization_id', organisationId).eq('id', line.variantId);
+    const method = line.newSellingPrice.trim() ? 'custom' : pricingMethod;
+    const { error: updateError } = await supabase.rpc('invoice_scanner_apply_selling_price', {
+      p_organization_id: organisationId,
+      p_scan_id: scan.id,
+      p_variant_id: line.variantId,
+      p_selling_price: price,
+      p_pricing_method: method,
+      p_target_percent: method === 'custom' ? null : Number(pricingPercent),
+    });
     if (activeOrgIdRef.current === organisationId) {
       if (updateError) setError(updateError.message);
-      else setPriceMessage('Selling price updated by your explicit approval.');
+      else {
+        setPriceMessage('Selling price updated by your explicit approval.');
+        const { data: scanData } = await supabase.from('invoice_scans').select('extracted_data').eq('id', scan.id).single();
+        if (scanData) setScan({ ...scan, extracted_data: scanData.extracted_data as ExtractedInvoice });
+      }
     }
     setBusy(false);
   };
@@ -446,6 +464,44 @@ export function InvoiceScannerPanel({
     if (duplicate?.kind === 'exact') { setError('This supplier invoice number already exists. Review the existing purchase instead of creating another.'); return; }
     if (duplicate?.kind === 'possible' && !duplicateOverride) { setError('Review the possible duplicate and explicitly confirm if this is a different invoice.'); return; }
     setBusy(true); setError(null); setStage('saving');
+    const supplierName = suppliers.find((supplier) => supplier.id === supplierId)?.name ?? null;
+    const reviewedData: Record<string, unknown> = {
+      ...scan.extracted_data,
+      ai_extraction: scan.extracted_data.ai_extraction ?? scan.extracted_data,
+      reviewed_invoice: {
+        supplier_id: supplierId,
+        supplier_name: supplierName,
+        invoice_number: invoiceNumber.trim() || null,
+        invoice_date: invoiceDate || null,
+        due_date: dueDate || null,
+        currency: invoiceCurrency.trim().toUpperCase(),
+        subtotal: subtotal.trim() ? Number(subtotal) : null,
+        discount_amount: Number(discount),
+        tax_amount: Number(tax),
+        delivery_charges: delivery.trim() ? Number(delivery) : null,
+        grand_total: grandTotal.trim() ? Number(grandTotal) : null,
+        edited_fields: editedFields,
+      },
+      reviewed_line_items: lines.map((line) => ({
+        product_name: line.productName,
+        description: line.description,
+        sku: line.sku || line.newSku || null,
+        barcode: line.barcode || line.newBarcode || null,
+        brand: line.brand || null,
+        size: line.size || null,
+        variant: line.variant || line.newVariant || null,
+        quantity: Number(line.quantity),
+        unit_of_measure: line.unit || (variants.find((variant) => variant.variantId === line.variantId)?.unitOfMeasure ?? null),
+        unit_cost: Number(line.unitCost),
+        discount: line.discount,
+        tax: line.tax,
+        line_total: line.lineTotal,
+        matched_variant_id: line.variantId,
+        created_new_product: line.createdNewProduct,
+        edited_by_user: line.edited,
+      })),
+      pricing_settings: { method: pricingMethod, target_percent: Number(pricingPercent) },
+    };
     const notes = [
       'Created from reviewed AI invoice scan.',
       scan.extracted_data.purchase_order_reference ? `Supplier PO reference: ${scan.extracted_data.purchase_order_reference}` : '',
@@ -457,6 +513,7 @@ export function InvoiceScannerPanel({
     const { data, error: rpcError } = await supabase.rpc('invoice_scanner_create_purchase_draft', {
       p_organization_id: organisationId,
       p_scan_id: scan.id,
+      p_reviewed_data: reviewedData,
       p_supplier_id: supplierId,
       p_items: lines.map((line) => ({ variant_id: line.variantId, quantity: Number(line.quantity), unit_cost: Number(line.unitCost) })),
       p_discount_amount: Math.max(0, Number(discount) || 0),
@@ -473,7 +530,10 @@ export function InvoiceScannerPanel({
     });
     if (activeOrgIdRef.current === organisationId) {
       if (rpcError || !data) setError(rpcError?.message || 'The purchase draft could not be created.');
-      else setCreatedPurchaseId(String(data));
+      else {
+        setCreatedPurchaseId(String(data));
+        setScan({ ...scan, status: 'linked', extracted_data: reviewedData as ExtractedInvoice });
+      }
     }
     setBusy(false); setStage('idle');
   };
@@ -481,7 +541,7 @@ export function InvoiceScannerPanel({
   const addManualLine = () => setLines((current) => [...current, {
     rowKey: `manual-${Date.now()}`, productName: '', description: '', sku: '', barcode: '', brand: '', size: '', variant: '',
     quantity: '1', unit: 'piece', unitCost: '', discount: null, tax: null, lineTotal: null,
-    confidence: 'manual', variantId: '', newSku: '', newBarcode: '', newVariant: 'Default', newUnit: '', newSellingPrice: '', edited: true,
+    confidence: 'manual', variantId: '', newSku: '', newBarcode: '', newVariant: 'Default', newUnit: '', newSellingPrice: '', edited: true, createdNewProduct: false,
   }]);
 
   if (!canManage) return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">Invoice scanning is available to Owners, Admins and Managers.</div>;
