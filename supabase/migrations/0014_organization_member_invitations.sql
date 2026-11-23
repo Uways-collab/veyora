@@ -137,8 +137,7 @@ grant execute on function public.create_organization_invitation(uuid,text,text) 
 -- Restricted helper used only by the server-side Edge Function for a rare
 -- email-registration race between the owner RPC and Auth invitation creation.
 create or replace function public.attach_pending_organization_invitation(
-  p_invitation_id uuid,
-  p_user_id uuid
+  p_invitation_id uuid
 ) returns uuid
 language plpgsql
 security definer
@@ -146,7 +145,7 @@ set search_path = ''
 as $$
 declare
   v_inv public.organization_invitations%rowtype;
-  v_user_email text;
+  v_user_id uuid;
   v_membership_id uuid;
   v_inserted boolean := false;
 begin
@@ -162,13 +161,16 @@ begin
     raise exception 'Pending invitation not found or expired' using errcode = 'P0002';
   end if;
 
-  select lower(u.email) into v_user_email from auth.users u where u.id = p_user_id;
-  if v_user_email is null or v_user_email <> v_inv.email then
-    raise exception 'Auth user email does not match the invitation' using errcode = '42501';
+  select u.id into v_user_id from auth.users u
+  where lower(u.email) = v_inv.email
+  order by u.created_at
+  limit 1;
+  if v_user_id is null then
+    raise exception 'No Auth user exists for this invitation email' using errcode = 'P0002';
   end if;
 
   insert into public.organization_memberships (organization_id,user_id,role)
-  values (v_inv.organization_id,p_user_id,v_inv.role)
+  values (v_inv.organization_id,v_user_id,v_inv.role)
   on conflict (organization_id,user_id) do nothing
   returning id into v_membership_id;
 
@@ -176,11 +178,11 @@ begin
     v_inserted := true;
   else
     select m.id into v_membership_id from public.organization_memberships m
-    where m.organization_id = v_inv.organization_id and m.user_id = p_user_id;
+    where m.organization_id = v_inv.organization_id and m.user_id = v_user_id;
   end if;
 
   update public.organization_invitations
-  set status='accepted',accepted_user_id=p_user_id,membership_id=v_membership_id,accepted_at=now()
+  set status='accepted',accepted_user_id=v_user_id,membership_id=v_membership_id,accepted_at=now()
   where id=v_inv.id;
 
   if v_inserted then
@@ -188,14 +190,14 @@ begin
       (organization_id,actor_id,action,entity_type,entity_id,details)
     values
       (v_inv.organization_id,v_inv.invited_by,'member_added','organization_membership',v_membership_id,
-       jsonb_build_object('email',v_inv.email,'role',v_inv.role,'user_id',p_user_id,'invitation_id',v_inv.id));
+       jsonb_build_object('email',v_inv.email,'role',v_inv.role,'user_id',v_user_id,'invitation_id',v_inv.id));
   end if;
 
   return v_membership_id;
 end;
 $$;
 
-revoke all on function public.attach_pending_organization_invitation(uuid,uuid) from public,anon,authenticated;
+revoke all on function public.attach_pending_organization_invitation(uuid) from public,anon,authenticated;
 grant execute on function public.attach_pending_organization_invitation(uuid,uuid) to service_role;
 
 -- Existing Auth users invited by email are attached by the same trusted Auth trigger
