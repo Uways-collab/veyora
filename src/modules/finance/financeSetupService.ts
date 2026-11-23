@@ -16,3 +16,8 @@ export async function mapSetupPaymentMethod(orgId:string,methodId:string,account
 export async function mapSetupExpenseCategory(orgId:string,categoryId:string,ledgerId:string) {
  return unwrap<void>(await client().rpc('finance_map_expense_category',{p_organization_id:orgId,p_expense_category_id:categoryId,p_ledger_account_id:ledgerId}));
 }
+
+export async function createSetupLedgerAccount(input:{organizationId:string;code:string;name:string;type:'asset'|'liability'|'equity'|'revenue'|'expense'}) {
+ const normal=input.type==='asset'||input.type==='expense'?'debit':'credit';
+ return unwrap<string>(await client().rpc('finance_create_ledger_account',{p_organization_id:input.organizationId,p_account_code:input.code,p_account_name:input.name,p_account_type:input.type,p_normal_balance:normal}));
+}
