@@ -16,7 +16,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     summary:
       'Central operational workspace summarizing organisation status, connected modules, and real-time activity.',
     primaryEntities: ['Organisation Summary', 'Audit Trail', 'System Readiness'],
-    plannedTables: ['organizations', 'organization_memberships', 'audit_logs'],
+    plannedTables: ['organizations', 'organization_memberships', 'organization_audit_log'],
     connectedModules: ['inventory', 'sales', 'purchases', 'finance', 'reports'],
     targetPhase: 'Stage 1 (Active Foundation)',
   },

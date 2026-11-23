@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, LogOut, RefreshCw } from 'lucide-react';
 import { AppShell } from './components/layout/AppShell';
+import { AppErrorBoundary } from './components/shared/AppErrorBoundary';
 import { AuthProvider, useAuth } from './core/auth/AuthContext';
 import { MODULE_REGISTRY } from './core/modules/registry';
 import type { ModuleId } from './core/types/domain';
@@ -196,7 +197,9 @@ function ProtectedWorkspaceRouter() {
 export default function App() {
   return (
     <AuthProvider>
-      <ProtectedWorkspaceRouter />
+      <AppErrorBoundary>
+        <ProtectedWorkspaceRouter />
+      </AppErrorBoundary>
     </AuthProvider>
   );
 }

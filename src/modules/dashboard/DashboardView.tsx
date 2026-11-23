@@ -18,12 +18,38 @@ import {
 import type { AuditLogEntry, ModuleId } from '../../core/types/domain';
 import type { SettingsTab } from '../settings/SettingsView';
 import { ModuleIcon } from '../../components/shared/ModuleIcon';
+import { getSupabaseClient } from '../../core/supabase/client';
 
 interface DashboardViewProps {
   onSelectModule: (moduleId: ModuleId, settingsTab?: SettingsTab) => void;
 }
 
 type ChartWindow = '7D' | '30D' | '90D' | '12M';
+interface RecentSale {
+  id: string;
+  sale_number: string | null;
+  customer_name: string | null;
+  sold_at: string | null;
+  total_amount: number | string;
+  payment_status: string | null;
+}
+
+interface DashboardMetrics {
+  totalSales: number;
+  orders: number;
+  inventoryItems: number;
+  customers: number;
+  currency: string;
+}
+
+const EMPTY_METRICS: DashboardMetrics = {
+  totalSales: 0,
+  orders: 0,
+  inventoryItems: 0,
+  customers: 0,
+  currency: 'USD',
+};
+
 
 interface OverviewCardSpec {
   id: string;
@@ -71,6 +97,18 @@ const CHART_WINDOW_LABELS: Record<ChartWindow, string> = {
   '12M': 'Last 12 months',
 };
 
+function formatMetricCurrency(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('en-NG', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${currency} ${Math.round(amount).toLocaleString('en-NG')}`;
+  }
+}
+
 function formatTimestamp(iso: string): string {
   try {
     return new Intl.DateTimeFormat('en-GB', {
@@ -97,6 +135,10 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
   } = useAuth();
 
   const [chartWindow, setChartWindow] = useState<ChartWindow>('30D');
+  const [metrics, setMetrics] = useState<DashboardMetrics>(EMPTY_METRICS);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -106,20 +148,106 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
     setAuditLoading(true);
     setAuditError(null);
     setAuditErrorKind(null);
-    const result = await fetchOrganisationAuditLogs(orgId, 8);
-    setAuditLogs(result.logs);
-    setAuditError(result.error);
-    setAuditErrorKind(result.errorKind);
-    setAuditLoading(false);
+    try {
+      const result = await fetchOrganisationAuditLogs(orgId, 8);
+      setAuditLogs(result.logs);
+      setAuditError(result.error);
+      setAuditErrorKind(result.errorKind);
+    } catch (error) {
+      setAuditLogs([]);
+      setAuditError(error instanceof Error ? error.message : 'Unable to load workspace activity.');
+      setAuditErrorKind('other');
+    } finally {
+      setAuditLoading(false);
+    }
   };
 
+  const canViewWorkspaceActivity = activeRole === 'owner' || activeRole === 'admin';
+
   useEffect(() => {
-    if (status === 'authenticated' && activeOrganisation) {
+    if (status === 'authenticated' && activeOrganisation && canViewWorkspaceActivity) {
       void loadLogs(activeOrganisation.id);
     } else {
       setAuditLogs([]);
       setAuditError(null);
+      setAuditErrorKind(null);
+      setAuditLoading(false);
     }
+  }, [status, activeOrganisation, canViewWorkspaceActivity]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadMetrics = async (organisationId: string) => {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        if (!cancelled) setMetricsError('Supabase client is not configured.');
+        return;
+      }
+      setMetricsLoading(true);
+      setMetricsError(null);
+      try {
+        const [salesResult, recentSalesResult, productsResult, customersResult] = await Promise.all([
+          supabase
+            .from('sales')
+            .select('total_amount, status')
+            .eq('organization_id', organisationId)
+            .neq('status', 'cancelled'),
+          supabase
+            .from('sales')
+            .select('id, sale_number, customer_name, sold_at, total_amount, payment_status')
+            .eq('organization_id', organisationId)
+            .neq('status', 'cancelled')
+            .order('sold_at', { ascending: false })
+            .limit(5),
+          supabase
+            .from('products')
+            .select('id', { count: 'exact', head: true })
+            .eq('organization_id', organisationId)
+            .eq('is_active', true),
+          supabase
+            .from('customers')
+            .select('id', { count: 'exact', head: true })
+            .eq('organization_id', organisationId)
+            .eq('is_active', true),
+        ]);
+        const failure = salesResult.error ?? recentSalesResult.error ?? productsResult.error ?? customersResult.error;
+        if (failure) throw failure;
+        const salesRows = salesResult.data ?? [];
+        const totalSales = salesRows.reduce((sum, row) => {
+          const amount = Number(row.total_amount);
+          return sum + (Number.isFinite(amount) ? amount : 0);
+        }, 0);
+        if (!cancelled) {
+          setRecentSales((recentSalesResult.data ?? []) as RecentSale[]);
+          setMetrics({
+            totalSales,
+            orders: salesRows.length,
+            inventoryItems: productsResult.count ?? 0,
+            customers: customersResult.count ?? 0,
+            currency: activeOrganisation?.base_currency ?? 'USD',
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMetrics(EMPTY_METRICS);
+          setRecentSales([]);
+          setMetricsError(error instanceof Error ? error.message : 'Unable to load workspace metrics.');
+        }
+      } finally {
+        if (!cancelled) setMetricsLoading(false);
+      }
+    };
+
+    if (status === 'authenticated' && activeOrganisation) {
+      setMetrics(EMPTY_METRICS);
+      setRecentSales([]);
+      void loadMetrics(activeOrganisation.id);
+    } else {
+      setMetrics(EMPTY_METRICS);
+      setRecentSales([]);
+      setMetricsError(null);
+    }
+    return () => { cancelled = true; };
   }, [status, activeOrganisation]);
 
   const welcomeName = profile?.full_name?.trim() || user?.email || 'there';
@@ -212,6 +340,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
           )}
         </div>
 
+        {metricsError && <p role="status" className="text-xs text-amber-700">{metricsError}</p>}
         <div className="bg-white border border-slate-200 rounded-lg grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
           {OVERVIEW_CARDS.map((card) => (
             <div key={card.id} className="p-5 flex flex-col justify-between gap-4">
@@ -222,10 +351,18 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
 
               <div className="space-y-1">
                 <div className="font-mono text-2xl font-semibold text-slate-900 tabular-nums">
-                  —
+                  {metricsLoading ? '…' : metricsError ? '—' : card.id === 'total_sales'
+                    ? formatMetricCurrency(metrics.totalSales, metrics.currency)
+                    : card.id === 'orders' ? metrics.orders.toLocaleString()
+                    : card.id === 'inventory_items' ? metrics.inventoryItems.toLocaleString()
+                    : metrics.customers.toLocaleString()}
                 </div>
                 <div className="text-xs font-medium text-slate-700">
-                  {card.emptyHeadline}
+                  {metricsError ? 'Metrics unavailable' : metricsLoading ? 'Loading workspace data' :
+                    card.id === 'total_sales' ? (metrics.totalSales > 0 ? 'Recorded sales value' : card.emptyHeadline)
+                    : card.id === 'orders' ? (metrics.orders > 0 ? 'Recorded orders' : card.emptyHeadline)
+                    : card.id === 'inventory_items' ? (metrics.inventoryItems > 0 ? 'Active products' : card.emptyHeadline)
+                    : (metrics.customers > 0 ? 'Active customers' : card.emptyHeadline)}
                 </div>
               </div>
 
@@ -368,24 +505,26 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
               <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
             </button>
 
-            <button
-              type="button"
-              onClick={() => onSelectModule('settings', 'auth_orgs')}
-              className="w-full px-5 py-3.5 text-left flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:bg-slate-50"
-            >
-              <span className="flex items-center gap-3 min-w-0">
-                <Settings className="h-4 w-4 text-slate-500 shrink-0" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium text-slate-900">
-                    Create Another Business Workspace
-                  </span>
-                  <span className="block text-[11px] text-slate-500 truncate">
-                    Add a separate store, branch, or wholesale entity
+            {activeRole === 'owner' && (
+              <button
+                type="button"
+                onClick={() => onSelectModule('settings', 'auth_orgs')}
+                className="w-full px-5 py-3.5 text-left flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:bg-slate-50"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <Settings className="h-4 w-4 text-slate-500 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium text-slate-900">
+                      Create Another Business Workspace
+                    </span>
+                    <span className="block text-[11px] text-slate-500 truncate">
+                      Add a separate store, branch, or wholesale entity
+                    </span>
                   </span>
                 </span>
-              </span>
-              <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
-            </button>
+                <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+              </button>
+            )}
 
             <button
               type="button"
@@ -426,7 +565,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
               </p>
             </div>
             <span className="text-xs font-mono text-slate-400 whitespace-nowrap">
-              0 records
+              {metricsLoading ? 'Loading' : `${recentSales.length} latest`}
             </span>
           </div>
 
@@ -442,16 +581,26 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center space-y-1.5">
-                    <div className="text-xs font-semibold text-slate-900">
-                      No transactions recorded yet
-                    </div>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                      Recent sales, purchases, and payment entries will appear here once those business modules and database tables are implemented.
-                    </p>
-                  </td>
-                </tr>
+                {recentSales.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-10 text-center space-y-1.5">
+                      <div className="text-xs font-semibold text-slate-900">
+                        {metricsLoading ? 'Loading recent transactions…' : 'No sales recorded yet'}
+                      </div>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                        {metricsError ?? 'Completed and pending sales for this workspace will appear here.'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : recentSales.map((sale) => (
+                  <tr key={sale.id} className="border-b border-slate-100 last:border-0 text-xs">
+                    <td className="py-3 px-4 font-mono text-slate-800">{sale.sale_number || sale.id.slice(0, 8)}</td>
+                    <td className="py-3 px-4 capitalize text-slate-600">{sale.payment_status || 'Sale'}</td>
+                    <td className="py-3 px-4 text-slate-700">{sale.customer_name || 'Walk-in customer'}</td>
+                    <td className="py-3 px-4 whitespace-nowrap text-slate-500">{sale.sold_at ? formatTimestamp(sale.sold_at) : '—'}</td>
+                    <td className="py-3 px-4 text-right font-mono text-slate-800 whitespace-nowrap">{formatMetricCurrency(Number(sale.total_amount) || 0, metrics.currency)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -468,10 +617,10 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
                 Workspace Activity
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Verified events from <span className="font-mono">public.audit_logs</span>.
+                Verified organisation events from <span className="font-mono">public.organization_audit_log</span>.
               </p>
             </div>
-            {activeOrganisation && (
+            {activeOrganisation && canViewWorkspaceActivity && (
               <button
                 type="button"
                 onClick={() => void loadLogs(activeOrganisation.id)}
@@ -484,7 +633,11 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
             )}
           </div>
 
-          {auditLoading ? (
+          {!canViewWorkspaceActivity ? (
+            <div className="p-6 text-xs text-slate-500 text-center">
+              Workspace activity is restricted to Owners and Admins.
+            </div>
+          ) : auditLoading ? (
             <div className="p-5 space-y-2.5" aria-busy="true">
               <div className="h-9 bg-slate-100 rounded animate-pulse" />
               <div className="h-9 bg-slate-100 rounded animate-pulse" />
@@ -497,7 +650,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
                   Activity log not yet configured
                 </div>
                 <p>
-                  <span className="font-mono">public.audit_logs</span> is not present in this Supabase project yet.
+                  <span className="font-mono">public.organization_audit_log</span> is not present in this Supabase project yet.
                 </p>
               </div>
             ) : (

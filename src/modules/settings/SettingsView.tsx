@@ -340,7 +340,8 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
 
   const handleInviteMember = async (e: FormEvent) => {
     e.preventDefault();
-    if (!activeOrganisation || activeRole !== 'owner' || inviteSubmitting) return;
+    if (!activeOrganisation || (activeRole !== 'owner' && activeRole !== 'manager') || inviteSubmitting) return;
+    if (activeRole === 'manager' && inviteRole !== 'staff') return;
     setInviteSubmitting(true);
     setMemberActionMsg(null);
     try {
@@ -722,6 +723,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               </ul>
             </section>
 
+{activeRole === 'owner' && (
             <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
               <div className="border-b border-slate-200 pb-3">
                 <h2 className="text-sm font-semibold text-slate-900">
@@ -853,6 +855,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                 </button>
               </form>
             </section>
+            )}
           </div>
         </div>
       )}
@@ -893,12 +896,12 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               </button>
             </div>
 
-            {activeRole === 'owner' && (
+            {(activeRole === 'owner' || activeRole === 'manager') && (
               <form onSubmit={(e) => void handleInviteMember(e)} className="px-5 py-4 border-b border-slate-200 bg-slate-50/50 space-y-3">
                 <div>
                   <h3 className="text-xs font-semibold text-slate-900">Invite a team member</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Only the organisation owner can add members. New invitations are limited to Manager and Staff.
+                    Owners can invite Manager or Staff. Managers can invite Staff only.
                   </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_150px_auto] gap-2">
@@ -922,7 +925,7 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                     className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
                   >
                     <option value="staff">Staff</option>
-                    <option value="manager">Manager</option>
+                    {activeRole === 'owner' && <option value="manager">Manager</option>}
                   </select>
                   <button
                     type="submit"
@@ -1077,10 +1080,10 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               <Database className="h-4 w-4 text-slate-500" aria-hidden="true" />
               <div>
                 <h2 className="text-sm font-semibold text-slate-900">
-                  Supabase Migrations (<span className="font-mono">0001</span> &amp; <span className="font-mono">0002</span>)
+                  Supabase Schema &amp; Migrations
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Apply both SQL files in <span className="font-mono">supabase/migrations/</span> in numerical order.
+                  Migration history is maintained in <span className="font-mono">supabase/migrations/</span>. Review and apply only migrations compatible with the connected database schema.
                 </p>
               </div>
             </div>
@@ -1108,13 +1111,13 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               <h3 className="font-semibold text-slate-900">Core Tables</h3>
               <ul className="space-y-1.5 text-slate-600">
                 <li>
-                  <span className="font-mono text-slate-900">public.profiles</span> — Synced from <span className="font-mono">auth.users</span>; visible only to self &amp; org peers.
+                  <span className="font-mono text-slate-900">public.profiles</span> — User display name and avatar metadata. Auth email addresses remain in <span className="font-mono">auth.users</span>.
                 </li>
                 <li>
                   <span className="font-mono text-slate-900">public.organizations</span> — Business name, type, country, currency, timezone, email, phone.
                 </li>
                 <li>
-                  <span className="font-mono text-slate-900">public.organization_memberships</span> — Tenant memberships and role assignments (<span className="font-mono">owner | admin | manager | staff</span>).
+                  <span className="font-mono text-slate-900">public.organization_memberships</span> — Tenant memberships and role assignments (<span className="font-mono">owner | manager | staff</span>; legacy Admin rows may exist).
                 </li>
               </ul>
             </div>
@@ -1123,10 +1126,10 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
               <h3 className="font-semibold text-slate-900">Anti-Privilege-Escalation Controls</h3>
               <ul className="space-y-1.5 text-slate-600">
                 <li>
-                  <span className="font-mono text-slate-900">enforce_membership_rbac()</span> — Blocks users from modifying their own role or removing the last active Owner.
+                  <span className="font-mono text-slate-900">enforce_membership_rbac()</span> — Membership changes are constrained by database policies and role checks.
                 </li>
                 <li>
-                  <span className="font-mono text-slate-900">org_members_*_privileged</span> — Prevents Admins from inserting or promoting Owners/Admins.
+                  <span className="font-mono text-slate-900">organization_memberships_*_privileged</span> — Constrains membership role changes to prevent privilege escalation.
                 </li>
                 <li>
                   <span className="font-mono text-slate-900">create_business_workspace()</span> — Atomic <span className="font-mono">SECURITY DEFINER</span> RPC assigning Owner server-side.

@@ -558,6 +558,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
 
+      const currentRoles = membershipsRef.current.map((membership) => membership.role);
+      if (
+        options?.allowAdditional &&
+        currentRoles.some((role) => role === 'manager' || role === 'staff') &&
+        !currentRoles.includes('owner')
+      ) {
+        return {
+          error: 'Managers and Staff cannot create business workspaces. Contact an Owner.',
+          organisationId: null,
+        };
+      }
+
       creatingOrgRef.current = true;
       try {
         if (!options?.allowAdditional) {

@@ -3,6 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const defaultAllowedOrigins = [
   'https://veyora-2dtd.vercel.app',
   'https://veyora-2dtd-git-feat-finance-module-blundigold-9094s-projects.vercel.app',
+  'https://veyora-2dtd-git-fix-dashboard-be819d-blundigold-9094s-projects.vercel.app',
 ];
 
 function allowedOrigins(): Set<string> {
