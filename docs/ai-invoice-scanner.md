@@ -12,9 +12,9 @@
 
 ## Required configuration
 
-Set `GEMINI_API_KEY` as a Supabase Edge Function secret. Do not add it to Vite environment variables, browser code, Git, SQL, or client-side configuration.
+Create a Gemini API key in Google AI Studio using a paid billing project, then set it in **Supabase Dashboard → Edge Functions → Secrets** as `GEMINI_API_KEY`. Do not paste the key into ChatGPT, Vite environment variables, browser code, Git, SQL, or client-side configuration. Supabase loads new Edge Function secrets without requiring a redeploy.
 
-Deploy the `scan-supplier-invoice` Edge Function with JWT verification enabled. Apply the accompanying database migration before enabling the scanner in a live environment.
+The `scan-supplier-invoice` Edge Function is deployed and JWT verification is enabled. The database migrations are applied. If `GEMINI_API_KEY` is not already present, add it before attempting a live extraction.
 
 If the secret is missing, the scanner returns a configuration error and does not create a purchase. A failed extraction can be retried from the review screen.
 
@@ -22,8 +22,9 @@ If the secret is missing, the scanner returns a configuration error and does not
 
 - Provider: Google Gemini Developer API
 - Model: `gemini-2.5-flash`
-- Standard paid-tier list price at the time of implementation: US$0.30 per 1 million input tokens (text/image/video) and US$2.50 per 1 million output tokens.
-- Image and PDF input is billed by token usage, so invoice cost varies with page count, resolution and extraction response size. There is no fixed per-invoice price.
+- Standard paid-tier list price checked on 23 November 2026: US$0.30 per 1 million input tokens (text/image/video) and US$2.50 per 1 million output tokens.
+- Example only: 10,000 input tokens plus 1,000 output tokens is about US$0.0055. A multi-page invoice can use more tokens; actual cost is shown by Gemini usage billing.
+- Image and PDF input is billed by token usage, so invoice cost varies with page count, resolution and extraction response size. There is no fixed per-invoice price. Uploads are capped at 10 MB to stay within the inline request-size budget.
 - Use a paid-tier API project for supplier documents. Do not use the free tier for confidential business invoices.
 - No search grounding is used. No AI-generated selling price is written automatically.
 
