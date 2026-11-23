@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { CheckCircle2, Circle, Landmark, Plus, Wallet } from 'lucide-react';
 import { createConfiguredFinancialAccount, mapSetupExpenseCategory, mapSetupPaymentMethod, type SetupExpenseCategory, type SetupFinancialAccount, type SetupLedgerAccount, type SetupPaymentMethod } from './financeSetupService';
 
@@ -21,7 +21,7 @@ export function FinanceSetupView({organizationId,canManage,currency,ledger,accou
  const expenseDone=categories.filter(c=>c.is_active).every(c=>!!c.ledger_account_id);
  const done=[accountDone,paymentDone,expenseDone];
  async function perform(fn:()=>Promise<unknown>) {setBusy(true);setError('');try{await fn();await onChanged();}catch(e){setError(e instanceof Error?e.message:'Setup could not be saved.');}finally{setBusy(false);}}
- async function addAccount(e:React.FormEvent) {e.preventDefault();if(!canManage)return;if(!ledgerId){setError('Choose the asset ledger account this cash/bank/wallet account represents.');return;}await perform(async()=>{await createConfiguredFinancialAccount({organizationId,name:name.trim(),type,institution,ledgerAccountId:ledgerId});setName('');setInstitution('');});}
+ async function addAccount(e:FormEvent) {e.preventDefault();if(!canManage)return;if(!ledgerId){setError('Choose the asset ledger account this cash/bank/wallet account represents.');return;}await perform(async()=>{await createConfiguredFinancialAccount({organizationId,name:name.trim(),type,institution,ledgerAccountId:ledgerId});setName('');setInstitution('');});}
  const typeLabel=type==='cash'?'Cash drawer':type==='bank'?'Bank account':type==='mobile_wallet'?'Mobile money / wallet':'POS settlement / other';
  return <section className="space-y-4">
   <div className="rounded-lg border border-slate-200 bg-white p-4">
