@@ -401,7 +401,7 @@ export function InvoiceScannerPanel({
           .select('purchase_number,status')
           .eq('organization_id', organisationId)
           .eq('supplier_id', supplierId)
-          .or('supplier_invoice_date.eq.${invoiceDate},and(supplier_invoice_date.is.null,order_date.eq.${invoiceDate})')
+          .or('supplier_invoice_date.eq.' + invoiceDate + ',and(supplier_invoice_date.is.null,order_date.eq.' + invoiceDate + ')')
           .gte('total_amount', Math.max(0, expectedPurchaseTotal - 0.01))
           .lte('total_amount', expectedPurchaseTotal + 0.01)
           .neq('status', 'cancelled')
