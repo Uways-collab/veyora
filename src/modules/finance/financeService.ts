@@ -27,7 +27,7 @@ export type FinanceBalances = {
   journal_totals: {debits:number;credits:number};
 };
 
-function client() {
+function client(): any {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error('Supabase is not configured.');
   return supabase;
