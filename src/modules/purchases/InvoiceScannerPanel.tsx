@@ -131,7 +131,8 @@ export function InvoiceScannerPanel({
   const [pricingMethod, setPricingMethod] = useState<'markup' | 'margin'>('markup');
   const [pricingPercent, setPricingPercent] = useState('20');
   const [createdPurchaseId, setCreatedPurchaseId] = useState<string | null>(null);
-  const [duplicate, setDuplicate] = useState<{ purchase_number: string; status: string } | null>(null);
+  const [duplicate, setDuplicate] = useState<{ purchase_number: string; status: string; kind: 'exact' | 'possible' } | null>(null);
+  const [duplicateOverride, setDuplicateOverride] = useState(false);
   const [duplicateChecking, setDuplicateChecking] = useState(false);
   const [priceMessage, setPriceMessage] = useState<string | null>(null);
   const [editedFields, setEditedFields] = useState<string[]>([]);
@@ -197,7 +198,7 @@ export function InvoiceScannerPanel({
     setSupplierId(''); setInvoiceNumber(''); setInvoiceDate(''); setDueDate('');
     setInvoiceCurrency(currencyCode); setSubtotal(''); setDiscount('0'); setTax('0');
     setDelivery(''); setGrandTotal(''); setLines([]); setCreatedPurchaseId(null);
-    setDuplicate(null); setEditedFields([]);
+    setDuplicate(null); setDuplicateOverride(false); setEditedFields([]);
   };
 
   const applyExtraction = (data: ExtractedInvoice) => {
@@ -214,6 +215,7 @@ export function InvoiceScannerPanel({
     const supplierMatch = supplierName ? (suppliers.find((supplier) => normalize(supplier.name) === normalize(supplierName))
       ?? suppliers.find((supplier) => normalize(supplier.name).includes(normalize(supplierName)) || normalize(supplierName).includes(normalize(supplier.name)))) : undefined;
     setSupplierId(supplierMatch?.id ?? '');
+    setDuplicate(null); setDuplicateOverride(false);
     setEditedFields([]);
     setLines((data.line_items ?? []).map((raw, index) => {
       const match = bestVariantMatch(raw, variants);
@@ -367,17 +369,51 @@ export function InvoiceScannerPanel({
 
   const checkDuplicate = async () => {
     const supabase = getSupabaseClient();
-    if (!supabase || !organisationId || !supplierId || !invoiceNumber.trim()) { setDuplicate(null); return; }
+    if (!supabase || !organisationId || !supplierId) {
+      setDuplicate(null);
+      setDuplicateOverride(false);
+      return;
+    }
     setDuplicateChecking(true);
-    const { data } = await supabase.from('purchases')
-      .select('purchase_number,status')
-      .eq('organization_id', organisationId)
-      .eq('supplier_id', supplierId)
-      .eq('supplier_invoice_number', invoiceNumber.trim())
-      .neq('status', 'cancelled')
-      .limit(1).maybeSingle();
-    if (activeOrgIdRef.current === organisationId) setDuplicate(data ?? null);
-    setDuplicateChecking(false);
+    try {
+      if (invoiceNumber.trim()) {
+        const { data: exactMatch, error: exactError } = await supabase.from('purchases')
+          .select('purchase_number,status')
+          .eq('organization_id', organisationId)
+          .eq('supplier_id', supplierId)
+          .eq('supplier_invoice_number', invoiceNumber.trim())
+          .neq('status', 'cancelled')
+          .limit(1).maybeSingle();
+        if (exactError) throw new Error(exactError.message);
+        if (exactMatch) {
+          setDuplicate({ ...exactMatch, kind: 'exact' });
+          setDuplicateOverride(false);
+          return;
+        }
+      }
+      if (invoiceDate && grandTotal.trim() && Number.isFinite(Number(grandTotal))) {
+        const expectedPurchaseTotal = Math.max(0, Number(grandTotal) - Math.max(0, Number(delivery) || 0));
+        const { data: possibleMatch, error: possibleError } = await supabase.from('purchases')
+          .select('purchase_number,status')
+          .eq('organization_id', organisationId)
+          .eq('supplier_id', supplierId)
+          .eq('supplier_invoice_date', invoiceDate)
+          .gte('total_amount', Math.max(0, expectedPurchaseTotal - 0.01))
+          .lte('total_amount', expectedPurchaseTotal + 0.01)
+          .neq('status', 'cancelled')
+          .limit(1).maybeSingle();
+        if (possibleError) throw new Error(possibleError.message);
+        setDuplicate(possibleMatch ? { ...possibleMatch, kind: 'possible' } : null);
+        setDuplicateOverride(false);
+      } else {
+        setDuplicate(null);
+        setDuplicateOverride(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Duplicate invoice check failed.');
+    } finally {
+      setDuplicateChecking(false);
+    }
   };
 
   const createPurchaseDraft = async () => {
@@ -391,7 +427,8 @@ export function InvoiceScannerPanel({
       setError('Match or create every product and enter a valid quantity and purchase cost before continuing.');
       return;
     }
-    if (duplicate) { setError('A possible duplicate purchase exists. Review it in Purchases before continuing.'); return; }
+    if (duplicate?.kind === 'exact') { setError('This supplier invoice number already exists. Review the existing purchase instead of creating another.'); return; }
+    if (duplicate?.kind === 'possible' && !duplicateOverride) { setError('Review the possible duplicate and explicitly confirm if this is a different invoice.'); return; }
     setBusy(true); setError(null); setStage('saving');
     const notes = [
       'Created from reviewed AI invoice scan.',
@@ -412,6 +449,9 @@ export function InvoiceScannerPanel({
       p_expected_delivery_date: null,
       p_due_date: dueDate || null,
       p_invoice_date: invoiceDate || null,
+      p_grand_total: grandTotal.trim() ? Number(grandTotal) : null,
+      p_delivery_charges: delivery.trim() ? Number(delivery) : null,
+      p_allow_possible_duplicate: duplicate?.kind === 'possible' && duplicateOverride,
       p_currency: invoiceCurrency.trim().toUpperCase(),
       p_notes: notes,
     });
@@ -471,19 +511,19 @@ export function InvoiceScannerPanel({
             {scan.extracted_data.warnings?.length ? <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Review needed</strong><ul className="mt-1 list-disc pl-4">{scan.extracted_data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></div> : null}
             {scan.extracted_data.supplier && <p className="text-[11px] text-slate-500">Supplier details found on invoice: {[scan.extracted_data.supplier.contact_person, scan.extracted_data.supplier.email, scan.extracted_data.supplier.phone, scan.extracted_data.supplier.address].filter(Boolean).join(' · ') || 'No additional contact details extracted'}</p>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <label className="space-y-1"><span className="text-slate-500">Supplier <span className="text-rose-600">*</span> {editedFields.includes('supplier') ? '· Edited by you' : '· AI match / review'}</span><select value={supplierId} onChange={(e) => { setSupplierId(e.target.value); setDuplicate(null); markEdited('supplier'); }} className="w-full rounded-md border border-slate-200 p-2"><option value="">Select existing supplier</option>{suppliers.map((supplier: SupplierRecord) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
-              <label className="space-y-1"><span className="text-slate-500">Supplier invoice number (if present)</span><input value={invoiceNumber} onChange={(e) => { setInvoiceNumber(e.target.value); markEdited('invoice number'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
-              <label className="space-y-1"><span className="text-slate-500">Invoice date</span><input type="date" value={invoiceDate} onChange={(e) => { setInvoiceDate(e.target.value); markEdited('invoice date'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Supplier <span className="text-rose-600">*</span> {editedFields.includes('supplier') ? '· Edited by you' : '· AI match / review'}</span><select value={supplierId} onChange={(e) => { setSupplierId(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('supplier'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2"><option value="">Select existing supplier</option>{suppliers.map((supplier: SupplierRecord) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
+              <label className="space-y-1"><span className="text-slate-500">Supplier invoice number (if present)</span><input value={invoiceNumber} onChange={(e) => { setInvoiceNumber(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('invoice number'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Invoice date</span><input type="date" value={invoiceDate} onChange={(e) => { setInvoiceDate(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('invoice date'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
               <label className="space-y-1"><span className="text-slate-500">Due date</span><input type="date" value={dueDate} onChange={(e) => { setDueDate(e.target.value); markEdited('due date'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
               <label className="space-y-1"><span className="text-slate-500">Invoice currency</span><input value={invoiceCurrency} onChange={(e) => { setInvoiceCurrency(e.target.value.toUpperCase()); markEdited('currency'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
               <label className="space-y-1"><span className="text-slate-500">Invoice subtotal</span><input type="number" min="0" value={subtotal} onChange={(e) => { setSubtotal(e.target.value); markEdited('subtotal'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
               <label className="space-y-1"><span className="text-slate-500">Discount</span><input type="number" min="0" value={discount} onChange={(e) => { setDiscount(e.target.value); markEdited('discount'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
               <label className="space-y-1"><span className="text-slate-500">Tax</span><input type="number" min="0" value={tax} onChange={(e) => { setTax(e.target.value); markEdited('tax'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
-              <label className="space-y-1"><span className="text-slate-500">Delivery / extra charges</span><input type="number" min="0" value={delivery} onChange={(e) => { setDelivery(e.target.value); markEdited('delivery'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
-              <label className="space-y-1"><span className="text-slate-500">Invoice grand total</span><input type="number" min="0" value={grandTotal} onChange={(e) => { setGrandTotal(e.target.value); markEdited('grand total'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Delivery / extra charges</span><input type="number" min="0" value={delivery} onChange={(e) => { setDelivery(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('delivery'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Invoice grand total</span><input type="number" min="0" value={grandTotal} onChange={(e) => { setGrandTotal(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('grand total'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
             </div>
             {editedFields.length > 0 && <p className="text-[11px] text-slate-500">Edited by you: {editedFields.join(', ')}</p>}{duplicateChecking && <p className="text-[11px] text-slate-500">Checking for duplicate invoice…</p>}{!invoiceNumber.trim() && <p className="text-[11px] text-amber-700">No invoice number is recorded. Duplicate detection will be less reliable; do not invent a reference.</p>}
-            {duplicate && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"><strong>Possible duplicate:</strong> {duplicate.purchase_number} ({duplicate.status}). Review the existing purchase before creating another.</div>}
+            {duplicate?.kind === 'exact' && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"><strong>Duplicate invoice number:</strong> {duplicate.purchase_number} ({duplicate.status}). The same supplier invoice number cannot be posted twice.</div>}{duplicate?.kind === 'possible' && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Possible duplicate:</strong> {duplicate.purchase_number} ({duplicate.status}) has the same supplier, invoice date and total. Review it before continuing. <label className="mt-2 flex items-start gap-2"><input type="checkbox" checked={duplicateOverride} onChange={(e) => setDuplicateOverride(e.target.checked)} className="mt-0.5" /><span>I reviewed the existing purchase and confirm this is a different supplier invoice.</span></label></div>}
             {!invoiceCurrency.trim() && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice currency was not readable. Confirm it from the original document; it is not assumed.</div>}{currencyMismatch && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice currency differs from this workspace ({currencyCode}). The purchase cannot be created until the currency issue is resolved.</div>}
             {subtotal.trim() && subtotalDifference > 0.01 && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice subtotal differs from the product line calculation by {formatPurchaseMoney(subtotalDifference, invoiceCurrency)}.</div>}{grandTotal.trim() && totalDifference > 0.01 && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice total differs from the current line calculation by {formatPurchaseMoney(totalDifference, invoiceCurrency)}. Veyora will not silently adjust the values.</div>}
           </section>
@@ -515,7 +555,7 @@ export function InvoiceScannerPanel({
             </div>;
           })}
           <div className="flex flex-wrap items-center gap-3 text-xs"><label className="space-y-1"><span className="text-slate-500">Pricing method</span><select value={pricingMethod} onChange={(e) => setPricingMethod(e.target.value as 'markup' | 'margin')} className="block rounded-md border border-slate-200 p-2"><option value="markup">Markup on cost</option><option value="margin">Gross margin</option></select></label><label className="space-y-1"><span className="text-slate-500">{pricingMethod === 'markup' ? 'Markup %' : 'Gross margin %'}</span><input type="number" min="0" max={pricingMethod === 'margin' ? 99.99 : 1000} step="0.5" value={pricingPercent} onChange={(e) => setPricingPercent(e.target.value)} className="block w-28 rounded-md border border-slate-200 p-2" /></label><span className="text-[11px] text-slate-500 self-end pb-2">{pricingMethod === 'markup' ? 'Cost × (1 + markup)' : 'Cost ÷ (1 − margin)'}</span></div>
-          <div className="flex flex-wrap justify-between gap-3 border-t border-slate-200 pt-4 text-xs"><div className="space-y-1 text-slate-600"><div>Calculated line subtotal: <strong>{formatPurchaseMoney(lineSubtotal, invoiceCurrency)}</strong></div><div>Purchase total before delivery: <strong>{formatPurchaseMoney(calculatedTotal, invoiceCurrency)}</strong></div>{Number(delivery) > 0 && <div className="text-amber-700">Delivery charges are retained in invoice notes; the current purchase model does not store them as a separate cost field.</div>}</div><button type="button" disabled={busy || !scan || scan.status !== 'ready' || Boolean(duplicate) || currencyMismatch || lines.length === 0} onClick={() => void createPurchaseDraft()} className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-4 py-2.5 font-medium text-white hover:bg-blue-800 disabled:opacity-40"><CheckCircle2 className="h-4 w-4" /> Create purchase draft</button></div>
+          <div className="flex flex-wrap justify-between gap-3 border-t border-slate-200 pt-4 text-xs"><div className="space-y-1 text-slate-600"><div>Calculated line subtotal: <strong>{formatPurchaseMoney(lineSubtotal, invoiceCurrency)}</strong></div><div>Purchase total before delivery: <strong>{formatPurchaseMoney(calculatedTotal, invoiceCurrency)}</strong></div>{Number(delivery) > 0 && <div className="text-amber-700">Delivery charges are retained in invoice notes; the current purchase model does not store them as a separate cost field.</div>}</div><button type="button" disabled={busy || !scan || scan.status !== 'ready' || duplicate?.kind === 'exact' || (duplicate?.kind === 'possible' && !duplicateOverride) || currencyMismatch || lines.length === 0} onClick={() => void createPurchaseDraft()} className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-4 py-2.5 font-medium text-white hover:bg-blue-800 disabled:opacity-40"><CheckCircle2 className="h-4 w-4" /> Create purchase draft</button></div>
           {createdPurchaseId && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900"><strong>Purchase draft created.</strong> The invoice is attached. No stock or payment was recorded. Open Purchases to confirm the order, then use Receive Goods to record only the quantities actually accepted. <span className="font-mono">{createdPurchaseId}</span><button type="button" onClick={() => { window.location.hash = '#/purchases'; }} className="ml-2 underline font-semibold">Open Purchases</button></div>}
         </section>
       )}
