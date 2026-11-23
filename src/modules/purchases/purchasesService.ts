@@ -1786,6 +1786,7 @@ function isNetworkOrTimeoutError(message: string): boolean {
   const lower = message.toLowerCase();
   return (
     lower.includes('failed to fetch') ||
+    lower.includes('fetch failed') ||
     lower.includes('networkerror') ||
     lower.includes('network request failed') ||
     lower.includes('load failed') ||
@@ -1793,15 +1794,28 @@ function isNetworkOrTimeoutError(message: string): boolean {
     lower.includes('timed out') ||
     lower.includes('aborted') ||
     lower.includes('econnreset') ||
-    lower.includes('connection') ||
+    lower.includes('econnrefused') ||
+    lower.includes('enotfound') ||
+    lower.includes('connection refused') ||
+    lower.includes('connection reset') ||
+    lower.includes('connection closed') ||
+    lower.includes('connection lost') ||
+    lower.includes('connection unavailable') ||
     lower.includes('socket') ||
     lower.includes('bad gateway') ||
     lower.includes('service unavailable') ||
-    lower.includes('gateway') ||
+    lower.includes('gateway timeout') ||
     lower.includes('502') ||
     lower.includes('503') ||
-    lower.includes('504') ||
-    lower.includes('fetch')
+    lower.includes('504')
+  );
+}
+
+function isTransientDbCode(code: string): boolean {
+  return (
+    code.startsWith('08') || // PostgreSQL connection exceptions
+    code.startsWith('57P') || // Operator intervention / admin shutdown / crash shutdown
+    code === '57014' // query_canceled / statement_timeout
   );
 }
 
@@ -1816,27 +1830,26 @@ function classifyReceiveRpcError(error: {
   const code = (error.code ?? '').trim().toUpperCase();
   const status = typeof error.status === 'number' ? error.status : null;
 
-  if (isNetworkOrTimeoutError(message)) {
-    return 'ambiguous';
-  }
   if (status !== null && (status === 0 || status === 408 || status >= 500)) {
     return 'ambiguous';
   }
 
-  // Structured PostgreSQL / PostgREST client/validation/permission rejections are definite
-  if (
-    code === '42501' ||
-    code === '42883' ||
-    code.startsWith('P0') ||
-    code.startsWith('22') ||
-    code.startsWith('23') ||
-    code.startsWith('42') ||
-    code === 'PGRST202' ||
-    code === 'PGRST204' ||
-    code === 'PGRST301' ||
-    code === 'PGRST116'
-  ) {
+  if (code && isTransientDbCode(code)) {
+    return 'ambiguous';
+  }
+
+  // Any structured PostgreSQL SQLSTATE or PostgREST error code (non-transient) is a definite rejection
+  if (code) {
     return 'definite';
+  }
+
+  // HTTP 4xx client/validation/permission rejections (excluding 408 timeout / 429 rate-limit)
+  if (status !== null && status >= 400 && status < 500 && status !== 429) {
+    return 'definite';
+  }
+
+  if (isNetworkOrTimeoutError(message)) {
+    return 'ambiguous';
   }
 
   if (isPermissionDeniedError(error)) {
@@ -1851,12 +1864,46 @@ function classifyReceiveRpcError(error: {
     lower.includes('must be greater than') ||
     lower.includes('only ordered and partially received') ||
     lower.includes('not found') ||
-    lower.includes('invalid ')
+    lower.includes('invalid ') ||
+    lower.includes('required') ||
+    lower.includes('inactive') ||
+    lower.includes('already ') ||
+    lower.includes('duplicate')
   ) {
     return 'definite';
   }
 
   return 'ambiguous';
+}
+
+function extractReceiptIdFromRpcData(data: unknown): string | null {
+  if (typeof data === 'string' && data.trim()) {
+    const trimmed = data.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      return trimmed;
+    }
+    try {
+      return extractReceiptIdFromRpcData(JSON.parse(trimmed) as unknown);
+    } catch {
+      return trimmed;
+    }
+  }
+  const target = Array.isArray(data) ? data[0] : data;
+  if (target && typeof target === 'object' && !Array.isArray(target)) {
+    const obj = target as Record<string, unknown>;
+    const nested =
+      (obj.receipt as Record<string, unknown> | undefined) ??
+      (obj.purchases_v2_receive_goods as Record<string, unknown> | undefined) ??
+      obj;
+    const direct = readString(
+      nested.receipt_id,
+      nested.id,
+      obj.receipt_id,
+      obj.id
+    );
+    if (direct) return direct;
+  }
+  return extractPurchaseIdentifier(data);
 }
 
 export async function receivePurchaseGoods(
@@ -1882,6 +1929,7 @@ export async function receivePurchaseGoods(
       stockUpdates: [],
       error: 'Purchase ID is required.',
       errorKind: 'definite',
+      preRpcFailure: true,
     };
   }
 
@@ -1900,6 +1948,7 @@ export async function receivePurchaseGoods(
         stockUpdates: [],
         error: 'Goods can only be received for Ordered or Partially Received purchase orders.',
         errorKind: 'definite',
+        preRpcFailure: true,
       };
     }
 
@@ -1919,6 +1968,7 @@ export async function receivePurchaseGoods(
         stockUpdates: [],
         error: validation.error,
         errorKind: 'definite',
+        preRpcFailure: true,
       };
     }
 
@@ -1935,6 +1985,7 @@ export async function receivePurchaseGoods(
       stockUpdates: [],
       error: 'Supabase client is not configured.',
       errorKind: 'definite',
+      preRpcFailure: true,
     };
   }
 
@@ -1952,6 +2003,7 @@ export async function receivePurchaseGoods(
         ? `Connection unavailable while verifying workspace (${verified.error}). Retry the original submission or verify Receipt History before submitting a new delivery.`
         : verified.error,
       errorKind: offlineOrNetwork ? 'ambiguous' : 'definite',
+      preRpcFailure: true,
     };
   }
 
@@ -1964,6 +2016,7 @@ export async function receivePurchaseGoods(
       stockUpdates: [],
       error: 'Invalid delivery idempotency key format. Expected a valid UUID.',
       errorKind: 'definite',
+      preRpcFailure: true,
     };
   }
 
@@ -1978,6 +2031,7 @@ export async function receivePurchaseGoods(
       stockUpdates: [],
       error: err instanceof Error ? err.message : 'Unable to generate a delivery idempotency UUID.',
       errorKind: 'definite',
+      preRpcFailure: true,
     };
   }
 
@@ -2032,10 +2086,7 @@ export async function receivePurchaseGoods(
     };
   }
 
-  const receiptId =
-    typeof data === 'string' && data.trim()
-      ? data.trim()
-      : extractPurchaseIdentifier(data);
+  const receiptId = extractReceiptIdFromRpcData(data);
 
   // Retrieve the newly created purchase_receipts record & refresh Inventory overview
   const [receiptRes, receiptItemsRes, inventoryRes, membersRes] = await Promise.all([

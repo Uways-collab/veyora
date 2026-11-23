@@ -151,7 +151,7 @@ export function PurchaseReceiveModal({
     }
     pendingSubmissionRef.current = null;
     setPendingSubmission(null);
-    if (purchase?.id) {
+    if (force && purchase?.id) {
       clearPendingReceiveSubmission(organisationId, purchase.id);
     }
   };
@@ -194,9 +194,6 @@ export function PurchaseReceiveModal({
       return;
     }
 
-    if (restored && !restored.unresolved) {
-      clearPendingReceiveSubmission(organisationId, purchase.id);
-    }
     pendingSubmissionRef.current = null;
     setPendingSubmission(null);
     setLines(buildInitialLines(purchase.items, defaultLocationId));
@@ -502,6 +499,8 @@ export function PurchaseReceiveModal({
   ) => {
     if (submitLockRef.current || submitting) return;
 
+    const wasAlreadyUnresolved = Boolean(targetPending.unresolved);
+
     submitLockRef.current = true;
     setSubmitting(true);
     setFormError(null);
@@ -528,6 +527,25 @@ export function PurchaseReceiveModal({
       if (!result.error) {
         clearPendingState(true);
         await onSuccess(result, purchase);
+        return;
+      }
+
+      if (result.preRpcFailure) {
+        if (wasAlreadyUnresolved) {
+          const preservedPending: PersistedPendingReceiveSubmission = {
+            ...inFlightPending,
+            unresolved: true,
+            lastError: result.error,
+            updatedAt: new Date().toISOString(),
+          };
+          setAndPersistPending(preservedPending);
+        } else {
+          clearPendingState(true);
+        }
+        setFormError(result.error);
+        if (result.errorKind === 'definite' && !wasAlreadyUnresolved) {
+          setStep('entry');
+        }
         return;
       }
 

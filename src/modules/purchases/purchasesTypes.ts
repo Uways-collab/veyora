@@ -197,6 +197,7 @@ export interface PurchaseReceiveResult {
   stockUpdates: PurchaseStockUpdateSummary[];
   error: string | null;
   errorKind?: PurchaseReceiveErrorKind | null;
+  preRpcFailure?: boolean;
 }
 
 export interface PurchaseReceiptsListResult {
