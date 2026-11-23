@@ -33,24 +33,21 @@ const REPORT_DOMAINS: ReportDomainDefinition[] = [
     label: 'Sales Reports',
     status: 'upcoming',
     description:
-      'Order volume, invoiced revenue, customer fulfilment, and gross margin reporting will activate with the Sales module.',
-    targetPhase: 'Phase 4',
+      'Order volume, invoiced revenue, customer fulfilment, and gross margin reports are planned and are not available yet.',
   },
   {
     id: 'purchases',
     label: 'Purchases Reports',
     status: 'upcoming',
     description:
-      'Supplier spend, purchase order receipts, and landed cost reporting will activate with the Purchases module.',
-    targetPhase: 'Phase 3',
+      'Supplier spend, purchase order receipts, and landed cost reports are planned and are not available yet.',
   },
   {
     id: 'finance',
     label: 'Finance Reports',
     status: 'upcoming',
     description:
-      'Trial balance, aged receivables/payables, and tax summary reporting will activate with the Finance module.',
-    targetPhase: 'Phase 5',
+      'Trial balance, aged receivables/payables, and tax summary reports are planned and are not available yet.',
   },
 ];
 
@@ -106,7 +103,7 @@ export function ReportsView() {
 
         <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-3 py-1.5 shrink-0 self-start sm:self-auto">
           <BarChart3 className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
-          <span>Inventory Reports Active · Sales, Purchases &amp; Finance Upcoming</span>
+          <span>Inventory Reports Active · Other Reports Planned</span>
         </div>
       </section>
 
@@ -169,8 +166,8 @@ export function ReportsView() {
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-medium">
               <Clock className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
               <span>
-                Upcoming Report Domain
-                {activeDomainDef.targetPhase ? ` · ${activeDomainDef.targetPhase}` : ''}
+                Reporting Planned
+                
               </span>
             </div>
 
