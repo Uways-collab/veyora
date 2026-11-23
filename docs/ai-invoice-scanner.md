@@ -31,19 +31,20 @@ Pricing reference: https://ai.google.dev/gemini-api/docs/pricing
 
 ## Safety rules
 
+- The full uploaded invoice document is sent to the Google Gemini paid API for extraction; supplier contact details printed on the invoice are therefore visible to that provider. No customer records, product catalogue or unrelated organisation data are sent.
 - The model extracts fields only. It cannot create products, purchases, stock movements, supplier payments or journal entries.
 - Unknown or unreadable fields are returned as null and must be reviewed.
 - Exact SKU, barcode and name/variant matches can be preselected; uncertain items remain unmatched for manual selection.
 - A new product requires a separate user approval.
 - Existing selling prices are read for comparison only. A user must explicitly apply a suggested/custom price.
 - A purchase draft requires an existing supplier and valid product variants. Invoice currency must match the organisation currency because the existing purchase schema does not support foreign-currency conversion.
-- Purchase creation is protected by an organisation/supplier/invoice-number lock and a unique invoice-number claim. Existing historical purchase rows are not rewritten.
+- Purchase creation is protected by an organisation/supplier/invoice-number lock and a unique invoice-number claim. A purchase-table trigger enforces the claim for all new purchase creation paths. Existing historical purchase rows are not rewritten. Possible duplicates with the same supplier, invoice date and total require an explicit user override after review.
 - The original file remains private and is linked to the purchase through `purchases.invoice_document_path`.
 
 ## Current schema limitations
 
-The current purchase item model stores ordered quantity, unit cost and line total; it does not have dedicated per-line discount, tax or delivery-charge fields. The full extraction (including per-line values and delivery charges) remains attached to the invoice scan, and delivery charges are noted on the purchase. Header discount and tax use the existing purchase fields. Do not treat the current purchase total as a complete allocation of line-level discounts or delivery charges.
+The current purchase item model stores ordered quantity, unit cost and line total; it does not have dedicated per-line discount, tax or delivery-charge fields. The full extraction (including per-line values and delivery charges) remains attached to the invoice scan, and delivery charges are noted on the purchase. Header discount and tax use the existing purchase fields. The existing Finance receipt posting values accepted physical quantities at purchase-item unit cost and prorates the header discount; delivery charges are not capitalised. Non-zero purchase tax remains pending in Finance until the existing tax treatment is configured. Do not treat the current purchase total as a complete allocation of line-level discounts or delivery charges.
 
 Supplier contact details extracted from the invoice are review information; the scanner does not silently create or update supplier master records. If the supplier is new, create/review the supplier in the existing Suppliers workspace first.
 
-The scanner prepares a purchase draft only. The user must confirm the purchase and separately record the actual goods received. A scan alone never changes stock or Finance.
+The scanner prepares a purchase draft only. The user must confirm the purchase and separately record the actual goods received. The existing deferred receipt trigger sends the receipt to the existing Finance source-event workflow; accepted quantities are used, and missing tax/account configuration remains pending with the existing Finance error reason. A scan alone never changes stock, posts a journal or creates a payment.
