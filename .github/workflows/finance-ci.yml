@@ -3,7 +3,9 @@ name: Veyora Finance CI
 on:
   push:
     branches:
+      - main
       - feat/finance-module
+      - fix/dashboard-all-roles-and-org-access
   pull_request:
     branches:
       - main
