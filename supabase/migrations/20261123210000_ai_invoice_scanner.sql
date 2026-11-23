@@ -341,7 +341,7 @@ begin
       select 1 from public.purchases p
       where p.organization_id=p_organization_id
         and p.supplier_id=p_supplier_id
-        and p.supplier_invoice_date=p_invoice_date
+        and coalesce(p.supplier_invoice_date,p.order_date)=p_invoice_date
         and p.status <> 'cancelled'
         and abs(p.total_amount - (p_grand_total - coalesce(p_delivery_charges,0))) <= 0.01
     ) and not coalesce(p_allow_possible_duplicate,false) then
