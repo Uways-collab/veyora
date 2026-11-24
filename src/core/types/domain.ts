@@ -27,6 +27,19 @@ export type BusinessType =
   | 'services'
   | 'hybrid';
 
+export type BusinessCategory =
+  | 'retail'
+  | 'wholesale'
+  | 'distribution'
+  | 'services'
+  | 'hybrid'
+  | 'hotel'
+  | 'car_dealership'
+  | 'real_estate'
+  | 'restaurant'
+  | 'logistics'
+  | 'manufacturing';
+
 export interface OrganisationRoleDefinition {
   key: OrganisationRole;
   label: string;
