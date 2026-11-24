@@ -99,11 +99,11 @@ Deno.serve(async (req: Request) => {
 
   const { data: membership, error: membershipError } = await userClient
     .from('organization_memberships')
-    .select('role,is_active')
+    .select('role')
     .eq('organization_id', organizationId)
     .eq('user_id', authData.user.id)
     .maybeSingle();
-  if (membershipError || !membership || membership.is_active === false) return json({ error: 'You do not have access to this workspace.' }, 403);
+  if (membershipError || !membership) return json({ error: 'You do not have access to this workspace.' }, 403);
 
   const { data: organization, error: organizationError } = await userClient
     .from('organizations')
