@@ -146,6 +146,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === 'initialize-trial') {
+    if (body.consent !== true) return json({ error: 'Explicit consent to the disclosed card-verification charge is required. No charge was initiated.' }, 400);
     const amount = Number(Deno.env.get('PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS') ?? 0);
     const disclosure = Deno.env.get('PAYSTACK_CARD_VERIFICATION_DISCLOSURE') ?? '';
     if (!Number.isInteger(amount) || amount < 5000 || !disclosure.trim()) {
