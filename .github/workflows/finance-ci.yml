@@ -6,6 +6,7 @@ on:
       - main
       - feat/finance-module
       - fix/dashboard-all-roles-and-org-access
+      - feat/specialist-industry-workspaces
   pull_request:
     branches:
       - main
