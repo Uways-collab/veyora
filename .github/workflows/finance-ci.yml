@@ -6,6 +6,7 @@ on:
       - main
       - feat/finance-module
       - fix/dashboard-all-roles-and-org-access
+      - feat/paystack-trial-billing
   pull_request:
     branches:
       - main
@@ -45,8 +46,11 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Type-check invitation Edge Function
-        run: deno check supabase/functions/invite-organization-member/index.ts
+      - name: Type-check authenticated and billing Edge Functions
+        run: |
+          deno check supabase/functions/invite-organization-member/index.ts
+          deno check supabase/functions/paystack-billing/index.ts
+          deno check supabase/functions/paystack-webhook/index.ts
 
   production-build:
     name: Vite production build
