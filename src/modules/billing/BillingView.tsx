@@ -6,7 +6,7 @@ import { getSupabaseClient } from '../../core/supabase/client';
 type Plan = { id: string; code: string; name: string; billing_interval: string; currency: string; amount_minor_units: number; included_users: number | null; included_locations: number | null; provider_plan_code: string | null };
 type Subscription = { status: string; plan_id: string; trial_starts_at: string | null; trial_ends_at: string | null; current_period_ends_at: string | null; cancel_at_period_end: boolean; provider_subscription_code: string | null };
 type Transaction = { reference: string; amount_minor_units: number; currency: string; status: string; purpose: string; created_at: string };
-type BillingConfig = { trialDays: number; currency: string; cardVerificationAmountMinorUnits: number | null; cardVerificationDisclosure: string | null; paystackConfigured: boolean; planSyncAvailable: boolean; trialCardSetupReady: boolean };
+type BillingConfig = { trialDays: number; currency: string; cardVerificationAmountMinorUnits: number | null; cardVerificationDisclosure: string | null; paystackConfigured: boolean; paystackMode?: string; liveBillingEnabled?: boolean; planSyncAvailable: boolean; trialCardSetupReady: boolean };
 
 export function BillingView() {
   const { activeOrganisation, activeRole } = useAuth();
