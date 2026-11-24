@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/finance-module
+      - feat/industry-workflows-ai-assistant
       - fix/dashboard-all-roles-and-org-access
   pull_request:
     branches:
@@ -45,8 +46,10 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Type-check invitation Edge Function
-        run: deno check supabase/functions/invite-organization-member/index.ts
+      - name: Type-check authenticated Edge Functions
+        run: |
+          deno check supabase/functions/invite-organization-member/index.ts
+          deno check supabase/functions/veyora-ai-assistant/index.ts
 
   production-build:
     name: Vite production build

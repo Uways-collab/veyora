@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './core/auth/AuthContext';
 import { MODULE_REGISTRY } from './core/modules/registry';
 import type { ModuleId } from './core/types/domain';
 import { AuthScreen } from './modules/auth/AuthScreen';
+import { AssistantView } from './modules/ai/AssistantView';
 import { LandingPage } from './modules/marketing/LandingPage';
 import { CustomersView } from './modules/customers/CustomersView';
 import { DashboardView } from './modules/dashboard/DashboardView';
@@ -182,6 +183,8 @@ function ProtectedWorkspaceRouter() {
         return <FinanceView />;
       case 'reports':
         return <ReportsView />;
+      case 'ai_assistant':
+        return <AssistantView />;
       case 'settings':
         return <SettingsView requestedTab={requestedSettingsTab} />;
       default:

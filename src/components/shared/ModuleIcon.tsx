@@ -8,6 +8,7 @@ import {
   Settings,
   ShoppingBag,
   ShoppingCart,
+  Sparkles,
   Users,
 } from 'lucide-react';
 import type { ModuleId } from '../../core/types/domain';
@@ -37,6 +38,8 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <Landmark className={className} aria-hidden="true" />;
     case 'reports':
       return <BarChart3 className={className} aria-hidden="true" />;
+    case 'ai_assistant':
+      return <Sparkles className={className} aria-hidden="true" />;
     case 'settings':
       return <Settings className={className} aria-hidden="true" />;
   }
