@@ -127,13 +127,13 @@ Deno.serve(async (req: Request) => {
     primaryBusinessType: organization.business_type,
     currency: organization.currency,
     period: 'Last 30 days',
-    sales: {
+    sales: salesResult.error ? null : {
       orderCount: salesRows.length,
       recordedRevenue: revenue30d,
       currency: organization.currency,
     },
-    activeProductCount: productsResult.count ?? null,
-    activeCustomerCount: customersResult.count ?? null,
+    activeProductCount: productsResult.error ? null : (productsResult.count ?? 0),
+    activeCustomerCount: customersResult.error ? null : (customersResult.count ?? 0),
     lowStockLineCount: stockResult.error ? null : lowStockRows.length,
     dataLimitations: [
       'Sales summary is limited to the latest 1,000 records in the last 30 days.',
