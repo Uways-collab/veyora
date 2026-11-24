@@ -17,6 +17,18 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+function getSecretKey() {
+  const direct = Deno.env.get('SUPABASE_SECRET_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (direct) return direct;
+  const keys = Deno.env.get('SUPABASE_SECRET_KEYS');
+  if (!keys) return null;
+  try {
+    return (JSON.parse(keys) as Record<string, string>).default ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function getAnonKey() {
   const direct = Deno.env.get('SUPABASE_ANON_KEY');
   if (direct) return direct;
@@ -48,7 +60,7 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const anonKey = getAnonKey();
   const geminiKey = Deno.env.get('GEMINI_API_KEY');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = getSecretKey();
   if (!supabaseUrl || !anonKey || !serviceKey) {
     return json({ error: 'The AI assistant server configuration is incomplete.' }, 503);
   }
@@ -105,7 +117,7 @@ Deno.serve(async (req: Request) => {
   const [salesResult, productsResult, customersResult, stockResult] = await Promise.all([
     userClient.from('sales').select('total_amount,status,sold_at')
       .eq('organization_id', organizationId).neq('status', 'cancelled')
-      .gte('sold_at', since).limit(1000),
+      .gte('sold_at', since).order('sold_at', { ascending: false }).limit(1000),
     userClient.from('products').select('id', { count: 'exact', head: true })
       .eq('organization_id', organizationId).eq('is_active', true),
     userClient.from('customers').select('id', { count: 'exact', head: true })
@@ -162,7 +174,7 @@ Deno.serve(async (req: Request) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
     body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
+      systemInstruction: { parts: [{ text: systemPrompt }] },
       contents,
       generationConfig: { temperature: 0.3, maxOutputTokens: 900 },
     }),
