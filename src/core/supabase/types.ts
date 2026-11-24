@@ -109,6 +109,7 @@ export interface Database {
         };
         Relationships: [];
       };
+      organization_business_types: InventoryTableRecord;
       organization_memberships: {
         Row: {
           id: string;
