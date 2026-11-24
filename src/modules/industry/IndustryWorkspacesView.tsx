@@ -280,7 +280,7 @@ export function IndustryWorkspacesView() {
             const Icon = item.icon;
             const selected = selectedCategories.includes(item.category);
             return (
-              <button key={item.category} type="button" disabled={!selected && (!canManageCategories || saving)} onClick={() => selected ? setActiveCategory(item.category) : void addCategory(item.category)}
+              <button key={item.category} type="button" disabled={!selected && (!canManageCategories || saving)} onClick={() => { if (selected) { setActiveCategory(item.category); setFormOpen(false); setError(null); } else void addCategory(item.category); }}
                 className={'rounded-xl border p-4 text-left transition ' + (activeCategory === item.category ? 'border-blue-400 bg-blue-50/70 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-slate-300') + ((!selected && !canManageCategories) ? ' cursor-not-allowed opacity-60' : '')}>
                 <div className="flex items-start justify-between gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Icon className="h-5 w-5" /></span><span className={'rounded-full px-2 py-1 text-[10px] font-semibold ' + (selected ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>{selected ? 'Selected' : canManageCategories ? 'Add category' : 'Not selected'}</span></div>
                 <div className="mt-3 text-sm font-semibold text-slate-900">{item.label}</div><p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
