@@ -255,7 +255,7 @@ Deno.serve(async (req: Request) => {
       }
     } else if (eventType === 'refund.processed' || eventType === 'refund.failed') {
       const reference = String(data.transaction?.reference ?? data.transaction_reference ?? data.reference ?? '');
-      const transactionId = typeof data.transaction === 'number' ? data.transaction : null;
+      const transactionId = typeof data.transaction === 'number' ? data.transaction : typeof data.transaction?.id === 'number' ? data.transaction.id : null;
       const nextStatus = eventType === 'refund.processed' ? 'refunded' : 'refund_failed';
       let transaction: Record<string, any> | null = null;
       if (reference) {
