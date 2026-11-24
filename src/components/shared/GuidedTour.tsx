@@ -17,7 +17,7 @@ const CORE_STEPS: TourStep[] = [
   { title: 'Your Veyora AI assistant', description: 'When AI tools are enabled for your workspace, use them to help with supported business tasks. Always review AI-generated results before confirming business actions.', action: 'Finish tour' },
 ];
 
-export function GuidedTour() {
+export function GuidedTour({ onSelectModule }: { onSelectModule: (moduleId: any) => void }) {
   const { user, activeOrganisation, activeRole } = useAuth();
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState<TourStatus>('not_started');
@@ -78,6 +78,8 @@ export function GuidedTour() {
   const move = (next: number) => {
     const bounded = Math.min(Math.max(next, 0), steps.length - 1);
     setStep(bounded);
+    const destination = steps[bounded]?.module;
+    if (destination) onSelectModule(destination);
     setStatus('in_progress');
     void persist('in_progress', bounded);
   };
