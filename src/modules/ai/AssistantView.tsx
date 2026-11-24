@@ -7,6 +7,7 @@ type Message = { role: 'user' | 'assistant'; content: string };
 
 const SUGGESTIONS = [
   'Summarise my business performance over the last 30 days.',
+  'Recommend replenishment for my low-stock items.',
   'What should I check if some products are running low?',
   'How can I improve my sales operations?',
   'Explain how to use Veyora for my business category.',
