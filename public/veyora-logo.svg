@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 260" role="img" aria-labelledby="title">
+  <title id="title">Veyora</title>
+  <g>
+    <path fill="#27B5A7" d="M0 0h72l116 240h-72z"/>
+    <path fill="#2864E8" d="M26 54h72l90 186h-72z"/>
+    <path fill="#2864E8" d="M154 0h76L140 240H64z"/>
+    <path fill="#27B5A7" d="M154 76h76l-90 164H64z"/>
+  </g>
+  <text x="270" y="190" fill="#10223C" font-family="Arial, Helvetica, sans-serif" font-size="142" font-weight="600" letter-spacing="25">VEYORA</text>
+</svg>
