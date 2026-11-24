@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './core/auth/AuthContext';
 import { MODULE_REGISTRY } from './core/modules/registry';
 import type { ModuleId } from './core/types/domain';
 import { AuthScreen } from './modules/auth/AuthScreen';
+import { LandingPage } from './modules/marketing/LandingPage';
 import { CustomersView } from './modules/customers/CustomersView';
 import { DashboardView } from './modules/dashboard/DashboardView';
 import { ExpensesView } from './modules/expenses/ExpensesView';
@@ -65,9 +66,15 @@ function ProtectedWorkspaceRouter() {
   };
 
   // Gate 1: Unconfigured, Signed Out, or Password Recovery -> Auth Portal
+  if (status === 'signed_out') {
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (path === '/login') return <AuthScreen initialMode="signin" />;
+    if (path === '/signup') return <AuthScreen initialMode="signup" />;
+    return <LandingPage />;
+  }
+
   if (
     status === 'unconfigured' ||
-    status === 'signed_out' ||
     status === 'password_recovery' ||
     status === 'invitation_setup'
   ) {
