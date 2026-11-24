@@ -127,7 +127,7 @@ Deno.serve(async (req: Request) => {
         const { data: transaction } = await serviceClient.from('billing_transactions')
           .select('id,organization_id,plan_id,reference,purpose,amount_minor_units,currency,status,provider_subscription_code,provider_refund_id,metadata')
           .eq('reference', reference).maybeSingle();
-        if (transaction?.purpose === 'trial_card_verification' && !['refunded','refund_pending'].includes(transaction.status)) {
+        if (transaction?.purpose === 'trial_card_verification' && transaction.status !== 'refunded' && !(transaction.status === 'refund_pending' && transaction.provider_refund_id)) {
           const verified = await paystackRequest('/transaction/verify/' + encodeURIComponent(reference), secret);
           const metadata = verified.metadata ?? {};
           if (verified.status !== 'success' ||
@@ -198,6 +198,10 @@ Deno.serve(async (req: Request) => {
           }).eq('id', transaction.id);
 
           if (!transaction.provider_refund_id) {
+            await serviceClient.from('billing_transactions').update({
+              status: 'refund_pending',
+              provider_subscription_code: providerSubscriptionCode,
+            }).eq('id', transaction.id);
             const refund = await paystackRequest('/refund', secret, 'POST', {
               transaction: reference,
               amount: Number(transaction.amount_minor_units),
@@ -205,10 +209,8 @@ Deno.serve(async (req: Request) => {
               merchant_note: 'Automatic refund of Veyora trial card verification charge',
             });
             await serviceClient.from('billing_transactions').update({
-              status: 'refund_pending',
               provider_refund_id: Number(refund.id),
               refund_expected_at: refund.expected_at ?? null,
-              provider_subscription_code: providerSubscriptionCode,
             }).eq('id', transaction.id);
           }
         }
@@ -274,6 +276,7 @@ Deno.serve(async (req: Request) => {
     const message = error instanceof Error ? error.message : 'Webhook processing failed.';
     await serviceClient.from('paystack_webhook_events').update({
       processing_error: message,
+      processing_started_at: null,
     }).eq('event_id', eventId);
     return json({ error: message }, 500);
   }
