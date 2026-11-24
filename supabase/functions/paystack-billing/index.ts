@@ -81,6 +81,8 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const paystackSecret = Deno.env.get('PAYSTACK_SECRET_KEY');
+  const liveBillingAllowed = Deno.env.get('PAYSTACK_ENABLE_LIVE_BILLING') === 'true';
+  const paystackReady = Boolean(paystackSecret) && (!paystackSecret?.startsWith('sk_live_') || liveBillingAllowed);
 
   if (action === 'billing-config') {
     const amount = Number(Deno.env.get('PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS') ?? 0);
@@ -90,13 +92,17 @@ Deno.serve(async (req: Request) => {
       currency: 'NGN',
       cardVerificationAmountMinorUnits: Number.isInteger(amount) && amount >= 5000 ? amount : null,
       cardVerificationDisclosure: disclosure || null,
-      paystackConfigured: Boolean(paystackSecret),
-      planSyncAvailable: Boolean(paystackSecret),
-      trialCardSetupReady: Boolean(paystackSecret && Number.isInteger(amount) && amount >= 5000 && disclosure.trim()),
+      paystackConfigured: paystackReady,
+      paystackMode: paystackSecret?.startsWith('sk_test_') ? 'test' : paystackSecret?.startsWith('sk_live_') ? 'live' : 'not_configured',
+      liveBillingEnabled: liveBillingAllowed,
+      planSyncAvailable: paystackReady,
+      trialCardSetupReady: Boolean(paystackReady && Number.isInteger(amount) && amount >= 5000 && disclosure.trim()),
     });
   }
 
   if (!paystackSecret) return json({ error: 'PAYSTACK_SECRET_KEY is not configured in Supabase Edge Function secrets.' }, 503);
+  if (paystackSecret.startsWith('sk_live_') && !liveBillingAllowed) return json({ error: 'Live Paystack billing is intentionally disabled. Configure PAYSTACK_ENABLE_LIVE_BILLING=true only after test-mode verification and Owner approval.' }, 503);
+  if (!paystackSecret.startsWith('sk_test_') && !paystackSecret.startsWith('sk_live_')) return json({ error: 'PAYSTACK_SECRET_KEY must be a Paystack test or live secret key.' }, 503);
 
   if (action === 'sync-plans') {
     const { data: plans, error: plansError } = await serviceClient
