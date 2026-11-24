@@ -104,14 +104,22 @@ Deno.serve(async (req: Request) => {
       .eq('is_active', true).order('amount_minor_units');
     if (plansError) return json({ error: 'Could not load Veyora plans.' }, 500);
     const synced: Array<{ code: string; providerPlanCode: string }> = [];
+    const remotePlans = await paystackRequest('/plan?perPage=100', paystackSecret) as Array<Record<string, unknown>>;
     for (const plan of plans ?? []) {
       if (plan.provider_plan_code) {
         synced.push({ code: plan.code, providerPlanCode: plan.provider_plan_code });
         continue;
       }
       const interval = plan.billing_interval === 'yearly' ? 'annually' : 'monthly';
-      const created = await paystackRequest('/plan', paystackSecret, 'POST', {
-        name: 'Veyora ' + plan.name + ' ' + interval,
+      const planName = 'Veyora ' + plan.name + ' ' + interval;
+      const matchingRemote = remotePlans.find((item) =>
+        item.name === planName &&
+        Number(item.amount) === Number(plan.amount_minor_units) &&
+        item.currency === plan.currency &&
+        item.interval === interval
+      );
+      const created = matchingRemote ?? await paystackRequest('/plan', paystackSecret, 'POST', {
+        name: planName,
         description: 'Veyora ' + plan.name + ' subscription',
         amount: Number(plan.amount_minor_units),
         currency: plan.currency,
@@ -135,12 +143,13 @@ Deno.serve(async (req: Request) => {
     if (!Number.isInteger(amount) || amount < 5000 || !disclosure.trim()) {
       return json({ error: 'Card verification is disabled until an explicit refundable verification amount and customer disclosure are configured. No charge has been initiated.' }, 503);
     }
+    if (!authData.user.email) return json({ error: 'Your Veyora account needs a verified email address before billing can start.' }, 400);
     const appBaseUrl = Deno.env.get('APP_BASE_URL') ?? '';
     let callbackUrl = '';
     try {
       const base = new URL(appBaseUrl);
       if (base.protocol !== 'https:') throw new Error('HTTPS required');
-      callbackUrl = new URL('/billing/callback', base).toString();
+      callbackUrl = new URL('/', base).toString();
     } catch {
       return json({ error: 'APP_BASE_URL must be configured as the HTTPS Veyora application URL.' }, 503);
     }
