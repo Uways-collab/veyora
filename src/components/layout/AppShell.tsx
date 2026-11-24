@@ -37,7 +37,7 @@ export function AppShell({
         <main className="flex-1 w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
           {children}
         </main>
-        <GuidedTour />
+        <GuidedTour onSelectModule={onSelectModule} />
       </div>
     </div>
   );
