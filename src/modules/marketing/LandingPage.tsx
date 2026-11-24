@@ -5,8 +5,8 @@ const plans = [
   {
     name: 'Starter',
     description: 'The essentials to bring your daily operations together.',
-    monthly: 5000,
-    annual: 50000,
+    monthly: 9900,
+    annual: 99000,
     users: '2 users',
     locations: '1 location',
     features: ['Inventory and stock tracking', 'Sales and purchase management', 'Supplier and customer records', 'Basic financial records', 'Standard business reports', '10 AI invoice scans per month'],
@@ -14,8 +14,8 @@ const plans = [
   {
     name: 'Standard',
     description: 'More control and insight as your business grows.',
-    monthly: 12000,
-    annual: 120000,
+    monthly: 24900,
+    annual: 249000,
     users: '5 users',
     locations: '3 locations',
     popular: true,
@@ -24,8 +24,8 @@ const plans = [
   {
     name: 'Premium',
     description: 'Advanced visibility for established, growing teams.',
-    monthly: 25000,
-    annual: 250000,
+    monthly: 49900,
+    annual: 499000,
     users: '15 users',
     locations: '10 locations',
     features: ['Everything in Standard', 'Advanced analytics and dashboards', 'Cash-flow insights and forecasting', 'Custom reports', '500 AI invoice scans per month', 'Advanced AI business analysis', 'Priority support and onboarding'],
@@ -153,10 +153,10 @@ export function LandingPage() {
             <div className="mx-auto max-w-2xl text-center">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">Straightforward plans</p>
               <h2 className="mt-4 font-display text-3xl font-bold tracking-tight text-[#10223c] sm:text-4xl">Room to grow, at every stage.</h2>
-              <p className="mt-4 text-sm leading-7 text-slate-600">Start with the essentials and move up as your team and operations expand.</p>
+              <p className="mt-4 text-sm leading-7 text-slate-600">Choose a base platform plan for your team. Specialist industry modules are optional paid add-ons.</p>
               <div className="mt-7 inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
                 <button type="button" onClick={()=>setAnnual(false)} className={`rounded-lg px-4 py-2 text-xs font-semibold transition ${!annual?'bg-[#10223c] text-white':'text-slate-600 hover:bg-slate-100'}`}>Monthly</button>
-                <button type="button" onClick={()=>setAnnual(true)} className={`rounded-lg px-4 py-2 text-xs font-semibold transition ${annual?'bg-[#10223c] text-white':'text-slate-600 hover:bg-slate-100'}`}>Yearly <span className="ml-1 text-teal-600">Save up to 17%</span></button>
+                <button type="button" onClick={()=>setAnnual(true)} className={`rounded-lg px-4 py-2 text-xs font-semibold transition ${annual?'bg-[#10223c] text-white':'text-slate-600 hover:bg-slate-100'}`}>Yearly <span className="ml-1 text-teal-600">2 months free</span></button>
               </div>
             </div>
             <div className="mt-12 grid items-stretch gap-5 lg:grid-cols-3">
@@ -178,7 +178,7 @@ export function LandingPage() {
               <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">For larger organisations</p><h3 className="mt-1 font-display text-lg font-bold text-[#10223c]">Enterprise · Custom pricing</h3><p className="mt-1 text-sm leading-6 text-slate-600">Tailored user limits, locations, integrations and onboarding for complex operations.</p></div>
               <a href="/signup?plan=enterprise" className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-500 hover:bg-slate-50">Discuss Enterprise <ArrowRight className="h-4 w-4"/></a>
             </div>
-            <p className="mx-auto mt-6 max-w-3xl text-center text-xs leading-6 text-slate-500">These are proposed launch prices and feature allowances. Some advanced AI and analytics features are planned and will be enabled as they are released. Subscription checkout, activation and automatic plan enforcement are not live yet; choosing a plan starts account registration only.</p>
+            <p className="mx-auto mt-6 max-w-3xl text-center text-xs leading-6 text-slate-500">All plans include a 14-day trial. There is no permanent free plan. Specialist industry modules are optional paid add-ons, priced separately and selected during workspace setup. Subscription checkout and card authorisation are being prepared; no subscription is activated by selecting a plan alone.</p>
           </div>
         </section>
 

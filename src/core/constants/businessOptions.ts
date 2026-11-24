@@ -1,4 +1,4 @@
-import type { BusinessType, OrganisationRoleDefinition } from '../types/domain';
+import type { BusinessCategory, BusinessType, OrganisationRoleDefinition } from '../types/domain';
 
 export const BUSINESS_TYPE_OPTIONS: { value: BusinessType; label: string; description: string }[] = [
   {
@@ -26,6 +26,21 @@ export const BUSINESS_TYPE_OPTIONS: { value: BusinessType; label: string; descri
     label: 'Hybrid Operations',
     description: 'Combined retail, wholesale, and service workflows',
   },
+];
+
+
+export const BUSINESS_CATEGORY_OPTIONS: { value: BusinessCategory; label: string; description: string }[] = [
+  { value: 'retail', label: 'Retail & E-commerce', description: 'Shops, POS, online orders and stock control' },
+  { value: 'wholesale', label: 'Wholesale', description: 'Bulk orders, trade pricing and account customers' },
+  { value: 'distribution', label: 'Distribution', description: 'Warehouses, stock allocation and supplier networks' },
+  { value: 'services', label: 'Professional Services', description: 'Client work, service billing and expenses' },
+  { value: 'hybrid', label: 'Multi-activity Business', description: 'A combination of products, trade and services' },
+  { value: 'hotel', label: 'Hotels & Hospitality', description: 'Rooms, reservations, guests and housekeeping' },
+  { value: 'car_dealership', label: 'Car Dealerships', description: 'Vehicle inventory, deals, deposits and margins' },
+  { value: 'real_estate', label: 'Real Estate', description: 'Properties, units, tenants, leases and rent' },
+  { value: 'restaurant', label: 'Restaurants & Food Service', description: 'Menus, tables, orders and kitchen operations' },
+  { value: 'logistics', label: 'Logistics & Fleet', description: 'Vehicles, dispatch, deliveries and routes' },
+  { value: 'manufacturing', label: 'Manufacturing', description: 'Raw materials, production and finished goods' },
 ];
 
 export const COUNTRY_OPTIONS: { name: string; defaultCurrency: string; defaultTimezone: string }[] = [

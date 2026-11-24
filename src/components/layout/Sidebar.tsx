@@ -99,6 +99,7 @@ export function Sidebar({
                     <li key={mod.id}>
                       <button
                         type="button"
+                        data-tour={`module-${mod.id}`}
                         onClick={() => handleSelect(mod.id)}
                         aria-current={isActive ? 'page' : undefined}
                         className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-md text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
