@@ -111,12 +111,21 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Could not record webhook event for idempotent processing.' }, 500);
   }
 
+  const staleClaimBefore = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: claim, error: claimError } = await serviceClient.from('paystack_webhook_events')
+    .update({ processing_started_at: new Date().toISOString() })
+    .eq('event_id', eventId).is('processed_at', null)
+    .or('processing_started_at.is.null,processing_started_at.lt.' + staleClaimBefore)
+    .select('event_id').maybeSingle();
+  if (claimError) return json({ error: 'Could not claim webhook event for processing.' }, 500);
+  if (!claim) return json({ received: true, processing: true });
+
   try {
     if (eventType === 'charge.success') {
       const reference = String(data.reference ?? '');
       if (reference) {
         const { data: transaction } = await serviceClient.from('billing_transactions')
-          .select('id,organization_id,plan_id,reference,purpose,amount_minor_units,currency,status,provider_subscription_code,provider_refund_id')
+          .select('id,organization_id,plan_id,reference,purpose,amount_minor_units,currency,status,provider_subscription_code,provider_refund_id,metadata')
           .eq('reference', reference).maybeSingle();
         if (transaction?.purpose === 'trial_card_verification' && !['refunded','refund_pending'].includes(transaction.status)) {
           const verified = await paystackRequest('/transaction/verify/' + encodeURIComponent(reference), secret);
@@ -145,8 +154,8 @@ Deno.serve(async (req: Request) => {
             .select('provider_subscription_code,trial_starts_at,trial_ends_at')
             .eq('organization_id', transaction.organization_id).maybeSingle();
           let providerSubscriptionCode = existingSubscription?.provider_subscription_code ?? null;
-          let trialStartsAt = existingSubscription?.trial_starts_at ?? new Date().toISOString();
-          let trialEndsAt = existingSubscription?.trial_ends_at ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+          let trialStartsAt = String(transaction.metadata?.trial_starts_at ?? existingSubscription?.trial_starts_at ?? new Date().toISOString());
+          let trialEndsAt = String(transaction.metadata?.trial_ends_at ?? existingSubscription?.trial_ends_at ?? new Date(new Date(trialStartsAt).getTime() + 14 * 24 * 60 * 60 * 1000).toISOString());
 
           if (!providerSubscriptionCode) {
             const created = await paystackRequest('/subscription', secret, 'POST', {
@@ -158,6 +167,12 @@ Deno.serve(async (req: Request) => {
             providerSubscriptionCode = String(created.subscription_code ?? '');
             if (!providerSubscriptionCode) throw new Error('Paystack returned no subscription code.');
           }
+
+          await serviceClient.from('billing_transactions').update({
+            provider_subscription_code: providerSubscriptionCode,
+            provider_customer_code: customerCode,
+            metadata: { ...(transaction.metadata ?? {}), trial_starts_at: trialStartsAt, trial_ends_at: trialEndsAt },
+          }).eq('id', transaction.id);
 
           const { error: subscriptionSaveError } = await serviceClient.from('organization_subscriptions').upsert({
             organization_id: transaction.organization_id,
@@ -200,11 +215,17 @@ Deno.serve(async (req: Request) => {
       }
     } else if (eventType === 'refund.processed' || eventType === 'refund.failed') {
       const reference = String(data.transaction?.reference ?? data.transaction_reference ?? data.reference ?? '');
-      if (reference) {
-        const nextStatus = eventType === 'refund.processed' ? 'refunded' : 'refund_failed';
-        const { data: transaction } = await serviceClient.from('billing_transactions')
-          .select('id,organization_id,provider_subscription_code').eq('reference', reference).maybeSingle();
-        if (transaction) {
+      const transactionId = typeof data.transaction === 'number' ? data.transaction : null;
+      const nextStatus = eventType === 'refund.processed' ? 'refunded' : 'refund_failed';
+      let transactionQuery = serviceClient.from('billing_transactions')
+        .select('id,organization_id,provider_subscription_code');
+      if (reference) transactionQuery = transactionQuery.eq('reference', reference);
+      else if (transactionId !== null) transactionQuery = transactionQuery.eq('provider_transaction_id', transactionId);
+      else transactionQuery = null as never;
+      const { data: transaction } = transactionQuery
+        ? await transactionQuery.maybeSingle()
+        : { data: null };
+      if (transaction) {
           await serviceClient.from('billing_transactions').update({
             status: nextStatus,
             refunded_at: eventType === 'refund.processed' ? new Date().toISOString() : null,
