@@ -8,6 +8,7 @@ export type ModuleId =
   | 'expenses'
   | 'finance'
   | 'reports'
+  | 'industry'
   | 'settings';
 
 export type ModuleGroup =
