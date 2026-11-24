@@ -278,13 +278,16 @@ export function BusinessOnboardingScreen() {
                         type="checkbox"
                         checked={checked}
                         onChange={(event) => {
-                          setBusinessCategories((current) => {
-                            if (event.target.checked) return [...current, category.value];
-                            const next = current.filter((value) => value !== category.value);
-                            if (next.length === 0) return current;
-                            if (primaryCategory === category.value) setPrimaryCategory(next[0]);
-                            return next;
-                          });
+                          if (event.target.checked) {
+                            if (!businessCategories.includes(category.value)) {
+                              setBusinessCategories([...businessCategories, category.value]);
+                            }
+                            return;
+                          }
+                          const next = businessCategories.filter((value) => value !== category.value);
+                          if (next.length === 0) return;
+                          setBusinessCategories(next);
+                          if (primaryCategory === category.value) setPrimaryCategory(next[0]);
                         }}
                         className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
                       />
