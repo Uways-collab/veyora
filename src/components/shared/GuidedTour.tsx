@@ -6,7 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '../../core/supabase/client';
 
 type TourStatus = 'not_started' | 'in_progress' | 'completed' | 'skipped';
-type TourStep = { title: string; description: string; module?: string; action: string };
+type TourStep = { title: string; description: string; module?: ModuleId; action: string };
 
 const CORE_STEPS: TourStep[] = [
   { title: 'Your business at a glance', description: 'The dashboard brings together key business activity, recent events and useful shortcuts. Start here when you sign in.', module: 'dashboard', action: 'Explore dashboard' },
