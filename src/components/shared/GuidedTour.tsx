@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Check, HelpCircle, X } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
+import type { ModuleId } from '../../core/types/domain';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '../../core/supabase/client';
 
 type TourStatus = 'not_started' | 'in_progress' | 'completed' | 'skipped';
@@ -17,13 +19,13 @@ const CORE_STEPS: TourStep[] = [
   { title: 'Your Veyora AI assistant', description: 'When AI tools are enabled for your workspace, use them to help with supported business tasks. Always review AI-generated results before confirming business actions.', action: 'Finish tour' },
 ];
 
-export function GuidedTour({ onSelectModule }: { onSelectModule: (moduleId: any) => void }) {
+export function GuidedTour({ onSelectModule }: { onSelectModule: (moduleId: ModuleId) => void }) {
   const { user, activeOrganisation, activeRole } = useAuth();
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState<TourStatus>('not_started');
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseClient() as unknown as SupabaseClient | null;
 
   const steps = useMemo(() => {
     const roleStep: TourStep = activeRole === 'owner'
