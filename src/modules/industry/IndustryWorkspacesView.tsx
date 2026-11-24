@@ -183,7 +183,7 @@ export function IndustryWorkspacesView() {
     if (!industrySupabase || !activeOrganisation || !canManageCategories) return;
     setSaving(true); setError(null); setNotice(null);
     const isPrimary = selectedCategories.length === 0;
-    const { error: insertError } = await supabase.from('organization_business_types').upsert({
+    const { error: insertError } = await industrySupabase.from('organization_business_types').upsert({
       organization_id: activeOrganisation.id, business_type: category, is_primary: isPrimary, configuration: {},
     }, { onConflict: 'organization_id,business_type' });
     if (insertError) setError('Could not add this business category: ' + insertError.message);
@@ -219,7 +219,7 @@ export function IndustryWorkspacesView() {
       else if (field.type === 'datetime-local') payload[field.key] = raw ? new Date(raw).toISOString() : null;
       else payload[field.key] = raw.trim() === '' ? null : raw.trim();
     }
-    const { error: insertError } = await supabase.from(industry.table).insert(payload);
+    const { error: insertError } = await industrySupabase.from(industry.table).insert(payload);
     if (insertError) {
       setError(insertError.code === '23505' ? 'That reference number is already in use in this workspace.' : insertError.message);
     } else {
