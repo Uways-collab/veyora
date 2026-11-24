@@ -155,6 +155,7 @@ Deno.serve(async (req: Request) => {
             }).eq('id', transaction.id);
             await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
               .eq('organization_id', transaction.organization_id);
+            await serviceClient.from('paystack_webhook_events').update({ processed_at: new Date().toISOString(), processing_error: null }).eq('event_id', eventId);
             return json({ received: true, refunded: true });
           }
 
