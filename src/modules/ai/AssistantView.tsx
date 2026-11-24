@@ -11,6 +11,12 @@ const SUGGESTIONS = [
   'What should I check if some products are running low?',
   'How can I improve my sales operations?',
   'Explain how to use Veyora for my business category.',
+  'Which hotel check-ins are coming up in the next 30 days?',
+  'Which vehicles are still available in dealership stock?',
+  'Which active leases are ending soon?',
+  'What is the current restaurant kitchen order backlog?',
+  'Which delivery jobs are overdue?',
+  'How is production progressing against planned quantities?',
 ];
 
 export function AssistantView() {
