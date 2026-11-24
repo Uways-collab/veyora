@@ -257,28 +257,29 @@ Deno.serve(async (req: Request) => {
       const reference = String(data.transaction?.reference ?? data.transaction_reference ?? data.reference ?? '');
       const transactionId = typeof data.transaction === 'number' ? data.transaction : null;
       const nextStatus = eventType === 'refund.processed' ? 'refunded' : 'refund_failed';
-      let transactionQuery = serviceClient.from('billing_transactions')
-        .select('id,organization_id,provider_subscription_code');
-      if (reference) transactionQuery = transactionQuery.eq('reference', reference);
-      else if (transactionId !== null) transactionQuery = transactionQuery.eq('provider_transaction_id', transactionId);
-      else transactionQuery = null as never;
-      const { data: transaction } = transactionQuery
-        ? await transactionQuery.maybeSingle()
-        : { data: null };
+      let transaction: Record<string, any> | null = null;
+      if (reference) {
+        const lookup = await serviceClient.from('billing_transactions')
+          .select('id,organization_id,provider_subscription_code').eq('reference', reference).maybeSingle();
+        transaction = lookup.data;
+      } else if (transactionId !== null) {
+        const lookup = await serviceClient.from('billing_transactions')
+          .select('id,organization_id,provider_subscription_code').eq('provider_transaction_id', transactionId).maybeSingle();
+        transaction = lookup.data;
+      }
       if (transaction) {
-          await serviceClient.from('billing_transactions').update({
-            status: nextStatus,
-            refunded_at: eventType === 'refund.processed' ? new Date().toISOString() : null,
-            provider_refund_id: data.id ? Number(data.id) : null,
-          }).eq('id', transaction.id);
-          if (eventType === 'refund.processed') {
-            await serviceClient.from('organization_subscriptions').update({
-              status: transaction.provider_subscription_code ? 'trialing' : 'expired',
-            }).eq('organization_id', transaction.organization_id);
-          } else if (!transaction.provider_subscription_code) {
-            await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
-              .eq('organization_id', transaction.organization_id);
-          }
+        await serviceClient.from('billing_transactions').update({
+          status: nextStatus,
+          refunded_at: eventType === 'refund.processed' ? new Date().toISOString() : null,
+          provider_refund_id: data.id ? Number(data.id) : null,
+        }).eq('id', transaction.id);
+        if (eventType === 'refund.processed') {
+          await serviceClient.from('organization_subscriptions').update({
+            status: transaction.provider_subscription_code ? 'trialing' : 'expired',
+          }).eq('organization_id', transaction.organization_id);
+        } else if (!transaction.provider_subscription_code) {
+          await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
+            .eq('organization_id', transaction.organization_id);
         }
       }
     } else if (eventType === 'charge.failed') {
