@@ -210,7 +210,7 @@ export function BusinessOnboardingScreen() {
 
                 <div className="sm:col-span-2 space-y-1">
                   <label htmlFor="onboard-business-type" className="block text-xs font-medium text-slate-700">
-                    Business Type <span className="text-red-600">*</span>
+                    Core Operating Model <span className="text-red-600">*</span>
                   </label>
                   <select
                     id="onboard-business-type"
@@ -224,6 +224,7 @@ export function BusinessOnboardingScreen() {
                       </option>
                     ))}
                   </select>
+                  <p className="text-[11px] leading-5 text-slate-500">This keeps the existing shared inventory and service workflows compatible. Choose your specialist business categories below.</p>
                 </div>
 
                 <div className="space-y-1">
@@ -301,7 +302,7 @@ export function BusinessOnboardingScreen() {
               </div>
               <div className="max-w-sm space-y-1">
                 <label htmlFor="onboard-primary-category" className="block text-xs font-medium text-slate-700">Primary business category</label>
-                <select id="onboard-primary-category" value={primaryCategory} onChange={(event) => setPrimaryCategory(event.target.value as BusinessCategory)} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
+                <select id="onboard-primary-category" value={primaryCategory} onChange={(event) => { const value = event.target.value as BusinessCategory; setPrimaryCategory(value); setBusinessType((["retail", "wholesale", "distribution", "services", "hybrid"] as BusinessType[]).includes(value as BusinessType) ? value as BusinessType : "hybrid"); }} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
                   {BUSINESS_CATEGORY_OPTIONS.filter((category) => businessCategories.includes(category.value)).map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
                 </select>
               </div>
