@@ -142,37 +142,73 @@ Deno.serve(async (req: Request) => {
           const reusable = verified.authorization?.reusable === true;
           const customerCode = String(verified.customer?.customer_code ?? '');
           if (!authorizationCode || !reusable || !customerCode) {
-            await serviceClient.from('billing_transactions').update({ status: 'failed' }).eq('id', transaction.id);
-            throw new Error('Paystack did not return a reusable card authorization. No subscription was created.');
+            await serviceClient.from('billing_transactions').update({ status: 'refund_pending' }).eq('id', transaction.id);
+            const refund = await paystackRequest('/refund', secret, 'POST', {
+              transaction: reference,
+              amount: Number(transaction.amount_minor_units),
+              customer_note: 'Veyora trial card verification refund',
+              merchant_note: 'Card could not be saved for Veyora trial; refund verification charge',
+            });
+            await serviceClient.from('billing_transactions').update({
+              provider_refund_id: Number(refund.id),
+              refund_expected_at: refund.expected_at ?? null,
+            }).eq('id', transaction.id);
+            await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
+              .eq('organization_id', transaction.organization_id);
+            return json({ received: true, refunded: true });
           }
 
           const { data: plan } = await serviceClient.from('subscription_plans')
             .select('provider_plan_code').eq('id', transaction.plan_id).maybeSingle();
-          if (!plan?.provider_plan_code) throw new Error('The selected Paystack plan code is missing.');
+          if (!plan?.provider_plan_code) {
+            await serviceClient.from('billing_transactions').update({ status: 'refund_pending' }).eq('id', transaction.id);
+            const refund = await paystackRequest('/refund', secret, 'POST', {
+              transaction: reference, amount: Number(transaction.amount_minor_units),
+              customer_note: 'Veyora trial card verification refund',
+              merchant_note: 'Veyora plan configuration issue; refund verification charge',
+            });
+            await serviceClient.from('billing_transactions').update({ provider_refund_id: Number(refund.id), refund_expected_at: refund.expected_at ?? null }).eq('id', transaction.id);
+            await serviceClient.from('organization_subscriptions').update({ status: 'expired' }).eq('organization_id', transaction.organization_id);
+            return json({ received: true, refunded: true });
+          }
 
           const { data: existingSubscription } = await serviceClient.from('organization_subscriptions')
             .select('provider_subscription_code,trial_starts_at,trial_ends_at')
             .eq('organization_id', transaction.organization_id).maybeSingle();
-          let providerSubscriptionCode = existingSubscription?.provider_subscription_code ?? null;
+          let providerSubscriptionCode = existingSubscription?.provider_subscription_code ?? transaction.provider_subscription_code ?? null;
           let trialStartsAt = String(transaction.metadata?.trial_starts_at ?? existingSubscription?.trial_starts_at ?? new Date().toISOString());
           let trialEndsAt = String(transaction.metadata?.trial_ends_at ?? existingSubscription?.trial_ends_at ?? new Date(new Date(trialStartsAt).getTime() + 14 * 24 * 60 * 60 * 1000).toISOString());
 
           if (!providerSubscriptionCode) {
-            const created = await paystackRequest('/subscription', secret, 'POST', {
-              customer: customerCode,
-              plan: plan.provider_plan_code,
-              authorization: authorizationCode,
-              start_date: trialEndsAt,
-            });
+            let created: Record<string, unknown>;
+            try {
+              created = await paystackRequest('/subscription', secret, 'POST', {
+                customer: customerCode,
+                plan: plan.provider_plan_code,
+                authorization: authorizationCode,
+                start_date: trialEndsAt,
+              });
+            } catch (subscriptionError) {
+              await serviceClient.from('billing_transactions').update({ status: 'refund_pending' }).eq('id', transaction.id);
+              const refund = await paystackRequest('/refund', secret, 'POST', {
+                transaction: reference, amount: Number(transaction.amount_minor_units),
+                customer_note: 'Veyora trial card verification refund',
+                merchant_note: 'Veyora could not create the recurring subscription; refund verification charge',
+              });
+              await serviceClient.from('billing_transactions').update({ provider_refund_id: Number(refund.id), refund_expected_at: refund.expected_at ?? null }).eq('id', transaction.id);
+              await serviceClient.from('organization_subscriptions').update({ status: 'expired' }).eq('organization_id', transaction.organization_id);
+              return json({ received: true, refunded: true });
+            }
             providerSubscriptionCode = String(created.subscription_code ?? '');
             if (!providerSubscriptionCode) throw new Error('Paystack returned no subscription code.');
           }
 
-          await serviceClient.from('billing_transactions').update({
+          const { error: providerCodeSaveError } = await serviceClient.from('billing_transactions').update({
             provider_subscription_code: providerSubscriptionCode,
             provider_customer_code: customerCode,
             metadata: { ...(transaction.metadata ?? {}), trial_starts_at: trialStartsAt, trial_ends_at: trialEndsAt },
           }).eq('id', transaction.id);
+          if (providerCodeSaveError) throw new Error('Could not persist the Paystack subscription reference.');
 
           const { error: subscriptionSaveError } = await serviceClient.from('organization_subscriptions').upsert({
             organization_id: transaction.organization_id,
@@ -237,6 +273,9 @@ Deno.serve(async (req: Request) => {
             await serviceClient.from('organization_subscriptions').update({
               status: transaction.provider_subscription_code ? 'trialing' : 'expired',
             }).eq('organization_id', transaction.organization_id);
+          } else if (!transaction.provider_subscription_code) {
+            await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
+              .eq('organization_id', transaction.organization_id);
           }
         }
       }
