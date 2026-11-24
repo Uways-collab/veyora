@@ -242,7 +242,7 @@ export function IndustryWorkspacesView() {
   const updateStatus = async (id: string, value: string) => {
     if (!industrySupabase || !activeOrganisation || !industry || !canUpdateRecords) return;
     setError(null); setNotice(null);
-    const { error: updateError } = await supabase.from(industry.table).update({ [industry.statusField]: value })
+    const { error: updateError } = await industrySupabase.from(industry.table).update({ [industry.statusField]: value })
       .eq('id', id).eq('organization_id', activeOrganisation.id);
     if (updateError) setError('Status was not changed: ' + updateError.message);
     else { setNotice('Workflow status updated.'); await loadRecords(); }
