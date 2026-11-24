@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Boxes,
+  CreditCard,
   Building2,
   Landmark,
   LayoutDashboard,
@@ -37,6 +38,8 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <Landmark className={className} aria-hidden="true" />;
     case 'reports':
       return <BarChart3 className={className} aria-hidden="true" />;
+    case 'billing':
+      return <CreditCard className={className} aria-hidden="true" />;
     case 'settings':
       return <Settings className={className} aria-hidden="true" />;
   }
