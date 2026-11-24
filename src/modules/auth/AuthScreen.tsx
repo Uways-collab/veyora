@@ -17,7 +17,7 @@ function PasswordInput({
       <input id={id} type={visible ? 'text' : 'password'} required minLength={minLength}
         autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full h-11 px-3 pr-11 rounded-lg border border-slate-300 text-sm text-slate-900 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/15" />
+        className="w-full h-11 px-3 pr-11 rounded-lg border border-slate-300 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/15" />
       <button type="button" onClick={() => setVisible((current) => !current)}
         aria-label={visible ? 'Hide password' : 'Show password'} aria-pressed={visible}
         className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-lg text-slate-400 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-600">
@@ -152,31 +152,11 @@ export function AuthScreen({ initialMode }: { initialMode?: AuthViewMode }) {
   const displayError = localError ?? authError;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-sky-50 text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 text-slate-900 flex flex-col">
       {/* Minimal Header */}
       <header className="sticky top-0 z-10 h-16 bg-white/85 backdrop-blur border-b border-slate-200/80 px-5 sm:px-8 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-md shadow-slate-950/15 shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
-              <path
-                d="M5 6.5L12 18.5L19 6.5"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M9.5 6.5L12 11L14.5 6.5"
-                stroke="#60A5FA"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
-          <span className="font-display text-base font-bold tracking-tight text-slate-950">
-            Veyora Business
-          </span>
+          <img src="/veyora-logo.svg" alt="Veyora" className="h-9 w-auto max-w-[180px] object-contain" />
         </div>
         <span className="text-xs text-slate-500">
           Multi-Tenant Workspace Access
@@ -259,7 +239,7 @@ export function AuthScreen({ initialMode }: { initialMode?: AuthViewMode }) {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full h-11 rounded-xl bg-slate-950 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-lg shadow-slate-950/10"
+                  className="w-full h-11 rounded-xl bg-[#10223c] text-white text-sm font-semibold hover:bg-[#1b3557] disabled:opacity-50 transition-colors shadow-lg shadow-slate-950/10"
                 >
                   {submitting ? 'Saving password...' : status === 'invitation_setup' ? 'Accept Invitation & Set Password' : 'Update Password'}
                 </button>
@@ -379,7 +359,7 @@ export function AuthScreen({ initialMode }: { initialMode?: AuthViewMode }) {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full h-10 rounded-md bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                    className="w-full h-10 rounded-md bg-[#2864e8] text-white text-sm font-medium hover:bg-[#1f50bd] disabled:opacity-50 transition-colors"
                   >
                     {submitting ? 'Signing in...' : 'Sign In'}
                   </button>
@@ -492,7 +472,7 @@ export function AuthScreen({ initialMode }: { initialMode?: AuthViewMode }) {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full h-11 rounded-xl bg-slate-950 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-lg shadow-slate-950/10"
+                    className="w-full h-11 rounded-xl bg-[#10223c] text-white text-sm font-semibold hover:bg-[#1b3557] disabled:opacity-50 transition-colors shadow-lg shadow-slate-950/10"
                   >
                     {submitting ? 'Sending link...' : 'Send Reset Link'}
                   </button>
