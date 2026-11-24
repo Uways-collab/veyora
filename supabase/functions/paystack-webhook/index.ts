@@ -33,8 +33,7 @@ function safeEqual(left: string, right: string) {
 async function verifySignature(rawBody: string, request: Request) {
   const modern = request.headers.get('Paystack-Signature');
   const webhookSecret = Deno.env.get('PAYSTACK_WEBHOOK_SECRET');
-  if (modern) {
-    if (!webhookSecret) return false;
+  if (modern && webhookSecret) {
     let timestamp: number | null = null;
     const signatures: string[] = [];
     for (const part of modern.split(',')) {
