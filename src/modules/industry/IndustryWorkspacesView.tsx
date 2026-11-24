@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { AlertCircle, ArrowRight, Building2, CalendarDays, CarFront, CheckCircle2, ClipboardList, Factory, Hotel, Loader2, MapPin, Plus, RefreshCw, Utensils, X } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { getSupabaseClient } from '../../core/supabase/client';
@@ -130,6 +131,7 @@ function formatDate(value: unknown) {
 export function IndustryWorkspacesView() {
   const { activeOrganisation, activeRole } = useAuth();
   const supabase = getSupabaseClient();
+  const industrySupabase = supabase as unknown as SupabaseClient<any> | null;
   const [selectedCategories, setSelectedCategories] = useState<BusinessCategory[]>([]);
   const [activeCategory, setActiveCategory] = useState<BusinessCategory | null>(null);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
@@ -145,8 +147,8 @@ export function IndustryWorkspacesView() {
   const industry = useMemo(() => INDUSTRIES.find((item) => item.category === activeCategory) ?? null, [activeCategory]);
 
   const loadCategories = useCallback(async () => {
-    if (!supabase || !activeOrganisation) return;
-    const { data, error: queryError } = await supabase.from('organization_business_types')
+    if (!industrySupabase || !activeOrganisation) return;
+    const { data, error: queryError } = await industrySupabase.from('organization_business_types')
       .select('business_type,is_primary').eq('organization_id', activeOrganisation.id);
     if (queryError) {
       setError('Unable to load your selected business categories: ' + queryError.message);
@@ -157,13 +159,13 @@ export function IndustryWorkspacesView() {
     setSelectedCategories(categories);
     const primary = data?.find((item) => item.is_primary)?.business_type as BusinessCategory | undefined;
     setActiveCategory((current) => current && categories.includes(current) ? current : (primary && ALL_CATEGORIES.includes(primary) ? primary : categories.find((item) => ALL_CATEGORIES.includes(item)) ?? null));
-  }, [supabase, activeOrganisation?.id]);
+  }, [industrySupabase, activeOrganisation?.id]);
 
   const loadRecords = useCallback(async () => {
-    if (!supabase || !activeOrganisation || !industry) { setRows([]); setLoading(false); return; }
+    if (!industrySupabase || !activeOrganisation || !industry) { setRows([]); setLoading(false); return; }
     setLoading(true);
     setError(null);
-    const { data, error: queryError } = await supabase.from(industry.table).select('*')
+    const { data, error: queryError } = await industrySupabase.from(industry.table).select('*')
       .eq('organization_id', activeOrganisation.id).order('created_at', { ascending: false }).limit(200);
     if (queryError) {
       setError('Unable to load ' + industry.label.toLowerCase() + ': ' + queryError.message);
@@ -172,13 +174,13 @@ export function IndustryWorkspacesView() {
       setRows((data ?? []) as Record<string, unknown>[]);
     }
     setLoading(false);
-  }, [supabase, activeOrganisation?.id, industry]);
+  }, [industrySupabase, activeOrganisation?.id, industry]);
 
   useEffect(() => { void loadCategories(); }, [loadCategories]);
   useEffect(() => { void loadRecords(); }, [loadRecords]);
 
   const addCategory = async (category: BusinessCategory) => {
-    if (!supabase || !activeOrganisation || !canManageCategories) return;
+    if (!industrySupabase || !activeOrganisation || !canManageCategories) return;
     setSaving(true); setError(null); setNotice(null);
     const isPrimary = selectedCategories.length === 0;
     const { error: insertError } = await supabase.from('organization_business_types').upsert({
@@ -208,7 +210,7 @@ export function IndustryWorkspacesView() {
 
   const createRecord = async (event: FormEvent) => {
     event.preventDefault();
-    if (!supabase || !activeOrganisation || !industry) return;
+    if (!industrySupabase || !activeOrganisation || !industry) return;
     setSaving(true); setError(null); setNotice(null);
     const payload: Record<string, unknown> = { organization_id: activeOrganisation.id };
     for (const field of industry.fields) {
@@ -229,7 +231,7 @@ export function IndustryWorkspacesView() {
   };
 
   const updateStatus = async (id: string, value: string) => {
-    if (!supabase || !activeOrganisation || !industry || !canUpdateRecords) return;
+    if (!industrySupabase || !activeOrganisation || !industry || !canUpdateRecords) return;
     setError(null); setNotice(null);
     const { error: updateError } = await supabase.from(industry.table).update({ [industry.statusField]: value })
       .eq('id', id).eq('organization_id', activeOrganisation.id);
