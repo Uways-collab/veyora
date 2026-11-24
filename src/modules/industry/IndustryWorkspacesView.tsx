@@ -1,0 +1,316 @@
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { AlertCircle, ArrowRight, Building2, CalendarDays, CarFront, CheckCircle2, ClipboardList, Factory, Hotel, Loader2, MapPin, Plus, RefreshCw, Utensils, X } from 'lucide-react';
+import { useAuth } from '../../core/auth/AuthContext';
+import { getSupabaseClient } from '../../core/supabase/client';
+import type { BusinessCategory } from '../../core/types/domain';
+
+type FieldType = 'text' | 'email' | 'tel' | 'number' | 'date' | 'datetime-local' | 'textarea' | 'select';
+type Field = { key: string; label: string; type?: FieldType; required?: boolean; min?: number; step?: string; options?: { value: string; label: string }[] };
+type IndustryConfig = {
+  category: BusinessCategory;
+  label: string;
+  description: string;
+  table: string;
+  singular: string;
+  icon: typeof Hotel;
+  fields: Field[];
+  columns: { key: string; label: string; kind?: 'date' | 'money' | 'status' }[];
+  statusField: string;
+  statuses: { value: string; label: string }[];
+  defaultStatus: string;
+};
+
+const STATUS = (values: string[]) => values.map((value) => ({ value, label: value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase()) }));
+
+const INDUSTRIES: IndustryConfig[] = [
+  {
+    category: 'hotel', label: 'Hotels & Hospitality', singular: 'Reservation', table: 'hotel_reservations', icon: Hotel,
+    description: 'Track guest bookings, room allocation, check-in and check-out.',
+    fields: [
+      { key: 'confirmation_code', label: 'Confirmation code', required: true },
+      { key: 'room_label', label: 'Room / unit', required: true },
+      { key: 'guest_name', label: 'Guest name', required: true },
+      { key: 'guest_email', label: 'Guest email', type: 'email' },
+      { key: 'guest_phone', label: 'Guest phone', type: 'tel' },
+      { key: 'check_in', label: 'Check-in date', type: 'date', required: true },
+      { key: 'check_out', label: 'Check-out date', type: 'date', required: true },
+      { key: 'adults', label: 'Adults', type: 'number', min: 1, step: '1' },
+      { key: 'children', label: 'Children', type: 'number', min: 0, step: '1' },
+      { key: 'total_amount', label: 'Booking total', type: 'number', min: 0, step: '0.01' },
+      { key: 'status', label: 'Reservation status', type: 'select', options: STATUS(['booked','checked_in','checked_out','cancelled','no_show']) },
+      { key: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    columns: [{ key: 'confirmation_code', label: 'Confirmation' }, { key: 'guest_name', label: 'Guest' }, { key: 'room_label', label: 'Room' }, { key: 'check_in', label: 'Check-in', kind: 'date' }, { key: 'check_out', label: 'Check-out', kind: 'date' }, { key: 'total_amount', label: 'Total', kind: 'money' }, { key: 'status', label: 'Status', kind: 'status' }],
+    statusField: 'status', statuses: STATUS(['booked','checked_in','checked_out','cancelled','no_show']), defaultStatus: 'booked',
+  },
+  {
+    category: 'car_dealership', label: 'Car Dealerships', singular: 'Vehicle', table: 'dealer_vehicles', icon: CarFront,
+    description: 'Maintain vehicle stock, VINs, mileage, pricing and sales readiness.',
+    fields: [
+      { key: 'stock_number', label: 'Stock number', required: true }, { key: 'vin', label: 'VIN' },
+      { key: 'make', label: 'Make', required: true }, { key: 'model', label: 'Model', required: true },
+      { key: 'model_year', label: 'Model year', type: 'number', min: 1900, step: '1', required: true },
+      { key: 'mileage', label: 'Mileage', type: 'number', min: 0, step: '1' },
+      { key: 'purchase_price', label: 'Purchase price', type: 'number', min: 0, step: '0.01' },
+      { key: 'asking_price', label: 'Asking price', type: 'number', min: 0, step: '0.01' },
+      { key: 'status', label: 'Stock status', type: 'select', options: STATUS(['in_stock','reserved','sold','in_service']) },
+      { key: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    columns: [{ key: 'stock_number', label: 'Stock #' }, { key: 'make', label: 'Make' }, { key: 'model', label: 'Model' }, { key: 'model_year', label: 'Year' }, { key: 'mileage', label: 'Mileage' }, { key: 'asking_price', label: 'Asking price', kind: 'money' }, { key: 'status', label: 'Status', kind: 'status' }],
+    statusField: 'status', statuses: STATUS(['in_stock','reserved','sold','in_service']), defaultStatus: 'in_stock',
+  },
+  {
+    category: 'real_estate', label: 'Real Estate', singular: 'Lease', table: 'real_estate_leases', icon: Building2,
+    description: 'Track rental properties, units, tenants, lease periods and recurring rent terms.',
+    fields: [
+      { key: 'property_name', label: 'Property name', required: true }, { key: 'unit_reference', label: 'Unit reference', required: true },
+      { key: 'tenant_name', label: 'Tenant name', required: true }, { key: 'tenant_email', label: 'Tenant email', type: 'email' }, { key: 'tenant_phone', label: 'Tenant phone', type: 'tel' },
+      { key: 'lease_start', label: 'Lease start', type: 'date', required: true }, { key: 'lease_end', label: 'Lease end', type: 'date', required: true },
+      { key: 'monthly_rent', label: 'Monthly rent', type: 'number', min: 0, step: '0.01', required: true },
+      { key: 'security_deposit', label: 'Security deposit', type: 'number', min: 0, step: '0.01' },
+      { key: 'rent_due_day', label: 'Rent due day (1–28)', type: 'number', min: 1, step: '1' },
+      { key: 'status', label: 'Lease status', type: 'select', options: STATUS(['draft','active','ended','terminated']) },
+      { key: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    columns: [{ key: 'property_name', label: 'Property' }, { key: 'unit_reference', label: 'Unit' }, { key: 'tenant_name', label: 'Tenant' }, { key: 'lease_start', label: 'Start', kind: 'date' }, { key: 'lease_end', label: 'End', kind: 'date' }, { key: 'monthly_rent', label: 'Monthly rent', kind: 'money' }, { key: 'status', label: 'Status', kind: 'status' }],
+    statusField: 'status', statuses: STATUS(['draft','active','ended','terminated']), defaultStatus: 'draft',
+  },
+  {
+    category: 'restaurant', label: 'Restaurants & Cafés', singular: 'Order', table: 'restaurant_orders', icon: Utensils,
+    description: 'Capture dine-in, takeaway and delivery orders and move them through kitchen service.',
+    fields: [
+      { key: 'order_number', label: 'Order number', required: true },
+      { key: 'order_type', label: 'Order type', type: 'select', options: [{ value: 'dine_in', label: 'Dine in' }, { value: 'takeaway', label: 'Takeaway' }, { value: 'delivery', label: 'Delivery' }] },
+      { key: 'table_label', label: 'Table / pickup reference' }, { key: 'customer_name', label: 'Customer name' },
+      { key: 'items_summary', label: 'Order items summary', type: 'textarea', required: true },
+      { key: 'total_amount', label: 'Order total', type: 'number', min: 0, step: '0.01' },
+      { key: 'status', label: 'Kitchen status', type: 'select', options: STATUS(['new','accepted','preparing','ready','served','completed','cancelled']) },
+      { key: 'notes', label: 'Notes / allergies', type: 'textarea' },
+    ],
+    columns: [{ key: 'order_number', label: 'Order #' }, { key: 'order_type', label: 'Type' }, { key: 'table_label', label: 'Table' }, { key: 'items_summary', label: 'Items' }, { key: 'total_amount', label: 'Total', kind: 'money' }, { key: 'status', label: 'Kitchen status', kind: 'status' }],
+    statusField: 'status', statuses: STATUS(['new','accepted','preparing','ready','served','completed','cancelled']), defaultStatus: 'new',
+  },
+  {
+    category: 'logistics', label: 'Logistics & Fleet', singular: 'Delivery job', table: 'delivery_jobs', icon: MapPin,
+    description: 'Manage dispatch jobs, recipient details, delivery progress and proof of delivery.',
+    fields: [
+      { key: 'tracking_number', label: 'Tracking number', required: true }, { key: 'recipient_name', label: 'Recipient name', required: true },
+      { key: 'recipient_phone', label: 'Recipient phone', type: 'tel' }, { key: 'origin', label: 'Pickup location', required: true },
+      { key: 'destination', label: 'Delivery destination', required: true }, { key: 'scheduled_at', label: 'Scheduled dispatch', type: 'datetime-local' },
+      { key: 'status', label: 'Delivery status', type: 'select', options: STATUS(['pending','assigned','in_transit','delivered','failed','returned']) },
+      { key: 'proof_of_delivery_url', label: 'Proof of delivery URL (HTTPS)' }, { key: 'notes', label: 'Delivery notes', type: 'textarea' },
+    ],
+    columns: [{ key: 'tracking_number', label: 'Tracking #' }, { key: 'recipient_name', label: 'Recipient' }, { key: 'origin', label: 'From' }, { key: 'destination', label: 'To' }, { key: 'scheduled_at', label: 'Scheduled', kind: 'date' }, { key: 'status', label: 'Status', kind: 'status' }],
+    statusField: 'status', statuses: STATUS(['pending','assigned','in_transit','delivered','failed','returned']), defaultStatus: 'pending',
+  },
+  {
+    category: 'manufacturing', label: 'Manufacturing', singular: 'Production order', table: 'manufacturing_orders', icon: Factory,
+    description: 'Plan production batches, quantities, due dates and progress through quality checks.',
+    fields: [
+      { key: 'order_number', label: 'Production order #', required: true }, { key: 'product_name', label: 'Finished product', required: true },
+      { key: 'planned_quantity', label: 'Planned quantity', type: 'number', min: 0.001, step: '0.001', required: true },
+      { key: 'completed_quantity', label: 'Completed quantity', type: 'number', min: 0, step: '0.001' },
+      { key: 'planned_start', label: 'Planned start', type: 'date' }, { key: 'due_date', label: 'Due date', type: 'date' },
+      { key: 'status', label: 'Production status', type: 'select', options: STATUS(['planned','released','in_progress','quality_check','completed','cancelled']) },
+      { key: 'notes', label: 'Production notes', type: 'textarea' },
+    ],
+    columns: [{ key: 'order_number', label: 'Order #' }, { key: 'product_name', label: 'Product' }, { key: 'planned_quantity', label: 'Planned' }, { key: 'completed_quantity', label: 'Completed' }, { key: 'planned_start', label: 'Start', kind: 'date' }, { key: 'due_date', label: 'Due', kind: 'date' }, { key: 'status', label: 'Status', kind: 'status' }],
+    statusField: 'status', statuses: STATUS(['planned','released','in_progress','quality_check','completed','cancelled']), defaultStatus: 'planned',
+  },
+];
+
+const ALL_CATEGORIES = INDUSTRIES.map((industry) => industry.category);
+
+function formatDate(value: unknown) {
+  if (!value) return '—';
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+}
+
+export function IndustryWorkspacesView() {
+  const { activeOrganisation, activeRole } = useAuth();
+  const supabase = getSupabaseClient();
+  const [selectedCategories, setSelectedCategories] = useState<BusinessCategory[]>([]);
+  const [activeCategory, setActiveCategory] = useState<BusinessCategory | null>(null);
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const canManageCategories = activeRole === 'owner' || activeRole === 'admin';
+  const canUpdateRecords = canManageCategories || activeRole === 'manager';
+  const industry = useMemo(() => INDUSTRIES.find((item) => item.category === activeCategory) ?? null, [activeCategory]);
+
+  const loadCategories = useCallback(async () => {
+    if (!supabase || !activeOrganisation) return;
+    const { data, error: queryError } = await supabase.from('organization_business_types')
+      .select('business_type,is_primary').eq('organization_id', activeOrganisation.id);
+    if (queryError) {
+      setError('Unable to load your selected business categories: ' + queryError.message);
+      setSelectedCategories([]);
+      return;
+    }
+    const categories = (data ?? []).map((item) => String(item.business_type) as BusinessCategory);
+    setSelectedCategories(categories);
+    const primary = data?.find((item) => item.is_primary)?.business_type as BusinessCategory | undefined;
+    setActiveCategory((current) => current && categories.includes(current) ? current : (primary && ALL_CATEGORIES.includes(primary) ? primary : categories.find((item) => ALL_CATEGORIES.includes(item)) ?? null));
+  }, [supabase, activeOrganisation?.id]);
+
+  const loadRecords = useCallback(async () => {
+    if (!supabase || !activeOrganisation || !industry) { setRows([]); setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    const { data, error: queryError } = await supabase.from(industry.table).select('*')
+      .eq('organization_id', activeOrganisation.id).order('created_at', { ascending: false }).limit(200);
+    if (queryError) {
+      setError('Unable to load ' + industry.label.toLowerCase() + ': ' + queryError.message);
+      setRows([]);
+    } else {
+      setRows((data ?? []) as Record<string, unknown>[]);
+    }
+    setLoading(false);
+  }, [supabase, activeOrganisation?.id, industry]);
+
+  useEffect(() => { void loadCategories(); }, [loadCategories]);
+  useEffect(() => { void loadRecords(); }, [loadRecords]);
+
+  const addCategory = async (category: BusinessCategory) => {
+    if (!supabase || !activeOrganisation || !canManageCategories) return;
+    setSaving(true); setError(null); setNotice(null);
+    const isPrimary = selectedCategories.length === 0;
+    const { error: insertError } = await supabase.from('organization_business_types').upsert({
+      organization_id: activeOrganisation.id, business_type: category, is_primary: isPrimary, configuration: {},
+    }, { onConflict: 'organization_id,business_type' });
+    if (insertError) setError('Could not add this business category: ' + insertError.message);
+    else {
+      setNotice('Business category added. Its operational workspace is now available.');
+      await loadCategories();
+      setActiveCategory(category);
+    }
+    setSaving(false);
+  };
+
+  const startCreate = () => {
+    if (!industry) return;
+    const defaults: Record<string, string> = {};
+    for (const field of industry.fields) {
+      if (field.key === 'status') defaults[field.key] = industry.defaultStatus;
+      else if (field.key === 'adults') defaults[field.key] = '1';
+      else if (field.key === 'children' || field.key === 'mileage' || field.key === 'purchase_price' || field.key === 'asking_price' || field.key === 'total_amount' || field.key === 'security_deposit' || field.key === 'completed_quantity' || field.key === 'rent_due_day') defaults[field.key] = '0';
+      else if (field.key === 'order_type') defaults[field.key] = 'dine_in';
+      else defaults[field.key] = '';
+    }
+    setFormValues(defaults); setFormOpen(true); setError(null); setNotice(null);
+  };
+
+  const createRecord = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!supabase || !activeOrganisation || !industry) return;
+    setSaving(true); setError(null); setNotice(null);
+    const payload: Record<string, unknown> = { organization_id: activeOrganisation.id };
+    for (const field of industry.fields) {
+      const raw = formValues[field.key] ?? '';
+      if (field.type === 'number') payload[field.key] = raw === '' ? 0 : Number(raw);
+      else if (field.type === 'datetime-local') payload[field.key] = raw ? new Date(raw).toISOString() : null;
+      else payload[field.key] = raw.trim() === '' ? null : raw.trim();
+    }
+    const { error: insertError } = await supabase.from(industry.table).insert(payload);
+    if (insertError) {
+      setError(insertError.code === '23505' ? 'That reference number is already in use in this workspace.' : insertError.message);
+    } else {
+      setNotice(industry.singular + ' created successfully.');
+      setFormOpen(false);
+      await loadRecords();
+    }
+    setSaving(false);
+  };
+
+  const updateStatus = async (id: string, value: string) => {
+    if (!supabase || !activeOrganisation || !industry || !canUpdateRecords) return;
+    setError(null); setNotice(null);
+    const { error: updateError } = await supabase.from(industry.table).update({ [industry.statusField]: value })
+      .eq('id', id).eq('organization_id', activeOrganisation.id);
+    if (updateError) setError('Status was not changed: ' + updateError.message);
+    else { setNotice('Workflow status updated.'); await loadRecords(); }
+  };
+
+  const currency = activeOrganisation?.base_currency ?? 'NGN';
+  const money = (value: unknown) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '—';
+    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount); }
+    catch { return amount.toFixed(2) + ' ' + currency; }
+  };
+
+  if (!activeOrganisation) return null;
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700"><ClipboardList className="h-4 w-4" /> Specialist operations</div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-slate-900">Industry Workspaces</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Run specialist workflows alongside Veyora's shared inventory, sales, purchasing and finance tools. Your records remain scoped to {activeOrganisation.name}.</p>
+        </div>
+        <button type="button" onClick={() => void loadCategories()} disabled={loading || saving} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className="h-4 w-4" /> Refresh</button>
+      </header>
+
+      {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
+      {notice && <div role="status" className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />{notice}</div>}
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-slate-900">Your business categories</h2><p className="text-xs text-slate-500">Select the specialist areas this organisation operates.</p></div><span className="text-[11px] text-slate-500">{selectedCategories.length} selected</span></div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {INDUSTRIES.map((item) => {
+            const Icon = item.icon;
+            const selected = selectedCategories.includes(item.category);
+            return (
+              <button key={item.category} type="button" disabled={!selected && (!canManageCategories || saving)} onClick={() => selected ? setActiveCategory(item.category) : void addCategory(item.category)}
+                className={'rounded-xl border p-4 text-left transition ' + (activeCategory === item.category ? 'border-blue-400 bg-blue-50/70 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-slate-300') + ((!selected && !canManageCategories) ? ' cursor-not-allowed opacity-60' : '')}>
+                <div className="flex items-start justify-between gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Icon className="h-5 w-5" /></span><span className={'rounded-full px-2 py-1 text-[10px] font-semibold ' + (selected ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>{selected ? 'Selected' : canManageCategories ? 'Add category' : 'Not selected'}</span></div>
+                <div className="mt-3 text-sm font-semibold text-slate-900">{item.label}</div><p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
+                {selected && <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-blue-700">Open workspace <ArrowRight className="h-3 w-3" /></div>}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] leading-5 text-slate-500">Category selection describes your business mix. Paid add-on checkout and entitlement enforcement are being completed separately; these initial workflows are available for controlled preview and testing.</p>
+      </section>
+
+      {industry && selectedCategories.includes(industry.category) ? (
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><h2 className="text-base font-semibold text-slate-900">{industry.label}</h2><p className="mt-1 text-xs text-slate-500">{industry.description}</p></div>
+            <button type="button" onClick={startCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-800"><Plus className="h-4 w-4" /> New {industry.singular}</button>
+          </div>
+          {formOpen && (
+            <form onSubmit={(event) => void createRecord(event)} className="space-y-4 border-b border-blue-100 bg-blue-50/40 p-4">
+              <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-900">Create {industry.singular.toLowerCase()}</h3><button type="button" onClick={() => setFormOpen(false)} aria-label="Close form" className="rounded-md p-1 text-slate-500 hover:bg-white"><X className="h-4 w-4" /></button></div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {industry.fields.map((field) => (
+                  <label key={field.key} className={'space-y-1 ' + (field.type === 'textarea' ? 'sm:col-span-2 lg:col-span-3' : '')}>
+                    <span className="block text-xs font-medium text-slate-700">{field.label}{field.required && <span className="text-rose-600"> *</span>}</span>
+                    {field.type === 'textarea' ? <textarea required={field.required} rows={3} value={formValues[field.key] ?? ''} onChange={(event) => setFormValues((current) => ({ ...current, [field.key]: event.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                      : field.type === 'select' ? <select required={field.required} value={formValues[field.key] ?? ''} onChange={(event) => setFormValues((current) => ({ ...current, [field.key]: event.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500">{(field.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+                      : <input required={field.required} type={field.type ?? 'text'} min={field.min} step={field.step} value={formValues[field.key] ?? ''} onChange={(event) => setFormValues((current) => ({ ...current, [field.key]: event.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" />}
+                  </label>
+                ))}
+              </div>
+              <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700">Cancel</button><button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save {industry.singular}</button></div>
+            </form>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3"><div className="flex items-center gap-2 text-xs text-slate-600"><CalendarDays className="h-4 w-4 text-slate-400" /> Latest 200 records</div><span className="text-xs font-semibold text-slate-700">{rows.length} {industry.singular.toLowerCase()}{rows.length === 1 ? '' : 's'}</span></div>
+          {loading ? <div className="flex items-center justify-center gap-2 p-12 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading workspace…</div>
+            : rows.length === 0 ? <div className="p-12 text-center"><span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><ClipboardList className="h-5 w-5" /></span><h3 className="mt-3 text-sm font-semibold text-slate-900">No {industry.singular.toLowerCase()} records yet</h3><p className="mt-1 text-xs text-slate-500">Create your first record to start using this workflow.</p></div>
+            : <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-[11px] font-semibold text-slate-500"><tr>{industry.columns.map((column) => <th key={column.key} className="whitespace-nowrap px-4 py-3">{column.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row) => <tr key={String(row.id)} className="hover:bg-slate-50/70">{industry.columns.map((column) => <td key={column.key} className="max-w-[240px] whitespace-nowrap px-4 py-3 text-slate-700">{column.kind === 'money' ? money(row[column.key]) : column.kind === 'date' ? formatDate(row[column.key]) : column.kind === 'status' ? <select aria-label={'Update status for ' + industry.singular} disabled={!canUpdateRecords} value={String(row[column.key] ?? '')} onChange={(event) => void updateStatus(String(row.id), event.target.value)} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100">{industry.statuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select> : <span className="block truncate" title={String(row[column.key] ?? '')}>{String(row[column.key] ?? '—')}</span>}</td>)}</tr>)}</tbody></table></div>}
+          <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">This first release manages the specialist record and its workflow status. It does not automatically post financial entries, deduct inventory, charge customers or dispatch vehicles.</div>
+        </section>
+      ) : (
+        <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">Choose a selected business category</h2><p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-500">Add or select one of the categories above to open its specialist operational workspace. Your existing core modules remain available separately.</p></section>
+      )}
+    </div>
+  );
+}
