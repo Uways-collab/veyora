@@ -87,6 +87,8 @@ Deno.serve(async (req: Request) => {
   if (action === 'billing-config') {
     const amount = Number(Deno.env.get('PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS') ?? 0);
     const disclosure = Deno.env.get('PAYSTACK_CARD_VERIFICATION_DISCLOSURE') ?? '';
+    let appBaseUrlReady = false;
+    try { const appBase = new URL(Deno.env.get('APP_BASE_URL') ?? ''); appBaseUrlReady = appBase.protocol === 'https:'; } catch { appBaseUrlReady = false; }
     return json({
       trialDays: 14,
       currency: 'NGN',
@@ -96,7 +98,7 @@ Deno.serve(async (req: Request) => {
       paystackMode: paystackSecret?.startsWith('sk_test_') ? 'test' : paystackSecret?.startsWith('sk_live_') ? 'live' : 'not_configured',
       liveBillingEnabled: liveBillingAllowed,
       planSyncAvailable: paystackReady,
-      trialCardSetupReady: Boolean(paystackReady && Number.isInteger(amount) && amount >= 5000 && disclosure.trim()),
+      trialCardSetupReady: Boolean(paystackReady && appBaseUrlReady && Number.isInteger(amount) && amount >= 5000 && disclosure.trim()),
     });
   }
 
