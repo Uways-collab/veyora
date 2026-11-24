@@ -191,7 +191,8 @@ export function IndustryWorkspacesView() {
   const addCategory = async (category: BusinessCategory) => {
     if (!industrySupabase || !activeOrganisation || !canManageCategories) return;
     setSaving(true); setError(null); setNotice(null);
-    const isPrimary = selectedCategories.length === 0;
+    // Preserve the organisation's existing core operating model as primary.
+    const isPrimary = false;
     const { error: insertError } = await industrySupabase.from('organization_business_types').upsert({
       organization_id: activeOrganisation.id, business_type: category, is_primary: isPrimary, configuration: {},
     }, { onConflict: 'organization_id,business_type' });
