@@ -86,6 +86,7 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey = getSecretKey();
   if (!secret || !supabaseUrl || !serviceKey) return json({ error: 'Webhook server configuration is incomplete.' }, 503);
+  if (secret.startsWith('sk_live_') && Deno.env.get('PAYSTACK_ENABLE_LIVE_BILLING') !== 'true') return json({ error: 'Live Paystack webhook processing is intentionally disabled until live billing is approved.' }, 503);
 
   let event: Record<string, any>;
   try { event = JSON.parse(rawBody); } catch { return json({ error: 'Invalid webhook JSON.' }, 400); }
