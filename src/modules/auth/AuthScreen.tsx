@@ -1,11 +1,34 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowLeft, KeyRound, Lock, Mail } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, Mail } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { getRuntimeConfig } from '../../core/config/env';
 
 type AuthViewMode = 'signin' | 'signup' | 'forgot';
 
-export function AuthScreen() {
+function PasswordInput({
+  id, value, onChange, autoComplete, placeholder, minLength,
+}: {
+  id: string; value: string; onChange: (value: string) => void;
+  autoComplete: string; placeholder: string; minLength?: number;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input id={id} type={visible ? 'text' : 'password'} required minLength={minLength}
+        autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full h-11 px-3 pr-11 rounded-lg border border-slate-300 text-sm text-slate-900 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/15" />
+      <button type="button" onClick={() => setVisible((current) => !current)}
+        aria-label={visible ? 'Hide password' : 'Show password'} aria-pressed={visible}
+        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-lg text-slate-400 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-sky-600">
+        {visible ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
+
+
+export function AuthScreen({ initialMode }: { initialMode?: AuthViewMode }) {
   const {
     status,
     authError,
@@ -17,7 +40,7 @@ export function AuthScreen() {
 
   const runtime = getRuntimeConfig();
 
-  const [mode, setMode] = useState<AuthViewMode>('signin');
+  const [mode, setMode] = useState<AuthViewMode>(() => initialMode ?? (new URLSearchParams(window.location.search).has('plan') ? 'signup' : 'signin'));
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -129,11 +152,11 @@ export function AuthScreen() {
   const displayError = localError ?? authError;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-sky-50 text-slate-900 flex flex-col">
       {/* Minimal Header */}
-      <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between">
+      <header className="sticky top-0 z-10 h-16 bg-white/85 backdrop-blur border-b border-slate-200/80 px-5 sm:px-8 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-white shrink-0">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-md shadow-slate-950/15 shrink-0">
             <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
               <path
                 d="M5 6.5L12 18.5L19 6.5"
@@ -151,7 +174,7 @@ export function AuthScreen() {
               />
             </svg>
           </span>
-          <span className="font-display text-sm font-semibold tracking-tight text-slate-900">
+          <span className="font-display text-base font-bold tracking-tight text-slate-950">
             Veyora Business
           </span>
         </div>
@@ -160,10 +183,10 @@ export function AuthScreen() {
         </span>
       </header>
 
-      <main className="flex-1 flex items-center justify-center px-4 py-10">
+      <main className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md space-y-6">
           {status === 'unconfigured' ? (
-            <section className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8 space-y-5">
+            <section className="bg-white/95 border border-slate-200/80 rounded-2xl p-6 sm:p-8 space-y-5 shadow-xl shadow-slate-900/5">
               <div className="flex items-center gap-2.5 text-slate-900">
                 <KeyRound className="h-5 w-5 text-slate-600" aria-hidden="true" />
                 <h1 className="font-display text-xl font-semibold">
@@ -192,7 +215,7 @@ export function AuthScreen() {
               </p>
             </section>
           ) : status === 'password_recovery' || status === 'invitation_setup' ? (
-            <section className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8 space-y-6">
+            <section className="bg-white/95 border border-slate-200/80 rounded-2xl p-6 sm:p-8 space-y-6 shadow-xl shadow-slate-900/5">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                   <Lock className="h-3.5 w-3.5" aria-hidden="true" />
@@ -211,34 +234,14 @@ export function AuthScreen() {
                   <label htmlFor="recovery-new-password" className="block text-xs font-medium text-slate-700">
                     New Password
                   </label>
-                  <input
-                    id="recovery-new-password"
-                    type="password"
-                    required
-                    minLength={8}
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Minimum 8 characters"
-                    className="w-full h-10 px-3 rounded-md border border-slate-300 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
-                  />
+                  <PasswordInput id="recovery-new-password" value={newPassword} onChange={setNewPassword} autoComplete="new-password" placeholder="Minimum 8 characters" minLength={8} />
                 </div>
 
                 <div className="space-y-1">
                   <label htmlFor="recovery-confirm-password" className="block text-xs font-medium text-slate-700">
                     Confirm New Password
                   </label>
-                  <input
-                    id="recovery-confirm-password"
-                    type="password"
-                    required
-                    minLength={8}
-                    autoComplete="new-password"
-                    value={confirmNewPassword}
-                    onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    placeholder="Re-enter password"
-                    className="w-full h-10 px-3 rounded-md border border-slate-300 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
-                  />
+                  <PasswordInput id="recovery-confirm-password" value={confirmNewPassword} onChange={setConfirmNewPassword} autoComplete="new-password" placeholder="Re-enter password" minLength={8} />
                 </div>
 
                 {displayError && (
@@ -256,7 +259,7 @@ export function AuthScreen() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full h-10 rounded-md bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                  className="w-full h-11 rounded-xl bg-slate-950 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-lg shadow-slate-950/10"
                 >
                   {submitting ? 'Saving password...' : status === 'invitation_setup' ? 'Accept Invitation & Set Password' : 'Update Password'}
                 </button>
@@ -364,16 +367,7 @@ export function AuthScreen() {
                         Forgot password?
                       </button>
                     </div>
-                    <input
-                      id="signin-password"
-                      type="password"
-                      required
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter your password"
-                      className="w-full h-10 px-3 rounded-md border border-slate-300 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
-                    />
+                    <PasswordInput id="signin-password" value={password} onChange={setPassword} autoComplete="current-password" placeholder="Enter your password" />
                   </div>
 
                   {displayError && (
@@ -430,34 +424,14 @@ export function AuthScreen() {
                     <label htmlFor="signup-password" className="block text-xs font-medium text-slate-700">
                       Password
                     </label>
-                    <input
-                      id="signup-password"
-                      type="password"
-                      required
-                      minLength={8}
-                      autoComplete="new-password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimum 8 characters"
-                      className="w-full h-10 px-3 rounded-md border border-slate-300 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
-                    />
+                    <PasswordInput id="signup-password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="Minimum 8 characters" minLength={8} />
                   </div>
 
                   <div className="space-y-1">
                     <label htmlFor="signup-confirm" className="block text-xs font-medium text-slate-700">
                       Confirm Password
                     </label>
-                    <input
-                      id="signup-confirm"
-                      type="password"
-                      required
-                      minLength={8}
-                      autoComplete="new-password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Re-enter password"
-                      className="w-full h-10 px-3 rounded-md border border-slate-300 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
-                    />
+                    <PasswordInput id="signup-confirm" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" placeholder="Re-enter password" minLength={8} />
                   </div>
 
                   {displayError && (
@@ -518,7 +492,7 @@ export function AuthScreen() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full h-10 rounded-md bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                    className="w-full h-11 rounded-xl bg-slate-950 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-lg shadow-slate-950/10"
                   >
                     {submitting ? 'Sending link...' : 'Send Reset Link'}
                   </button>
