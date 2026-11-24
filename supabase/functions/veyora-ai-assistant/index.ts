@@ -113,7 +113,7 @@ Deno.serve(async (req: Request) => {
   if (organizationError || !organization) return json({ error: 'Workspace details could not be loaded.' }, 403);
 
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const [salesResult, productsResult, customersResult, stockResult] = await Promise.all([
+  const [salesResult, productsResult, customersResult, stockResult, categoriesResult] = await Promise.all([
     userClient.from('sales').select('total_amount,status,sold_at')
       .eq('organization_id', organizationId).neq('status', 'cancelled')
       .gte('sold_at', since).order('sold_at', { ascending: false }).limit(1000),
@@ -123,6 +123,8 @@ Deno.serve(async (req: Request) => {
       .eq('organization_id', organizationId).eq('is_active', true),
     userClient.from('inventory_balances').select('quantity,reorder_level')
       .eq('organization_id', organizationId).limit(2000),
+    userClient.from('organization_business_types').select('business_type,is_primary')
+      .eq('organization_id', organizationId),
   ]);
 
   const salesRows = salesResult.data ?? [];
@@ -136,6 +138,7 @@ Deno.serve(async (req: Request) => {
   const context = {
     workspace: organization.name,
     primaryBusinessType: organization.business_type,
+    selectedBusinessCategories: categoriesResult.error ? null : (categoriesResult.data ?? []),
     currency: organization.currency,
     period: 'Last 30 days',
     sales: salesResult.error ? null : {
