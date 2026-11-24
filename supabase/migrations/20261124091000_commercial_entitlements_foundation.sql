@@ -157,3 +157,5 @@ create table if not exists private.paystack_webhook_events (
   received_at timestamptz not null default now()
 );
 revoke all on private.paystack_webhook_events from public, anon, authenticated;
+grant usage on schema private to service_role;
+grant all on private.paystack_webhook_events to service_role;
