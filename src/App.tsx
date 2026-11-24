@@ -12,6 +12,7 @@ import { DashboardView } from './modules/dashboard/DashboardView';
 import { ExpensesView } from './modules/expenses/ExpensesView';
 import { FinanceView } from './modules/finance/FinanceView';
 import { InventoryView } from './modules/inventory/InventoryView';
+import { IndustryWorkspacesView } from './modules/industry/IndustryWorkspacesView';
 import { BusinessOnboardingScreen } from './modules/onboarding/BusinessOnboardingScreen';
 import { PurchasesView } from './modules/purchases/PurchasesView';
 import { ReportsView } from './modules/reports/ReportsView';
@@ -182,6 +183,8 @@ function ProtectedWorkspaceRouter() {
         return <FinanceView />;
       case 'reports':
         return <ReportsView />;
+      case 'industry':
+        return <IndustryWorkspacesView />;
       case 'settings':
         return <SettingsView requestedTab={requestedSettingsTab} />;
       default:
