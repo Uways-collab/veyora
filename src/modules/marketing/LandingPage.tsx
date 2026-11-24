@@ -104,7 +104,7 @@ export function LandingPage() {
                 <div className="overflow-hidden rounded-[1.2rem] bg-slate-50">
                   <div className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
                     <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-sky-600" /><span className="text-sm font-bold text-slate-900">Workspace overview</span></div>
-                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">Live workspace</span>
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">Platform preview</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 p-4 sm:p-5">
                     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -180,7 +180,11 @@ export function LandingPage() {
                 </article>
               ))}
             </div>
-            <p className="mx-auto mt-8 max-w-3xl text-center text-xs leading-6 text-slate-500">Pricing and feature allowances shown are the proposed launch packages. Subscription checkout and automatic plan enforcement are not activated yet; selecting a plan starts account registration.</p>
+            <div className="mx-auto mt-8 flex max-w-4xl flex-col items-start justify-between gap-5 rounded-2xl border border-slate-200 bg-white p-6 sm:flex-row sm:items-center">
+              <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">For larger organisations</p><h3 className="mt-1 font-display text-lg font-bold text-slate-950">Enterprise · Custom pricing</h3><p className="mt-1 text-sm leading-6 text-slate-600">Tailored user limits, locations, integrations and onboarding for complex operations.</p></div>
+              <a href="/signup?plan=enterprise" className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-500 hover:bg-slate-50">Discuss Enterprise <ArrowRight className="h-4 w-4"/></a>
+            </div>
+            <p className="mx-auto mt-6 max-w-3xl text-center text-xs leading-6 text-slate-500">These are proposed launch prices and feature allowances. Some advanced AI and analytics features are planned and will be enabled as they are released. Subscription checkout, activation and automatic plan enforcement are not live yet; choosing a plan starts account registration only.</p>
           </div>
         </section>
 
