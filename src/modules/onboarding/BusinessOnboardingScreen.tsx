@@ -2,11 +2,13 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Building2, CheckCircle2, Loader2, LogOut, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import {
+  BUSINESS_CATEGORY_OPTIONS,
   BUSINESS_TYPE_OPTIONS,
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
 } from '../../core/constants/businessOptions';
-import type { BusinessType } from '../../core/types/domain';
+import type { BusinessCategory, BusinessType } from '../../core/types/domain';
+import { getSupabaseClient } from '../../core/supabase/client';
 
 export function BusinessOnboardingScreen() {
   const {
@@ -22,6 +24,8 @@ export function BusinessOnboardingScreen() {
 
   const [name, setName] = useState('');
   const [businessType, setBusinessType] = useState<BusinessType>('retail');
+  const [businessCategories, setBusinessCategories] = useState<BusinessCategory[]>(['retail']);
+  const [primaryCategory, setPrimaryCategory] = useState<BusinessCategory>('retail');
   const [country, setCountry] = useState('United States');
   const [currency, setCurrency] = useState('USD');
   const [timezone, setTimezone] = useState('America/New_York');
@@ -80,9 +84,22 @@ export function BusinessOnboardingScreen() {
         return;
       }
 
-      setSuccessMsg(
-        `Business workspace "${trimmedName}" created (${organisationId}). Loading dashboard...`
-      );
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const categoryRows = businessCategories.map((category) => ({
+          organization_id: organisationId,
+          business_type: category,
+          is_primary: category === primaryCategory,
+          configuration: {},
+        }));
+        const { error: categoryError } = await supabase
+          .from('organization_business_types')
+          .upsert(categoryRows, { onConflict: 'organization_id,business_type' });
+        if (categoryError) {
+          setErrorMsg('Workspace created, but industry selections could not be saved: ' + categoryError.message);
+        }
+      }
+      setSuccessMsg('Business workspace "' + trimmedName + '" created with ' + businessCategories.length + ' business categories. Loading dashboard...');
     } catch (err: unknown) {
       setErrorMsg(
         err instanceof Error ? err.message : 'Unexpected error creating business workspace.'
@@ -244,6 +261,46 @@ export function BusinessOnboardingScreen() {
                     ))}
                   </select>
                 </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1 border-b border-slate-200 pb-2.5">
+                <div className="text-xs font-semibold text-slate-900">Business Categories</div>
+                <p className="text-xs leading-5 text-slate-500">Choose every type of business you operate under this organisation. You can select more than one.</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {BUSINESS_CATEGORY_OPTIONS.map((category) => {
+                  const checked = businessCategories.includes(category.value);
+                  return (
+                    <label key={category.value} className={"flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors " + (checked ? "border-blue-400 bg-blue-50/60" : "border-slate-200 hover:border-slate-300")}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          setBusinessCategories((current) => {
+                            if (event.target.checked) return [...current, category.value];
+                            const next = current.filter((value) => value !== category.value);
+                            if (next.length === 0) return current;
+                            if (primaryCategory === category.value) setPrimaryCategory(next[0]);
+                            return next;
+                          });
+                        }}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-semibold text-slate-800">{category.label}</span>
+                        <span className="mt-1 block text-[11px] leading-5 text-slate-500">{category.description}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="max-w-sm space-y-1">
+                <label htmlFor="onboard-primary-category" className="block text-xs font-medium text-slate-700">Primary business category</label>
+                <select id="onboard-primary-category" value={primaryCategory} onChange={(event) => setPrimaryCategory(event.target.value as BusinessCategory)} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
+                  {BUSINESS_CATEGORY_OPTIONS.filter((category) => businessCategories.includes(category.value)).map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
+                </select>
               </div>
             </div>
 
