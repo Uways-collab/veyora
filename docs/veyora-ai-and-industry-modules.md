@@ -6,7 +6,7 @@ The first assistant release is read-only. It answers operational questions using
 
 ### Context supplied to the model
 - Organisation name and primary business model.
-- Last-30-day sales count and recorded revenue.
+- Two consecutive 30-day sales comparisons (gross recorded sales, order count, refunds and returns shown separately), plus product/variant demand comparisons from up to 5,000 sale lines.
 - Active product and customer counts.
 - Low-stock balance count and up to 20 low-stock product/variant names, SKUs, on-hand quantities and reorder levels where the query is available.
 
