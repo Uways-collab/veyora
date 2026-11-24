@@ -76,7 +76,7 @@ export function AssistantView() {
             <div className="text-sm font-semibold text-slate-900">Veyora AI</div>
             <div className="text-[11px] text-slate-500">Workspace-scoped · Read-only guidance</div>
           </div>
-          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Ready when configured</span>
+          <span className="ml-auto rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">Read-only assistant</span>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6" aria-live="polite">
