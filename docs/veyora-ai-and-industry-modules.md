@@ -8,9 +8,9 @@ The first assistant release is read-only. It answers operational questions using
 - Organisation name and primary business model.
 - Last-30-day sales count and recorded revenue.
 - Active product and customer counts.
-- Low-stock balance count where the query is available.
+- Low-stock balance count and up to 20 low-stock product/variant names, SKUs, on-hand quantities and reorder levels where the query is available.
 
-The function does not send customer names, phone numbers, emails, supplier contacts, payment credentials, invoice images, or individual transaction records to the model.
+The function may send product/variant names and SKUs for low-stock recommendations. It does not send customer names, phone numbers, emails, supplier contacts, payment credentials, invoice images, or individual transaction records to the model.
 
 ### Security boundaries
 - The Edge Function requires a valid Supabase user session.
