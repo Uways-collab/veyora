@@ -82,7 +82,7 @@ Deno.serve(async (req: Request) => {
   });
   const paystackSecret = Deno.env.get('PAYSTACK_SECRET_KEY');
   const liveBillingAllowed = Deno.env.get('PAYSTACK_ENABLE_LIVE_BILLING') === 'true';
-  const paystackReady = Boolean(paystackSecret) && (!paystackSecret?.startsWith('sk_live_') || liveBillingAllowed);
+  const paystackReady = Boolean(paystackSecret?.startsWith('sk_test_') || (paystackSecret?.startsWith('sk_live_') && liveBillingAllowed));
 
   if (action === 'billing-config') {
     const amount = Number(Deno.env.get('PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS') ?? 0);
