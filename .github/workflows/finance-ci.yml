@@ -8,6 +8,7 @@ on:
       - fix/dashboard-all-roles-and-org-access
       - feat/paystack-trial-billing
   pull_request:
+    types: [opened, synchronize, reopened]
     branches:
       - main
 
@@ -49,6 +50,8 @@ jobs:
       - name: Type-check authenticated and billing Edge Functions
         run: |
           deno check supabase/functions/invite-organization-member/index.ts
+          deno check supabase/functions/scan-supplier-invoice/index.ts
+          deno check supabase/functions/veyora-ai-assistant/index.ts
           deno check supabase/functions/paystack-billing/index.ts
           deno check supabase/functions/paystack-webhook/index.ts
 
