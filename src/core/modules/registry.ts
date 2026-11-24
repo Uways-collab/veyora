@@ -145,6 +145,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     targetPhase: 'Inventory Active · Other Domains Upcoming',
   },
   {
+    id: 'ai_assistant',
+    label: 'AI Assistant',
+    group: 'financial',
+    stage: 'foundation_active',
+    summary: 'Read-only, organisation-scoped AI guidance using approved operational summaries and metered model usage.',
+    primaryEntities: ['Business Questions', 'Operational Summaries', 'AI Usage'],
+    plannedTables: ['ai_usage_records'],
+    connectedModules: ['dashboard', 'inventory', 'sales', 'customers', 'finance', 'reports'],
+    targetPhase: 'AI Assistant (Initial Release)',
+  },
+  {
     id: 'settings',
     label: 'Settings',
     group: 'administration',
