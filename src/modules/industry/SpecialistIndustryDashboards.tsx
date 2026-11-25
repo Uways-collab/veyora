@@ -125,14 +125,100 @@ export function RealEstateWorkspaceView() {
 
 export function RestaurantWorkspaceView() {
  const ctx=useBoard('restaurant_orders','ordered_at',restaurantFields,{order_type:'dine_in',total_amount:0,status:'new'});
+ const { activeOrganisation } = useAuth();
+ const db = getSupabaseClient() as any;
+ const [menuItems,setMenuItems]=useState<RowRecord[]>([]);
+ const [tables,setTables]=useState<RowRecord[]>([]);
+ const [menuName,setMenuName]=useState('');
+ const [menuPrice,setMenuPrice]=useState('');
+ const [menuStation,setMenuStation]=useState('kitchen');
+ const [tableNumber,setTableNumber]=useState('');
+ const [tableSeats,setTableSeats]=useState('2');
+ const [selectedOrder,setSelectedOrder]=useState<RowRecord|null>(null);
+ const [selectedMenuItem,setSelectedMenuItem]=useState('');
+ const [itemQuantity,setItemQuantity]=useState('1');
+ const [itemModifiers,setItemModifiers]=useState('');
+ const [restaurantError,setRestaurantError]=useState<string|null>(null);
+ const [restaurantNotice,setRestaurantNotice]=useState<string|null>(null);
+ const [restaurantSaving,setRestaurantSaving]=useState(false);
+ const [orderItems,setOrderItems]=useState<RowRecord[]>([]);
+ const refreshRestaurantSetup=useCallback(async()=>{
+  if(!db||!activeOrganisation){setMenuItems([]);setTables([]);return;}
+  const [menuResult,tableResult]=await Promise.all([
+   db.from('restaurant_menu_items').select('*').eq('organization_id',activeOrganisation.id).order('name'),
+   db.from('restaurant_tables').select('*').eq('organization_id',activeOrganisation.id).order('table_number')
+  ]);
+  if(menuResult.error||tableResult.error){setRestaurantError(menuResult.error?.message||tableResult.error?.message||'Could not load restaurant setup.');return;}
+  setMenuItems(menuResult.data??[]);setTables(tableResult.data??[]);setRestaurantError(null);
+ },[db,activeOrganisation?.id]);
+ useEffect(()=>{void refreshRestaurantSetup();},[refreshRestaurantSetup]);
+ const addMenuItem=async(e:FormEvent<HTMLFormElement>)=>{
+  e.preventDefault();if(!db||!activeOrganisation)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  const {error}=await db.from('restaurant_menu_items').insert({organization_id:activeOrganisation.id,name:menuName.trim(),price:Number(menuPrice),prep_station:menuStation});
+  if(error)setRestaurantError(error.message);else{setMenuName('');setMenuPrice('');setRestaurantNotice('Menu item saved.');await refreshRestaurantSetup();}
+  setRestaurantSaving(false);
+ };
+ const addDiningTable=async(e:FormEvent<HTMLFormElement>)=>{
+  e.preventDefault();if(!db||!activeOrganisation)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  const {error}=await db.from('restaurant_tables').insert({organization_id:activeOrganisation.id,table_number:tableNumber.trim(),seats:Number(tableSeats)});
+  if(error)setRestaurantError(error.code==='23505'?'That table number already exists.':error.message);else{setTableNumber('');setRestaurantNotice('Dining table added.');await refreshRestaurantSetup();}
+  setRestaurantSaving(false);
+ };
+ const openOrderItems=async(order:RowRecord)=>{
+  setSelectedOrder(order);setRestaurantError(null);setRestaurantNotice(null);setSelectedMenuItem('');setItemQuantity('1');setItemModifiers('');
+  const {data,error}=await db.from('restaurant_order_items').select('*').eq('organization_id',activeOrganisation?.id).eq('order_id',order.id).order('created_at');
+  if(error){setRestaurantError(error.message);setOrderItems([]);}else setOrderItems(data??[]);
+ };
+ const addOrderItem=async(e:FormEvent<HTMLFormElement>)=>{
+  e.preventDefault();if(!db||!activeOrganisation||!selectedOrder)return;
+  const item=menuItems.find(x=>x.id===selectedMenuItem);if(!item)return;
+  setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  const {error}=await db.from('restaurant_order_items').insert({organization_id:activeOrganisation.id,order_id:selectedOrder.id,menu_item_id:item.id,item_name:item.name,quantity:Number(itemQuantity),unit_price:Number(item.price),modifiers:itemModifiers.trim()||null});
+  if(error)setRestaurantError(error.message);else{setRestaurantNotice('Order item added. Ticket total recalculated automatically.');await openOrderItems(selectedOrder);await ctx.refresh();}
+  setRestaurantSaving(false);
+ };
+ const count=(...s:string[])=>ctx.rows.filter(r=>s.includes(r.status)).length;
  const count=(...s:string[])=>ctx.rows.filter(r=>s.includes(r.status)).length;
  const queue=ctx.rows.filter(r=>['new','accepted','preparing'].includes(r.status));
  const lanes=[{name:'New tickets',states:['new'],next:'accepted'},{name:'Accepted',states:['accepted'],next:'preparing'},{name:'Kitchen',states:['preparing'],next:'ready'},{name:'Ready to serve',states:['ready'],next:'served'},{name:'Served',states:['served'],next:'completed'}];
  return <Shell eyebrow="Restaurant service" heading="Restaurant & café operations" description="Run the order counter, kitchen preparation queue, table service and takeaway dispatch." icon={<Utensils className="h-4 w-4"/>} ctx={ctx}>
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Open tickets" value={String(queue.length)} hint="New, accepted or preparing"/><Metric label="In kitchen" value={String(count('preparing'))} hint="Being prepared now"/><Metric label="Ready to serve" value={String(count('ready'))} hint="Awaiting collection or service"/><Metric label="Completed today" value={String(ctx.rows.filter(r=>['completed','served'].includes(r.status)&&String(r.ordered_at).slice(0,10)===new Date().toISOString().slice(0,10)).length)} hint="Served / completed tickets"/></div>
+  {restaurantError&&<div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{restaurantError}</div>}
+  {restaurantNotice&&<div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">{restaurantNotice}</div>}
+  <section className="grid gap-3 xl:grid-cols-2">
+   <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="flex items-center justify-between"><div><h2 className="font-semibold">Menu catalogue</h2><p className="mt-1 text-xs text-slate-500">Prices and kitchen preparation stations.</p></div><span className="text-xs text-slate-500">{menuItems.length} items</span></div>
+    <form onSubmit={e=>void addMenuItem(e)} className="mt-3 grid gap-2 sm:grid-cols-3">
+     <input required value={menuName} onChange={e=>setMenuName(e.target.value)} placeholder="Menu item name" className={cls}/>
+     <input required type="number" min="0" step="0.01" value={menuPrice} onChange={e=>setMenuPrice(e.target.value)} placeholder="Price" className={cls}/>
+     <select value={menuStation} onChange={e=>setMenuStation(e.target.value)} className={cls}><option value="kitchen">Kitchen</option><option value="bar">Bar</option><option value="dessert">Dessert</option><option value="other">Other</option></select>
+     <button disabled={restaurantSaving} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white sm:col-span-3">Add menu item</button>
+    </form>
+    <div className="mt-3 divide-y divide-slate-100">{menuItems.map(item=><div key={item.id} className="flex items-center justify-between gap-3 py-2 text-xs"><span className="font-medium">{item.name}<small className="ml-2 text-slate-500">{titleCase(item.prep_station)}</small></span><b>{money(item.price,ctx.currency)}</b></div>)}{!menuItems.length&&<p className="py-4 text-xs text-slate-500">Add your first menu item to begin building itemised tickets.</p>}</div>
+   </div>
+   <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="flex items-center justify-between"><div><h2 className="font-semibold">Dining tables</h2><p className="mt-1 text-xs text-slate-500">Track table capacity and live occupancy.</p></div><span className="text-xs text-slate-500">{tables.length} tables</span></div>
+    <form onSubmit={e=>void addDiningTable(e)} className="mt-3 grid gap-2 sm:grid-cols-[1fr_100px_auto]">
+     <input required value={tableNumber} onChange={e=>setTableNumber(e.target.value)} placeholder="Table number / name" className={cls}/>
+     <input required type="number" min="1" step="1" value={tableSeats} onChange={e=>setTableSeats(e.target.value)} aria-label="Seats" className={cls}/>
+     <button disabled={restaurantSaving} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white">Add table</button>
+    </form>
+    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{tables.map(table=><div key={table.id} className="rounded-lg border border-slate-200 p-3"><b className="text-xs">{table.table_number}</b><p className="mt-1 text-[10px] text-slate-500">{table.seats} seats · {titleCase(table.status)}</p></div>)}{!tables.length&&<p className="col-span-full py-4 text-xs text-slate-500">Add dining tables to track dine-in service.</p>}</div>
+   </div>
+  </section>
+  {selectedOrder&&<section className="rounded-xl border border-blue-200 bg-blue-50/30 p-4">
+   <div className="flex items-center justify-between"><div><h2 className="font-semibold">Ticket #{selectedOrder.order_number} items</h2><p className="mt-1 text-xs text-slate-500">Itemised lines update the order total on the database automatically.</p></div><button onClick={()=>setSelectedOrder(null)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs">Close</button></div>
+   <form onSubmit={e=>void addOrderItem(e)} className="mt-3 grid gap-2 sm:grid-cols-4">
+    <select required value={selectedMenuItem} onChange={e=>setSelectedMenuItem(e.target.value)} className={cls}><option value="">Choose menu item</option>{menuItems.filter(i=>i.is_available).map(i=><option key={i.id} value={i.id}>{i.name} · {money(i.price,ctx.currency)}</option>)}</select>
+    <input required type="number" min="0.001" step="0.001" value={itemQuantity} onChange={e=>setItemQuantity(e.target.value)} className={cls}/>
+    <input value={itemModifiers} onChange={e=>setItemModifiers(e.target.value)} placeholder="Modifiers / notes" className={cls}/>
+    <button disabled={restaurantSaving||!menuItems.length} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white">Add to ticket</button>
+   </form>
+   <div className="mt-3 divide-y divide-slate-100">{orderItems.map(item=><div key={item.id} className="flex justify-between py-2 text-xs"><span>{item.quantity} × {item.item_name} {item.modifiers&&<small className="text-slate-500"> · {item.modifiers}</small>}</span><b>{money(item.line_total,ctx.currency)}</b></div>)}</div>
+  </section>}
   <section className="rounded-xl border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-semibold">Service counter</h2><p className="mt-1 text-xs text-slate-500">Create dine-in, takeaway and delivery tickets.</p></div><button onClick={()=>ctx.setForm(!ctx.form)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"><Plus className="h-4 w-4"/> New order</button></div>{ctx.form&&<RecordForm ctx={ctx} onClose={()=>ctx.setForm(false)} submitLabel="Send to kitchen"/>}</section>
   <section className="grid gap-3 xl:grid-cols-4">{lanes.map(l=><div key={l.name} className="min-h-44 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold">{l.name}</h3><span className="rounded-full bg-white px-2 py-1 text-xs">{ctx.rows.filter(r=>l.states.includes(r.status)).length}</span></div>{ctx.rows.filter(r=>l.states.includes(r.status)).map(r=><article key={r.id} className="mt-3 rounded-lg border border-slate-200 bg-white p-3"><div className="flex justify-between gap-2"><b className="text-xs">#{r.order_number}</b><span className="text-[10px] text-slate-500">{titleCase(r.order_type)}</span></div><p className="mt-2 text-xs text-slate-700">{r.items_summary}</p><p className="mt-2 text-[10px] text-slate-500">{r.table_label||r.customer_name||'Counter order'} · {money(r.total_amount,ctx.currency)}</p><button disabled={!ctx.canManage||ctx.saving} onClick={()=>void ctx.changeStatus(r,l.next)} className="mt-3 w-full rounded-md bg-slate-900 px-2 py-2 text-[10px] font-semibold text-white">{l.next==='served'?'Mark served':'Move to '+titleCase(l.next)}</button></article>)}</div>)}</section>
-  <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><div className="p-4"><h3 className="font-semibold">All orders</h3><p className="mt-1 text-xs text-slate-500">Recent order history and ticket totals.</p></div><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Order','Type','Customer / table','Items','Total','Status'].map(x=><th key={x} className="whitespace-nowrap px-4 py-3">{x}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{ctx.rows.map(r=><tr key={r.id}><td className="px-4 py-3 font-semibold">{r.order_number}</td><td className="px-4 py-3">{titleCase(r.order_type)}</td><td className="px-4 py-3">{r.customer_name||r.table_label||'—'}</td><td className="max-w-56 truncate px-4 py-3">{r.items_summary}</td><td className="px-4 py-3">{money(r.total_amount,ctx.currency)}</td><td className="px-4 py-3">{titleCase(r.status)}</td></tr>)}</tbody></table>{!ctx.rows.length&&<p className="p-8 text-center text-xs text-slate-500">No orders yet.</p>}</section>
+  <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><div className="p-4"><h3 className="font-semibold">All orders</h3><p className="mt-1 text-xs text-slate-500">Recent order history and ticket totals.</p></div><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Order','Type','Customer / table','Items','Total','Status','Ticket items'].map(x=><th key={x} className="whitespace-nowrap px-4 py-3">{x}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{ctx.rows.map(r=><tr key={r.id}><td className="px-4 py-3 font-semibold">{r.order_number}</td><td className="px-4 py-3">{titleCase(r.order_type)}</td><td className="px-4 py-3">{r.customer_name||r.table_label||'—'}</td><td className="max-w-56 truncate px-4 py-3">{r.items_summary}</td><td className="px-4 py-3">{money(r.total_amount,ctx.currency)}</td><td className="px-4 py-3">{titleCase(r.status)}</td><td className="px-4 py-3"><button onClick={()=>void openOrderItems(r)} className="whitespace-nowrap rounded-md border border-slate-300 px-2 py-1 text-[10px] font-semibold">Add / view items</button></td></tr>)}</tbody></table>{!ctx.rows.length&&<p className="p-8 text-center text-xs text-slate-500">No orders yet.</p>}</section>
  </Shell>;
 }
 
