@@ -127,12 +127,12 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     group: 'financial',
     stage: 'foundation_active',
     summary:
-      'Central operational reporting workspace. Inventory reports are active with read-only metrics and CSV exports; Sales, Purchases, and Finance reports are upcoming.',
+      'Central operational reporting workspace with live inventory, sales, purchases, and finance reporting.',
     primaryEntities: [
       'Inventory Reports (Active)',
-      'Sales Reports (Upcoming)',
-      'Purchases Reports (Upcoming)',
-      'Finance Reports (Upcoming)',
+      'Sales Reports (Active)',
+      'Purchases Reports (Active)',
+      'Finance Reports (Active)',
     ],
     plannedTables: [
       'inventory_balances',
@@ -142,7 +142,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       'product_variants',
     ],
     connectedModules: ['inventory', 'sales', 'purchases', 'finance'],
-    targetPhase: 'Inventory Active · Other Domains Upcoming',
+    targetPhase: 'Inventory, Sales, Purchases & Finance Reports Active',
   },
   {
     id: 'ai_assistant',
