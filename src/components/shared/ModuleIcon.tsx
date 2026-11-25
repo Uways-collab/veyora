@@ -2,6 +2,7 @@ import {
   BarChart3,
   Boxes,
   Building2,
+  ClipboardList,
   Landmark,
   LayoutDashboard,
   Receipt,
@@ -40,6 +41,8 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <BarChart3 className={className} aria-hidden="true" />;
     case 'ai_assistant':
       return <Sparkles className={className} aria-hidden="true" />;
+    case 'industry':
+      return <ClipboardList className={className} aria-hidden="true" />;
     case 'settings':
       return <Settings className={className} aria-hidden="true" />;
   }
