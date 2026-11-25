@@ -130,10 +130,21 @@ export function RestaurantWorkspaceView() {
  const { activeOrganisation, activeRole } = useAuth();
  const db = getSupabaseClient() as any;
  const [menuItems,setMenuItems]=useState<RowRecord[]>([]);
+ const [menuCategories,setMenuCategories]=useState<RowRecord[]>([]);
  const [tables,setTables]=useState<RowRecord[]>([]);
  const [menuName,setMenuName]=useState('');
  const [menuPrice,setMenuPrice]=useState('');
  const [menuStation,setMenuStation]=useState('kitchen');
+ const [menuCategoryId,setMenuCategoryId]=useState('');
+ const [categoryName,setCategoryName]=useState('');
+ const [orderType,setOrderType]=useState('dine_in');
+ const [orderTableId,setOrderTableId]=useState('');
+ const [orderCovers,setOrderCovers]=useState('1');
+ const [orderCustomer,setOrderCustomer]=useState('');
+ const [orderNotes,setOrderNotes]=useState('');
+ const [orderCart,setOrderCart]=useState<{menu_item_id:string;quantity:string;modifiers:string}[]>([{menu_item_id:'',quantity:'1',modifiers:''}]);
+ const [showOrderForm,setShowOrderForm]=useState(false);
+ const canManageRestaurant=['owner','admin','manager'].includes(activeRole??'');
  const [tableNumber,setTableNumber]=useState('');
  const [tableSeats,setTableSeats]=useState('2');
  const [selectedOrder,setSelectedOrder]=useState<RowRecord|null>(null);
@@ -148,16 +159,47 @@ export function RestaurantWorkspaceView() {
   if(!db||!activeOrganisation){setMenuItems([]);setTables([]);return;}
   const [menuResult,tableResult]=await Promise.all([
    db.from('restaurant_menu_items').select('*').eq('organization_id',activeOrganisation.id).order('name'),
+   db.from('restaurant_menu_categories').select('*').eq('organization_id',activeOrganisation.id).order('sort_order'),
    db.from('restaurant_tables').select('*').eq('organization_id',activeOrganisation.id).order('table_number')
   ]);
   if(menuResult.error||tableResult.error){setRestaurantError(menuResult.error?.message||tableResult.error?.message||'Could not load restaurant setup.');return;}
-  setMenuItems(menuResult.data??[]);setTables(tableResult.data??[]);setRestaurantError(null);
+  const [categoryResult]=await Promise.all([db.from('restaurant_menu_categories').select('*').eq('organization_id',activeOrganisation.id).order('sort_order')]);
+  if(categoryResult.error){setRestaurantError(categoryResult.error.message);return;}
+  setMenuItems(menuResult.data??[]);setMenuCategories(categoryResult.data??[]);setTables(tableResult.data??[]);setRestaurantError(null);
  },[db,activeOrganisation?.id]);
  useEffect(()=>{void refreshRestaurantSetup();},[refreshRestaurantSetup]);
  const addMenuItem=async(e:FormEvent<HTMLFormElement>)=>{
   e.preventDefault();if(!db||!activeOrganisation)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
-  const {error}=await db.from('restaurant_menu_items').insert({organization_id:activeOrganisation.id,name:menuName.trim(),price:Number(menuPrice),prep_station:menuStation});
-  if(error)setRestaurantError(error.message);else{setMenuName('');setMenuPrice('');setRestaurantNotice('Menu item saved.');await refreshRestaurantSetup();}
+  const {error}=await db.from('restaurant_menu_items').insert({organization_id:activeOrganisation.id,category_id:menuCategoryId||null,name:menuName.trim(),price:Number(menuPrice),prep_station:menuStation,is_available:true});
+  if(error)setRestaurantError(error.message);else{setMenuName('');setMenuPrice('');setMenuCategoryId('');setRestaurantNotice('Menu item saved.');await refreshRestaurantSetup();}
+  setRestaurantSaving(false);
+ };
+ const addMenuCategory=async(e:FormEvent<HTMLFormElement>)=>{
+  e.preventDefault();if(!db||!activeOrganisation||!canManageRestaurant)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  const {error}=await db.from('restaurant_menu_categories').insert({organization_id:activeOrganisation.id,name:categoryName.trim(),sort_order:menuCategories.length});
+  if(error)setRestaurantError(error.code==='23505'?'That menu category already exists.':error.message);
+  else{setCategoryName('');setRestaurantNotice('Menu category saved.');await refreshRestaurantSetup();}
+  setRestaurantSaving(false);
+ };
+ const toggleMenuAvailability=async(item:RowRecord)=>{
+  if(!db||!activeOrganisation||!canManageRestaurant)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  const {error}=await db.from('restaurant_menu_items').update({is_available:!item.is_available}).eq('id',item.id).eq('organization_id',activeOrganisation.id);
+  if(error)setRestaurantError(error.message);else{setRestaurantNotice('Menu availability updated.');await refreshRestaurantSetup();}
+  setRestaurantSaving(false);
+ };
+ const createRestaurantOrder=async(e:FormEvent<HTMLFormElement>)=>{
+  e.preventDefault();if(!db||!activeOrganisation)return;
+  const items=orderCart.filter(line=>line.menu_item_id&&Number(line.quantity)>0);
+  if(!items.length){setRestaurantError('Add at least one available menu item to the order.');return;}
+  setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  const {data,error}=await db.rpc('restaurant_create_order_with_items',{
+   p_organization_id:activeOrganisation.id,p_order_type:orderType,
+   p_table_id:orderType==='dine_in'?(orderTableId||null):null,p_covers:Number(orderCovers)||1,
+   p_customer_name:orderCustomer.trim()||null,p_notes:orderNotes.trim()||null,
+   p_items:items.map(line=>({menu_item_id:line.menu_item_id,quantity:Number(line.quantity),modifiers:line.modifiers.trim()||null}))
+  });
+  if(error)setRestaurantError('Order could not be sent to the kitchen: '+error.message);
+  else{setRestaurantNotice('Itemised order created and sent to the kitchen.');setShowOrderForm(false);setOrderCart([{menu_item_id:'',quantity:'1',modifiers:''}]);setOrderTableId('');setOrderCustomer('');setOrderNotes('');setOrderCovers('1');await ctx.refresh();await refreshRestaurantSetup();}
   setRestaurantSaving(false);
  };
  const addDiningTable=async(e:FormEvent<HTMLFormElement>)=>{
@@ -173,6 +215,7 @@ export function RestaurantWorkspaceView() {
  };
  const addOrderItem=async(e:FormEvent<HTMLFormElement>)=>{
   e.preventDefault();if(!db||!activeOrganisation||!selectedOrder)return;
+  if(['completed','cancelled'].includes(selectedOrder.status)){setRestaurantError('This ticket is closed and can no longer be changed.');return;}
   const item=menuItems.find(x=>x.id===selectedMenuItem);if(!item)return;
   setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
   const {error}=await db.from('restaurant_order_items').insert({organization_id:activeOrganisation.id,order_id:selectedOrder.id,menu_item_id:item.id,item_name:item.name,quantity:Number(itemQuantity),unit_price:Number(item.price),modifiers:itemModifiers.trim()||null});
@@ -181,9 +224,16 @@ export function RestaurantWorkspaceView() {
  };
  const advanceOrderStatus=async(row:RowRecord,status:string)=>{
   if(!db||!activeOrganisation)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
-  const {data,error}=await db.from('restaurant_orders').update({status}).eq('id',row.id).eq('organization_id',activeOrganisation.id).select('id').maybeSingle();
+  let error: any=null;
+  if(status==='completed'){
+   const result=await db.rpc('restaurant_complete_order',{p_organization_id:activeOrganisation.id,p_order_id:row.id});
+   error=result.error;
+  }else{
+   const result=await db.from('restaurant_orders').update({status}).eq('id',row.id).eq('organization_id',activeOrganisation.id).select('id').maybeSingle();
+   error=result.error;
+   if(!error&&!result.data)error=new Error('Kitchen ticket was not updated. Check staff access.');
+  }
   if(error)setRestaurantError('Kitchen status could not be updated: '+error.message);
-  else if(!data)setRestaurantError('Kitchen ticket was not updated. Check staff access.');
   else{setRestaurantNotice('Kitchen ticket updated.');await ctx.refresh();await refreshRestaurantSetup();}
   setRestaurantSaving(false);
  };
@@ -196,22 +246,24 @@ export function RestaurantWorkspaceView() {
   {restaurantNotice&&<div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">{restaurantNotice}</div>}
   <section className="grid gap-3 xl:grid-cols-2">
    <div className="rounded-xl border border-slate-200 bg-white p-4">
-    <div className="flex items-center justify-between"><div><h2 className="font-semibold">Menu catalogue</h2><p className="mt-1 text-xs text-slate-500">Prices and kitchen preparation stations.</p></div><span className="text-xs text-slate-500">{menuItems.length} items</span></div>
-    <form onSubmit={e=>void addMenuItem(e)} className="mt-3 grid gap-2 sm:grid-cols-3">
+    <div className="flex items-center justify-between"><div><h2 className="font-semibold">Menu catalogue</h2><p className="mt-1 text-xs text-slate-500">Menu categories, prices and preparation stations.</p></div><span className="text-xs text-slate-500">{menuItems.length} items</span></div>
+    {canManageRestaurant&&<form onSubmit={e=>void addMenuCategory(e)} className="mt-3 flex gap-2"><input required value={categoryName} onChange={e=>setCategoryName(e.target.value)} placeholder="New menu category" className={cls}/><button disabled={restaurantSaving} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold">Add category</button></form>}
+    {canManageRestaurant&&<form onSubmit={e=>void addMenuItem(e)} className="mt-3 grid gap-2 sm:grid-cols-2">
      <input required value={menuName} onChange={e=>setMenuName(e.target.value)} placeholder="Menu item name" className={cls}/>
-     <input required type="number" min="0" step="0.01" value={menuPrice} onChange={e=>setMenuPrice(e.target.value)} placeholder="Price" className={cls}/>
+     <input required type="number" min="0" step="0.01" value={menuPrice} onChange={e=>setMenuPrice(e.target.value)} placeholder="Selling price" className={cls}/>
+     <select value={menuCategoryId} onChange={e=>setMenuCategoryId(e.target.value)} className={cls}><option value="">No category</option>{menuCategories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
      <select value={menuStation} onChange={e=>setMenuStation(e.target.value)} className={cls}><option value="kitchen">Kitchen</option><option value="bar">Bar</option><option value="dessert">Dessert</option><option value="other">Other</option></select>
-     <button disabled={restaurantSaving} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white sm:col-span-3">Add menu item</button>
-    </form>
-    <div className="mt-3 divide-y divide-slate-100">{menuItems.map(item=><div key={item.id} className="flex items-center justify-between gap-3 py-2 text-xs"><span className="font-medium">{item.name}<small className="ml-2 text-slate-500">{titleCase(item.prep_station)}</small></span><b>{money(item.price,ctx.currency)}</b></div>)}{!menuItems.length&&<p className="py-4 text-xs text-slate-500">Add your first menu item to begin building itemised tickets.</p>}</div>
+     <button disabled={restaurantSaving} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white sm:col-span-2">Add menu item</button>
+    </form>}
+    <div className="mt-3 divide-y divide-slate-100">{menuItems.map(item=><div key={item.id} className="flex items-center justify-between gap-3 py-2 text-xs"><span className="min-w-0"><b>{item.name}</b><small className="ml-2 text-slate-500">{titleCase(item.prep_station)}{item.category_id&&menuCategories.find(c=>c.id===item.category_id)?' · '+menuCategories.find(c=>c.id===item.category_id)?.name:''}</small><small className="ml-2 text-slate-500">{item.is_available?'Available':'Unavailable'}</small></span><div className="flex items-center gap-2"><b>{money(item.price,ctx.currency)}</b>{canManageRestaurant&&<button disabled={restaurantSaving} onClick={()=>void toggleMenuAvailability(item)} className="rounded-md border border-slate-300 px-2 py-1 text-[10px]">{item.is_available?'Disable':'Enable'}</button>}</div></div>)}{!menuItems.length&&<p className="py-4 text-xs text-slate-500">Add your first menu item to begin building itemised tickets.</p>}</div>
    </div>
    <div className="rounded-xl border border-slate-200 bg-white p-4">
     <div className="flex items-center justify-between"><div><h2 className="font-semibold">Dining tables</h2><p className="mt-1 text-xs text-slate-500">Track table capacity and live occupancy.</p></div><span className="text-xs text-slate-500">{tables.length} tables</span></div>
-    <form onSubmit={e=>void addDiningTable(e)} className="mt-3 grid gap-2 sm:grid-cols-[1fr_100px_auto]">
+    {canManageRestaurant&&<form onSubmit={e=>void addDiningTable(e)} className="mt-3 grid gap-2 sm:grid-cols-[1fr_100px_auto]">
      <input required value={tableNumber} onChange={e=>setTableNumber(e.target.value)} placeholder="Table number / name" className={cls}/>
      <input required type="number" min="1" step="1" value={tableSeats} onChange={e=>setTableSeats(e.target.value)} aria-label="Seats" className={cls}/>
      <button disabled={restaurantSaving} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white">Add table</button>
-    </form>
+    </form>}
     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{tables.map(table=><div key={table.id} className="rounded-lg border border-slate-200 p-3"><b className="text-xs">{table.table_number}</b><p className="mt-1 text-[10px] text-slate-500">{table.seats} seats · {titleCase(table.status)}</p></div>)}{!tables.length&&<p className="col-span-full py-4 text-xs text-slate-500">Add dining tables to track dine-in service.</p>}</div>
    </div>
   </section>
@@ -225,7 +277,27 @@ export function RestaurantWorkspaceView() {
    </form>
    <div className="mt-3 divide-y divide-slate-100">{orderItems.map(item=><div key={item.id} className="flex justify-between py-2 text-xs"><span>{item.quantity} × {item.item_name} {item.modifiers&&<small className="text-slate-500"> · {item.modifiers}</small>}</span><b>{money(item.line_total,ctx.currency)}</b></div>)}</div>
   </section>}
-  <section className="rounded-xl border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-semibold">Service counter</h2><p className="mt-1 text-xs text-slate-500">Create dine-in, takeaway and delivery tickets.</p></div><button onClick={()=>ctx.setForm(!ctx.form)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"><Plus className="h-4 w-4"/> New order</button></div>{ctx.form&&<RecordForm ctx={ctx} onClose={()=>ctx.setForm(false)} submitLabel="Send to kitchen" extraFields={[{name:"table_id",label:"Dining table (optional)",options:[{value:"",label:"No table / takeaway"} ,...tables.map(t=>({value:String(t.id),label:String(t.table_number)+" · "+String(t.seats)+" seats"}))]},{name:"covers",label:"Number of guests",type:"number",min:"1",step:"1"}]}/>}</section>
+  <section className="rounded-xl border border-slate-200 bg-white">
+   <div className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-semibold">Service counter</h2><p className="mt-1 text-xs text-slate-500">Create a complete itemised ticket before it enters the kitchen.</p></div><button onClick={()=>setShowOrderForm(!showOrderForm)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"><Plus className="h-4 w-4"/> New order</button></div>
+   {showOrderForm&&<form onSubmit={e=>void createRestaurantOrder(e)} className="space-y-3 border-b border-blue-100 bg-blue-50/40 p-4">
+    <div className="grid gap-2 sm:grid-cols-4">
+     <label className="text-xs font-medium">Order type<select value={orderType} onChange={e=>{setOrderType(e.target.value);if(e.target.value!=='dine_in')setOrderTableId('');}} className={cls}><option value="dine_in">Dine in</option><option value="takeaway">Takeaway</option><option value="delivery">Delivery</option></select></label>
+     <label className="text-xs font-medium">Dining table<select disabled={orderType!=='dine_in'} value={orderTableId} onChange={e=>setOrderTableId(e.target.value)} className={cls}><option value="">No table selected</option>{tables.filter(t=>['available','reserved'].includes(t.status)).map(t=><option key={t.id} value={t.id}>{t.table_number} · {t.seats} seats</option>)}</select></label>
+     <label className="text-xs font-medium">Guests<input type="number" min="1" step="1" value={orderCovers} onChange={e=>setOrderCovers(e.target.value)} className={cls}/></label>
+     <label className="text-xs font-medium">Customer name<input value={orderCustomer} onChange={e=>setOrderCustomer(e.target.value)} className={cls}/></label>
+    </div>
+    <div className="space-y-2"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold">Ticket items</h3><button type="button" onClick={()=>setOrderCart(current=>[...current,{menu_item_id:'',quantity:'1',modifiers:''}])} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold">Add item line</button></div>
+     {orderCart.map((line,index)=><div key={index} className="grid gap-2 sm:grid-cols-[2fr_100px_1fr_auto]">
+      <select required value={line.menu_item_id} onChange={e=>setOrderCart(current=>current.map((x,i)=>i===index?{...x,menu_item_id:e.target.value}:x))} className={cls}><option value="">Choose available menu item</option>{menuItems.filter(i=>i.is_available).map(i=><option key={i.id} value={i.id}>{i.name} · {money(i.price,ctx.currency)}</option>)}</select>
+      <input required type="number" min="0.001" step="0.001" value={line.quantity} onChange={e=>setOrderCart(current=>current.map((x,i)=>i===index?{...x,quantity:e.target.value}:x))} className={cls}/>
+      <input value={line.modifiers} onChange={e=>setOrderCart(current=>current.map((x,i)=>i===index?{...x,modifiers:e.target.value}:x))} placeholder="Modifiers" className={cls}/>
+      <button type="button" disabled={orderCart.length===1} onClick={()=>setOrderCart(current=>current.filter((_,i)=>i!==index))} className="rounded-md border border-slate-300 bg-white px-2 text-xs">Remove</button>
+     </div>)}
+    </div>
+    <label className="block text-xs font-medium">Allergies / service notes<textarea value={orderNotes} onChange={e=>setOrderNotes(e.target.value)} rows={2} className={cls}/></label>
+    <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-slate-600">Estimated ticket total: <b>{money(orderCart.reduce((sum,line)=>{const item=menuItems.find(x=>x.id===line.menu_item_id);return sum+(Number(item?.price)||0)*(Number(line.quantity)||0);},0),ctx.currency)}</b></p><button disabled={restaurantSaving||!menuItems.some(i=>i.is_available)} className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white">{restaurantSaving?'Sending…':'Send itemised ticket to kitchen'}</button></div>
+   </form>}
+  </section>
   <section className="grid gap-3 xl:grid-cols-4">{lanes.map(l=><div key={l.name} className="min-h-44 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold">{l.name}</h3><span className="rounded-full bg-white px-2 py-1 text-xs">{ctx.rows.filter(r=>l.states.includes(r.status)).length}</span></div>{ctx.rows.filter(r=>l.states.includes(r.status)).map(r=><article key={r.id} className="mt-3 rounded-lg border border-slate-200 bg-white p-3"><div className="flex justify-between gap-2"><b className="text-xs">#{r.order_number}</b><span className="text-[10px] text-slate-500">{titleCase(r.order_type)}</span></div><p className="mt-2 text-xs text-slate-700">{r.items_summary}</p><p className="mt-2 text-[10px] text-slate-500">{r.table_label||tables.find(t=>t.id===r.table_id)?.table_number||r.customer_name||'Counter order'} · {money(r.total_amount,ctx.currency)}</p><button disabled={!['owner','admin','manager','staff'].includes(activeRole??'')||restaurantSaving} onClick={()=>void advanceOrderStatus(r,l.next)} className="mt-3 w-full rounded-md bg-slate-900 px-2 py-2 text-[10px] font-semibold text-white">{l.next==='served'?'Mark served':'Move to '+titleCase(l.next)}</button></article>)}</div>)}</section>
   <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><div className="p-4"><h3 className="font-semibold">All orders</h3><p className="mt-1 text-xs text-slate-500">Recent order history and ticket totals.</p></div><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Order','Type','Customer / table','Items','Total','Status','Ticket items'].map(x=><th key={x} className="whitespace-nowrap px-4 py-3">{x}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{ctx.rows.map(r=><tr key={r.id}><td className="px-4 py-3 font-semibold">{r.order_number}</td><td className="px-4 py-3">{titleCase(r.order_type)}</td><td className="px-4 py-3">{r.customer_name||r.table_label||tables.find(t=>t.id===r.table_id)?.table_number||'—'}</td><td className="max-w-56 truncate px-4 py-3">{r.items_summary}</td><td className="px-4 py-3">{money(r.total_amount,ctx.currency)}</td><td className="px-4 py-3">{titleCase(r.status)}</td><td className="px-4 py-3"><button onClick={()=>void openOrderItems(r)} className="whitespace-nowrap rounded-md border border-slate-300 px-2 py-1 text-[10px] font-semibold">Add / view items</button></td></tr>)}</tbody></table>{!ctx.rows.length&&<p className="p-8 text-center text-xs text-slate-500">No orders yet.</p>}</section>
  </Shell>;
