@@ -8,7 +8,9 @@ on:
       - feat/industry-workflows-ai-assistant
       - fix/dashboard-all-roles-and-org-access
       - feat/specialist-industry-workspaces
+      - feat/paystack-trial-billing
   pull_request:
+    types: [opened, synchronize, reopened]
     branches:
       - main
 
@@ -53,6 +55,10 @@ jobs:
           deno check supabase/functions/veyora-ai-assistant/index.ts
       - name: Type-check invoice scanner Edge Function
         run: deno check supabase/functions/scan-supplier-invoice/index.ts
+      - name: Type-check Paystack billing Edge Functions
+        run: |
+          deno check supabase/functions/paystack-billing/index.ts
+          deno check supabase/functions/paystack-webhook/index.ts
 
   production-build:
     name: Vite production build

@@ -85,7 +85,7 @@ export function Sidebar({
       {/* Navigation Groups */}
       <nav aria-label="Main Navigation" className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {GROUP_ORDER.map((group) => {
-          const items = MODULE_REGISTRY.filter((m) => m.group === group);
+          const items = MODULE_REGISTRY.filter((m) => m.group === group && (m.id !== 'billing' || activeRole === 'owner'));
           return (
             <div key={group}>
               <div className="px-2.5 pb-1.5 text-xs font-medium text-slate-400">

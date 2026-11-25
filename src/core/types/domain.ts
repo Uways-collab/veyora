@@ -10,6 +10,7 @@ export type ModuleId =
   | 'reports'
   | 'ai_assistant'
   | 'industry'
+  | 'billing'
   | 'settings';
 
 export type ModuleGroup =

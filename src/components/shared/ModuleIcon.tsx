@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Boxes,
+  CreditCard,
   Building2,
   ClipboardList,
   Landmark,
@@ -43,6 +44,8 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <Sparkles className={className} aria-hidden="true" />;
     case 'industry':
       return <ClipboardList className={className} aria-hidden="true" />;
+    case 'billing':
+      return <CreditCard className={className} aria-hidden="true" />;
     case 'settings':
       return <Settings className={className} aria-hidden="true" />;
   }

@@ -167,6 +167,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     targetPhase: 'Specialist Workspaces · Initial Release',
   },
   {
+    id: 'billing',
+    label: 'Subscription & Billing',
+    group: 'administration',
+    stage: 'foundation_active',
+    summary: 'Owner-only subscription plan selection, trial setup, Paystack payment method management and billing history.',
+    primaryEntities: ['Subscription Plans', 'Organisation Subscription', 'Billing Transactions'],
+    plannedTables: ['subscription_plans', 'organization_subscriptions', 'billing_transactions'],
+    connectedModules: ['settings'],
+    targetPhase: 'Commercial Billing Foundation',
+  },
+  {
     id: 'settings',
     label: 'Settings',
     group: 'administration',
