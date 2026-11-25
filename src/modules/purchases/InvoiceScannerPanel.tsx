@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileImage, FileText, Loader2, Plus, RefreshCw, ScanLine, Trash2, Upload, X } from 'lucide-react';
 import { getSupabaseClient } from '../../core/supabase/client';
+import { compressImageToWebp, MAX_IMAGE_UPLOAD_BYTES } from '../../core/images/compressImage';
 import { fetchPurchaseReferenceData, formatPurchaseMoney } from './purchasesService';
 import type { PurchaseCatalogVariant, PurchaseReferenceData } from './purchasesTypes';
 import type { SupplierRecord } from './suppliersTypes';
@@ -302,16 +303,30 @@ export function InvoiceScannerPanel({
     if (userError || !userData.user) { setBusy(false); setError('Sign in again before scanning an invoice.'); return; }
     const scanId = crypto.randomUUID();
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120) || 'supplier-invoice';
-    const filePath = `${organisationId}/invoices/${scanId}/${safeName}`;
     try {
       setStage('uploading');
-      const { error: uploadError } = await supabase.storage.from('invoice-documents').upload(filePath, file, {
-        contentType: file.type, upsert: false,
+      const compressedImage = file.type.startsWith('image/')
+        ? await compressImageToWebp(file, {
+            maxBytes: MAX_IMAGE_UPLOAD_BYTES,
+            maxWidth: 1800,
+            maxHeight: 2400,
+          })
+        : null;
+      const uploadBlob: Blob = compressedImage?.blob ?? file;
+      const uploadMimeType = compressedImage?.contentType ?? file.type;
+      if (file.type.startsWith('image/') && uploadBlob.size > MAX_IMAGE_UPLOAD_BYTES) {
+        throw new Error('Compressed invoice image exceeds the 100 KB upload limit.');
+      }
+      const baseName = safeName.replace(/\\.[^.]+$/, '') || 'supplier-invoice';
+      const storedName = compressedImage ? `${baseName}.webp` : safeName;
+      const filePath = `${organisationId}/invoices/${scanId}/${storedName}`;
+      const { error: uploadError } = await supabase.storage.from('invoice-documents').upload(filePath, uploadBlob, {
+        contentType: uploadMimeType, upsert: false,
       });
       if (uploadError) throw new Error(uploadError.message);
       const { error: insertError } = await supabase.from('invoice_scans').insert({
         id: scanId, organization_id: organisationId, uploaded_by: userData.user.id,
-        file_path: filePath, file_name: file.name, mime_type: file.type, file_size: file.size,
+        file_path: filePath, file_name: file.name, mime_type: uploadMimeType, file_size: uploadBlob.size,
       });
       if (insertError) {
         await supabase.storage.from('invoice-documents').remove([filePath]);
@@ -565,7 +580,7 @@ export function InvoiceScannerPanel({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><ScanLine className="h-4 w-4 text-blue-700" /> AI Invoice Scanner</div>
-            <p className="mt-1 text-xs text-slate-500 max-w-2xl">Upload or photograph a supplier invoice. Veyora extracts the details and prepares a purchase draft for your review. Scanning never adds stock or records a payment.</p>
+            <p className="mt-1 text-xs text-slate-500 max-w-2xl">Upload or photograph a supplier invoice. Images are compressed to 100 KB or less before upload; PDFs are unchanged. Veyora extracts details for your review. Scanning never adds stock or records a payment.</p>
           </div>
           {scan && !createdPurchaseId && <button type="button" disabled={busy} onClick={resetScan} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"><X className="h-3.5 w-3.5" /> Cancel scan</button>}
         </div>
