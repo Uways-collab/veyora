@@ -143,7 +143,7 @@ function sanitizeFilenameSlug(name: string): string {
   );
 }
 
-export function InventoryReportsPanel() {
+export function InventoryReportsPanel({ canExport = false }: { canExport?: boolean }) {
   const { status, activeOrganisation, activeMembership, activeRole } = useAuth();
 
   const activeOrgId =
@@ -388,6 +388,7 @@ export function InventoryReportsPanel() {
   }, [baseData]);
 
   const handleExportValuationCsv = () => {
+    if (!canExport) { setExportError('CSV exports are included in the Premium plan.'); return; }
     if (!activeOrgId || !valuationReport) return;
     setExportError(null);
     const orgSlug = sanitizeFilenameSlug(orgName);
@@ -446,6 +447,7 @@ export function InventoryReportsPanel() {
   };
 
   const handleExportMovementsCsv = () => {
+    if (!canExport) { setExportError('CSV exports are included in the Premium plan.'); return; }
     if (!activeOrgId || !movementReport) return;
     setExportError(null);
     const orgSlug = sanitizeFilenameSlug(orgName);
@@ -508,6 +510,7 @@ export function InventoryReportsPanel() {
   };
 
   const handleExportTransfersCsv = () => {
+    if (!canExport) { setExportError('CSV exports are included in the Premium plan.'); return; }
     if (!activeOrgId || !transferReport) return;
     setExportError(null);
     const orgSlug = sanitizeFilenameSlug(orgName);
@@ -564,6 +567,7 @@ export function InventoryReportsPanel() {
   };
 
   const handleExportLowStockCsv = () => {
+    if (!canExport) { setExportError('CSV exports are included in the Premium plan.'); return; }
     if (!activeOrgId || !lowStockReport) return;
     setExportError(null);
     const orgSlug = sanitizeFilenameSlug(orgName);
@@ -1038,12 +1042,12 @@ export function InventoryReportsPanel() {
 
                 <button
                   type="button"
-                  disabled={!valuationReport || valuationReport.rows.length === 0}
+                  disabled={!canExport || !valuationReport || valuationReport.rows.length === 0}
                   onClick={handleExportValuationCsv}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap self-start sm:self-auto"
                 >
                   <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Export CSV</span>
+                  <span>{canExport ? 'Export CSV' : 'Export CSV · Premium'}</span>
                 </button>
               </div>
 
@@ -1259,12 +1263,12 @@ export function InventoryReportsPanel() {
               </div>
               <button
                 type="button"
-                disabled={!movementReport || filteredLoadedMovements.length === 0}
+                disabled={!canExport || !movementReport || filteredLoadedMovements.length === 0}
                 onClick={handleExportMovementsCsv}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap self-start sm:self-auto"
               >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Export CSV</span>
+                <span>{canExport ? 'Export CSV' : 'Export CSV · Premium'}</span>
               </button>
             </div>
 
@@ -1568,12 +1572,12 @@ export function InventoryReportsPanel() {
               </div>
               <button
                 type="button"
-                disabled={!transferReport || transferReport.rows.length === 0}
+                disabled={!canExport || !transferReport || transferReport.rows.length === 0}
                 onClick={handleExportTransfersCsv}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap self-start sm:self-auto"
               >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Export CSV</span>
+                <span>{canExport ? 'Export CSV' : 'Export CSV · Premium'}</span>
               </button>
             </div>
 
@@ -1805,12 +1809,12 @@ export function InventoryReportsPanel() {
               </div>
               <button
                 type="button"
-                disabled={!lowStockReport || lowStockReport.rows.length === 0}
+                disabled={!canExport || !lowStockReport || lowStockReport.rows.length === 0}
                 onClick={handleExportLowStockCsv}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap self-start sm:self-auto"
               >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Export CSV</span>
+                <span>{canExport ? 'Export CSV' : 'Export CSV · Premium'}</span>
               </button>
             </div>
 
