@@ -318,7 +318,8 @@ export function InvoiceScannerPanel({
       if (file.type.startsWith('image/') && uploadBlob.size > MAX_IMAGE_UPLOAD_BYTES) {
         throw new Error('Compressed invoice image exceeds the 100 KB upload limit.');
       }
-      const baseName = safeName.replace(/\\.[^.]+$/, '') || 'supplier-invoice';
+      const extensionIndex = safeName.lastIndexOf('.');
+      const baseName = (extensionIndex > 0 ? safeName.slice(0, extensionIndex) : safeName) || 'supplier-invoice';
       const storedName = compressedImage ? `${baseName}.webp` : safeName;
       filePath = `${organisationId}/invoices/${scanId}/${storedName}`;
       const { error: uploadError } = await supabase.storage.from('invoice-documents').upload(filePath, uploadBlob, {
