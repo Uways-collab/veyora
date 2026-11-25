@@ -3,7 +3,6 @@ import { Building2, CheckCircle2, Loader2, LogOut, RefreshCw, ShieldCheck } from
 import { useAuth } from '../../core/auth/AuthContext';
 import {
   BUSINESS_CATEGORY_OPTIONS,
-  BUSINESS_TYPE_OPTIONS,
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
 } from '../../core/constants/businessOptions';
