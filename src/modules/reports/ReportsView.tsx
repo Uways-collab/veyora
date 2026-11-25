@@ -37,14 +37,14 @@ const REPORT_DOMAINS: ReportDomainDefinition[] = [
   {
     id: 'purchases',
     label: 'Purchases Reports',
-    status: 'upcoming',
+    status: 'active',
     description:
       'Live purchase-order, supplier-spend, order-status, and receiving summaries from recorded purchase records.',
   },
   {
     id: 'finance',
     label: 'Finance Reports',
-    status: 'upcoming',
+    status: 'active',
     description:
       'Live revenue, expenses, net profit, and posted general-ledger activity from finance journal lines.',
   },
