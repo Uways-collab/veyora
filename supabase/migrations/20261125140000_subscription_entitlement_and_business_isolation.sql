@@ -144,7 +144,7 @@ declare
   target_feature text := tg_argv[0];
 begin
   if (auth.jwt() ->> 'role') = 'service_role' then
-    return case when tg_op='DELETE' then old else new end;
+    if tg_op='DELETE' then return old; end if;\n    return new;
   end if;
 
   if tg_op='DELETE' then
@@ -159,7 +159,7 @@ begin
       using errcode='42501';
   end if;
 
-  return case when tg_op='DELETE' then old else new end;
+  if tg_op='DELETE' then return old; end if;\n  return new;
 end;
 $function$;
 revoke all on function private.guard_business_access() from public,anon,authenticated;
@@ -459,3 +459,25 @@ grant select on public.organization_business_types to authenticated;
 -- Prevent direct invocation of trigger-only SECURITY DEFINER helpers.
 revoke all on function public.sales_v1_assert_return_header_matches_items(uuid,uuid) from public,anon,authenticated;
 revoke all on function public.finance_get_purchase_posting_state(uuid,uuid) from public,anon,authenticated;
+
+-- Profile edits must accept the full supported type list, while the trigger above
+-- prevents changing the already-selected type after creation.
+do $function$
+declare
+  definition text;
+  updated_definition text;
+begin
+  select pg_catalog.pg_get_functiondef(
+    'public.update_organization_profile(uuid,text,text,text,text,text,text,text)'::regprocedure
+  ) into definition;
+  updated_definition := pg_catalog.replace(
+    definition,
+    '''retail'', ''wholesale'', ''distribution'', ''services'', ''hybrid''',
+    '''retail'', ''wholesale'', ''distribution'', ''services'', ''hybrid'', ''hotel'', ''car_dealership'', ''real_estate'', ''restaurant'', ''logistics'', ''manufacturing'''
+  );
+  if updated_definition = definition then
+    raise exception 'Could not extend the supported business type validation in update_organization_profile';
+  end if;
+  execute updated_definition;
+end;
+$function$;
