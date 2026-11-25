@@ -294,7 +294,7 @@ function ProtectedWorkspaceRouter() {
       case 'finance':
         return <FinanceView />;
       case 'reports':
-        return <ReportsView />;
+        return <ReportsView canExport={subscriptionAccess.features.api_exports === true} />;
       case 'ai_assistant':
         return <AssistantView />;
       case 'industry':
