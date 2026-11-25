@@ -250,6 +250,43 @@ for insert to authenticated with check (exists(
   and m.user_id=(select auth.uid()) and m.role in ('owner','admin','manager')
 ));
 
+
+create or replace function public.restaurant_complete_order(p_organization_id uuid,p_order_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path=''
+as $function$
+declare
+  v_role text;
+  v_status text;
+begin
+  if auth.uid() is null or not private.organization_has_access(p_organization_id,'industry') then
+    raise exception 'Active restaurant workspace access is required.' using errcode='42501';
+  end if;
+  select m.role into v_role
+  from public.organization_memberships m
+  join public.organization_business_types b on b.organization_id=m.organization_id
+    and b.business_type='restaurant' and b.is_primary
+  where m.organization_id=p_organization_id and m.user_id=auth.uid();
+  if v_role not in ('owner','admin','manager','staff') then
+    raise exception 'Restaurant ticket access denied.' using errcode='42501';
+  end if;
+  select o.status into v_status from public.restaurant_orders o
+  where o.id=p_order_id and o.organization_id=p_organization_id for update;
+  if v_status='completed' then return; end if;
+  if v_status<>'served' then
+    raise exception 'Only a served restaurant ticket can be completed.' using errcode='23514';
+  end if;
+  perform pg_catalog.set_config('veyora.restaurant_completion','allowed',true);
+  update public.restaurant_orders set status='completed',updated_at=pg_catalog.now()
+  where id=p_order_id and organization_id=p_organization_id and status='served';
+  if not found then raise exception 'Restaurant ticket completion failed.' using errcode='P0002'; end if;
+end;
+$function$;
+revoke all on function public.restaurant_complete_order(uuid,uuid) from public,anon;
+grant execute on function public.restaurant_complete_order(uuid,uuid) to authenticated;
+
 -- Dealer receipts are immutable and every payment is posted to the organisation ledger.
 -- Tenant-safe composite targets for payment/account references.
 create unique index if not exists dealer_deals_id_org_uidx on public.dealer_deals(id,organization_id);
