@@ -303,6 +303,7 @@ export function InvoiceScannerPanel({
     if (userError || !userData.user) { setBusy(false); setError('Sign in again before scanning an invoice.'); return; }
     const scanId = crypto.randomUUID();
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120) || 'supplier-invoice';
+    let filePath: string | null = null;
     try {
       setStage('uploading');
       const compressedImage = file.type.startsWith('image/')
@@ -319,7 +320,7 @@ export function InvoiceScannerPanel({
       }
       const baseName = safeName.replace(/\\.[^.]+$/, '') || 'supplier-invoice';
       const storedName = compressedImage ? `${baseName}.webp` : safeName;
-      const filePath = `${organisationId}/invoices/${scanId}/${storedName}`;
+      filePath = `${organisationId}/invoices/${scanId}/${storedName}`;
       const { error: uploadError } = await supabase.storage.from('invoice-documents').upload(filePath, uploadBlob, {
         contentType: uploadMimeType, upsert: false,
       });
@@ -342,7 +343,7 @@ export function InvoiceScannerPanel({
     } catch (err) {
       if (activeOrgIdRef.current !== organisationId) {
         await supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scanId);
-        await supabase.storage.from('invoice-documents').remove([filePath]);
+        if (filePath) await supabase.storage.from('invoice-documents').remove([filePath]);
         return;
       }
       setError(err instanceof Error ? err.message : 'Invoice scanning failed. Try again.');
