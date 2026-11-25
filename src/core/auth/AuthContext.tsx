@@ -42,6 +42,7 @@ export interface CreateOrganisationInput {
   timezone: string;
   businessEmail?: string;
   businessPhone?: string;
+  configuration?: Record<string, unknown>;
 }
 
 interface AuthContextValue {
@@ -613,6 +614,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           p_business_email: input.businessEmail?.trim() || null,
           p_business_phone: input.businessPhone?.trim() || null,
           p_timezone: input.timezone.trim(),
+          p_configuration: input.configuration ?? {},
         });
 
         if (error) {
