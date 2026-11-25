@@ -163,7 +163,7 @@ export function IndustryWorkspacesView() {
     const { data, error: queryError } = await industrySupabase.from('organization_business_types')
       .select('business_type,is_primary').eq('organization_id', activeOrganisation.id);
     if (queryError) {
-      setError('Unable to load your selected business categories: ' + queryError.message);
+      setError('Unable to load your selected business type: ' + queryError.message);
       setSelectedCategories([]);
       return;
     }
