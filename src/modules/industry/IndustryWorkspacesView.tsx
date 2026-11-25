@@ -257,6 +257,64 @@ export function IndustryWorkspacesView() {
     catch { return amount.toFixed(2) + ' ' + currency; }
   };
 
+  const overviewMetrics = useMemo(() => {
+    if (!industry) return [];
+    const count = (statuses: string[]) => rows.filter((row) => statuses.includes(String(row[industry.statusField] ?? ''))).length;
+    const sum = (field: string) => rows.reduce((total, row) => total + (Number(row[field]) || 0), 0);
+    const today = new Date().toISOString().slice(0, 10);
+    const inNext30Days = (field: string) => rows.filter((row) => {
+      const date = new Date(String(row[field] ?? ''));
+      const days = (date.getTime() - Date.now()) / 86400000;
+      return Number.isFinite(date.getTime()) && days >= 0 && days <= 30;
+    }).length;
+    switch (industry.category) {
+      case 'hotel':
+        return [
+          { label: 'Reservations in view', value: String(rows.length), helper: 'Guest bookings recorded' },
+          { label: 'Currently checked in', value: String(count(['checked_in'])), helper: 'Guests staying now' },
+          { label: 'Arrivals today', value: String(rows.filter((row) => String(row.check_in ?? '').slice(0, 10) === today).length), helper: 'Scheduled check-ins' },
+          { label: 'Booking value', value: money(sum('total_amount')), helper: 'Value across loaded bookings' },
+        ];
+      case 'car_dealership':
+        return [
+          { label: 'Vehicles in stock', value: String(count(['in_stock'])), helper: 'Available for sale' },
+          { label: 'Reserved vehicles', value: String(count(['reserved'])), helper: 'Deals being held' },
+          { label: 'Vehicles sold', value: String(count(['sold'])), helper: 'Marked as sold' },
+          { label: 'Listed value', value: money(sum('asking_price')), helper: 'Asking prices in loaded stock' },
+        ];
+      case 'real_estate':
+        return [
+          { label: 'Active leases', value: String(count(['active'])), helper: 'Current tenant agreements' },
+          { label: 'Monthly rent', value: money(rows.filter((row) => row.status === 'active').reduce((total, row) => total + (Number(row.monthly_rent) || 0), 0)), helper: 'Across active leases' },
+          { label: 'Leases ending soon', value: String(inNext30Days('lease_end')), helper: 'Within the next 30 days' },
+          { label: 'Lease records', value: String(rows.length), helper: 'Latest records in this workspace' },
+        ];
+      case 'restaurant':
+        return [
+          { label: 'Open kitchen orders', value: String(count(['new', 'accepted', 'preparing'])), helper: 'Awaiting completion' },
+          { label: 'Ready to serve', value: String(count(['ready'])), helper: 'Ready for collection or service' },
+          { label: 'Completed orders', value: String(count(['completed', 'served'])), helper: 'Finished service' },
+          { label: 'Order value', value: money(sum('total_amount')), helper: 'Value across loaded orders' },
+        ];
+      case 'logistics':
+        return [
+          { label: 'In transit', value: String(count(['in_transit'])), helper: 'Currently on the road' },
+          { label: 'Awaiting dispatch', value: String(count(['pending', 'assigned'])), helper: 'Jobs not yet delivered' },
+          { label: 'Delivered', value: String(count(['delivered'])), helper: 'Completed deliveries' },
+          { label: 'Needs attention', value: String(count(['failed', 'returned'])), helper: 'Failed or returned jobs' },
+        ];
+      case 'manufacturing':
+        return [
+          { label: 'In production', value: String(count(['released', 'in_progress'])), helper: 'Orders on the production floor' },
+          { label: 'Quality checks', value: String(count(['quality_check'])), helper: 'Awaiting quality approval' },
+          { label: 'Completed units', value: sum('completed_quantity').toLocaleString(), helper: 'Across loaded production orders' },
+          { label: 'Planned units', value: sum('planned_quantity').toLocaleString(), helper: 'Across loaded production orders' },
+        ];
+      default:
+        return [];
+    }
+  }, [industry, rows]);
+
   if (!activeOrganisation) return null;
 
   return (
@@ -293,6 +351,13 @@ export function IndustryWorkspacesView() {
       </section>
 
       {industry && selectedCategories.includes(industry.category) ? (
+        <>
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-slate-900">{industry.label} overview</h2><p className="text-xs text-slate-500">A live operational snapshot from the latest records loaded for this workspace.</p></div><span className="text-[10px] font-medium text-slate-400">Up to 200 recent records</span></div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {overviewMetrics.map((metric, index) => <div key={metric.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.02]"><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-slate-500">{metric.label}</p><span className={'h-2 w-2 rounded-full ' + (index === 0 ? 'bg-blue-500' : index === 1 ? 'bg-emerald-500' : index === 2 ? 'bg-violet-500' : 'bg-amber-500')} /></div><p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 tabular-nums">{metric.value}</p><p className="mt-1 text-[11px] text-slate-500">{metric.helper}</p></div>)}
+          </div>
+        </section>
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h2 className="text-base font-semibold text-slate-900">{industry.label}</h2><p className="mt-1 text-xs text-slate-500">{industry.description}</p></div>
@@ -320,6 +385,7 @@ export function IndustryWorkspacesView() {
             : <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-[11px] font-semibold text-slate-500"><tr>{industry.columns.map((column) => <th key={column.key} className="whitespace-nowrap px-4 py-3">{column.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row) => <tr key={String(row.id)} className="hover:bg-slate-50/70">{industry.columns.map((column) => <td key={column.key} className="max-w-[240px] whitespace-nowrap px-4 py-3 text-slate-700">{column.kind === 'money' ? money(row[column.key]) : column.kind === 'date' ? formatDate(row[column.key]) : column.kind === 'status' ? <select aria-label={'Update status for ' + industry.singular} disabled={!canUpdateRecords} value={String(row[column.key] ?? '')} onChange={(event) => void updateStatus(String(row.id), event.target.value)} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100">{industry.statuses.map((status) => <option key={status.value} value={status.value} disabled={status.value !== String(row[column.key] ?? '') && !(STATUS_TRANSITIONS[industry.category]?.[String(row[column.key] ?? '')] ?? []).includes(status.value)}>{status.label}</option>)}</select> : <span className="block truncate" title={String(row[column.key] ?? '')}>{String(row[column.key] ?? '—')}</span>}</td>)}</tr>)}</tbody></table></div>}
           <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">This first release manages the specialist record and its workflow status. It does not automatically post financial entries, deduct inventory, charge customers or dispatch vehicles.</div>
         </section>
+        </>
       ) : (
         <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">Choose a selected business category</h2><p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-500">Add or select one of the categories above to open its specialist operational workspace. Your existing core modules remain available separately.</p></section>
       )}
