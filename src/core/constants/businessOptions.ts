@@ -26,6 +26,12 @@ export const BUSINESS_TYPE_OPTIONS: { value: BusinessType; label: string; descri
     label: 'Hybrid Operations',
     description: 'Combined retail, wholesale, and service workflows',
   },
+  { value: 'hotel', label: 'Hotels & Hospitality', description: 'Rooms, reservations, guests and housekeeping' },
+  { value: 'car_dealership', label: 'Car Dealerships', description: 'Vehicle stock, sales, payments and workshop operations' },
+  { value: 'real_estate', label: 'Real Estate', description: 'Properties, tenants, leases and rent' },
+  { value: 'restaurant', label: 'Restaurants & Food Service', description: 'Menus, tables, POS tickets and kitchen workflow' },
+  { value: 'logistics', label: 'Logistics & Fleet', description: 'Fleet, dispatch, delivery and proof of delivery' },
+  { value: 'manufacturing', label: 'Manufacturing', description: 'Production orders, materials and quality control' },
 ];
 
 
