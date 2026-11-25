@@ -132,6 +132,12 @@ export function Sidebar({
         })}
       </nav>
 
+      <section className="mx-3 mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="Customer support">
+        <div className="text-xs font-semibold text-slate-800">Need help? Contact Veyora</div>
+        <a href="tel:08129595134" className="mt-2 block text-xs font-medium text-blue-700 hover:underline">08129595134</a>
+        <a href="mailto:blundigold@gmail.com" className="mt-1 block break-all text-[11px] text-slate-600 hover:underline">blundigold@gmail.com</a>
+      </section>
+
       {/* Workspace / Organisation Footer */}
       <div className="border-t border-slate-200 p-4 shrink-0 space-y-3">
         {status === 'authenticated' && activeOrganisation ? (
