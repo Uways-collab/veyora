@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AlertCircle, ArrowRight, Building2, CalendarDays, CarFront, CheckCircle2, ClipboardList, Factory, Hotel, Loader2, MapPin, Plus, RefreshCw, Utensils, X } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
+import { HotelWorkspaceView } from './HotelWorkspaceView';
 import { getSupabaseClient } from '../../core/supabase/client';
 import type { BusinessCategory } from '../../core/types/domain';
 
@@ -358,7 +359,7 @@ export function IndustryWorkspacesView() {
             {overviewMetrics.map((metric, index) => <div key={metric.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.02]"><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-slate-500">{metric.label}</p><span className={'h-2 w-2 rounded-full ' + (index === 0 ? 'bg-blue-500' : index === 1 ? 'bg-emerald-500' : index === 2 ? 'bg-violet-500' : 'bg-amber-500')} /></div><p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 tabular-nums">{metric.value}</p><p className="mt-1 text-[11px] text-slate-500">{metric.helper}</p></div>)}
           </div>
         </section>
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {industry.category === 'hotel' ? <HotelWorkspaceView /> : <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h2 className="text-base font-semibold text-slate-900">{industry.label}</h2><p className="mt-1 text-xs text-slate-500">{industry.description}</p></div>
             <button type="button" onClick={startCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-800"><Plus className="h-4 w-4" /> New {industry.singular}</button>
@@ -383,8 +384,8 @@ export function IndustryWorkspacesView() {
           {loading ? <div className="flex items-center justify-center gap-2 p-12 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading workspace…</div>
             : rows.length === 0 ? <div className="p-12 text-center"><span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><ClipboardList className="h-5 w-5" /></span><h3 className="mt-3 text-sm font-semibold text-slate-900">No {industry.singular.toLowerCase()} records yet</h3><p className="mt-1 text-xs text-slate-500">Create your first record to start using this workflow.</p></div>
             : <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-[11px] font-semibold text-slate-500"><tr>{industry.columns.map((column) => <th key={column.key} className="whitespace-nowrap px-4 py-3">{column.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row) => <tr key={String(row.id)} className="hover:bg-slate-50/70">{industry.columns.map((column) => <td key={column.key} className="max-w-[240px] whitespace-nowrap px-4 py-3 text-slate-700">{column.kind === 'money' ? money(row[column.key]) : column.kind === 'date' ? formatDate(row[column.key]) : column.kind === 'status' ? <select aria-label={'Update status for ' + industry.singular} disabled={!canUpdateRecords} value={String(row[column.key] ?? '')} onChange={(event) => void updateStatus(String(row.id), event.target.value)} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100">{industry.statuses.map((status) => <option key={status.value} value={status.value} disabled={status.value !== String(row[column.key] ?? '') && !(STATUS_TRANSITIONS[industry.category]?.[String(row[column.key] ?? '')] ?? []).includes(status.value)}>{status.label}</option>)}</select> : <span className="block truncate" title={String(row[column.key] ?? '')}>{String(row[column.key] ?? '—')}</span>}</td>)}</tr>)}</tbody></table></div>}
-          <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">This first release manages the specialist record and its workflow status. It does not automatically post financial entries, deduct inventory, charge customers or dispatch vehicles.</div>
-        </section>
+          <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">This initial workflow manages specialist records and statuses only. Connected financial, inventory and external actions are enabled only when their controls are implemented.</div>
+        </section>}
         </>
       ) : (
         <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">Choose a selected business category</h2><p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-500">Add or select one of the categories above to open its specialist operational workspace. Your existing core modules remain available separately.</p></section>
