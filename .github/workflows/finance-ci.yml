@@ -6,8 +6,10 @@ on:
       - main
       - feat/finance-module
       - feat/industry-workflows-ai-assistant
+      - feat/paystack-trial-billing
       - fix/dashboard-all-roles-and-org-access
   pull_request:
+    types: [opened, synchronize, reopened]
     branches:
       - main
 
@@ -46,10 +48,12 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Type-check authenticated Edge Functions
+      - name: Type-check authenticated, AI and billing Edge Functions
         run: |
           deno check supabase/functions/invite-organization-member/index.ts
           deno check supabase/functions/veyora-ai-assistant/index.ts
+          deno check supabase/functions/paystack-billing/index.ts
+          deno check supabase/functions/paystack-webhook/index.ts
 
   production-build:
     name: Vite production build

@@ -14,6 +14,7 @@ import { ExpensesView } from './modules/expenses/ExpensesView';
 import { FinanceView } from './modules/finance/FinanceView';
 import { InventoryView } from './modules/inventory/InventoryView';
 import { BusinessOnboardingScreen } from './modules/onboarding/BusinessOnboardingScreen';
+import { BillingView } from './modules/billing/BillingView';
 import { PurchasesView } from './modules/purchases/PurchasesView';
 import { ReportsView } from './modules/reports/ReportsView';
 import { SalesView } from './modules/sales/SalesView';
@@ -45,6 +46,13 @@ function ProtectedWorkspaceRouter() {
 
   const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromHash());
   const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab>('auth_orgs');
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('reference')) {
+      setActiveModule('billing');
+      window.location.hash = '#/billing';
+    }
+  }, []);
 
   useEffect(() => {
     const onHashChange = () => {
@@ -185,6 +193,8 @@ function ProtectedWorkspaceRouter() {
         return <ReportsView />;
       case 'ai_assistant':
         return <AssistantView />;
+      case 'billing':
+        return <BillingView />;
       case 'settings':
         return <SettingsView requestedTab={requestedSettingsTab} />;
       default:
