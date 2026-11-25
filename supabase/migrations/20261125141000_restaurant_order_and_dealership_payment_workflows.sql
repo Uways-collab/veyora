@@ -278,6 +278,12 @@ begin
   if tg_op='INSERT' and new.menu_item_id is null then
     raise exception 'Choose a menu item for every new order line.' using errcode='22023';
   end if;
+  if tg_op='UPDATE' and new.menu_item_id is not distinct from old.menu_item_id then
+    -- Existing tickets keep their captured price even if the menu item is later disabled or repriced.
+    new.item_name:=old.item_name;
+    new.unit_price:=old.unit_price;
+    return new;
+  end if;
   if new.menu_item_id is not null then
     select * into v_menu from public.restaurant_menu_items m
     where m.id=new.menu_item_id and m.organization_id=new.organization_id and m.is_available;
