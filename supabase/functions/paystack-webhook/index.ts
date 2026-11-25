@@ -306,26 +306,35 @@ Deno.serve(async (req: Request) => {
       }
     } else if (eventType === 'invoice.payment_failed') {
       const code = subscriptionCode(data);
-      if (code) await serviceClient.from('organization_subscriptions').update({ status: 'past_due' })
-        .eq('provider_subscription_code', code);
+      if (!code) throw new Error('Failed invoice webhook did not include a subscription code.');
+      const { error: invoiceFailureError } = await serviceClient.from('organization_subscriptions')
+        .update({ status: 'past_due' }).eq('provider_subscription_code', code);
+      if (invoiceFailureError) throw new Error('Could not lock the workspace after a failed invoice payment.');
     } else if (eventType === 'subscription.not_renew') {
       const code = subscriptionCode(data);
-      if (code) await serviceClient.from('organization_subscriptions').update({ cancel_at_period_end: true })
-        .eq('provider_subscription_code', code);
+      if (code) {
+        const { error: nonRenewalError } = await serviceClient.from('organization_subscriptions')
+          .update({ cancel_at_period_end: true }).eq('provider_subscription_code', code);
+        if (nonRenewalError) throw new Error('Could not record the subscription non-renewal request.');
+      }
     } else if (eventType === 'subscription.disable') {
       const code = subscriptionCode(data);
-      if (code) await serviceClient.from('organization_subscriptions').update({ status: 'cancelled' })
-        .eq('provider_subscription_code', code);
+      if (code) {
+        const { error: disabledSubscriptionError } = await serviceClient.from('organization_subscriptions')
+          .update({ status: 'cancelled', cancel_at_period_end: false }).eq('provider_subscription_code', code);
+        if (disabledSubscriptionError) throw new Error('Could not lock the disabled subscription.');
+      }
     } else if (eventType === 'invoice.update') {
       const code = subscriptionCode(data);
       if (code && (data.status === 'success' || data.paid === true)) {
-        await serviceClient.from('organization_subscriptions').update({
+        const { error: invoiceSuccessError } = await serviceClient.from('organization_subscriptions').update({
           status: 'active',
           cancel_at_period_end: false,
           current_period_starts_at: data.period_start ?? data.paid_at ?? new Date().toISOString(),
           current_period_ends_at: data.period_end ?? data.due_date ?? null,
           latest_payment_reference: data.transaction?.reference ?? data.reference ?? null,
         }).eq('provider_subscription_code', code);
+        if (invoiceSuccessError) throw new Error('Could not restore access after a successful invoice payment.');
       }
     }
 
