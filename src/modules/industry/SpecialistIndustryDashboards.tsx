@@ -44,7 +44,9 @@ function useBoard(table: string, sort: string, fields: Field[], defaults: RowRec
       else if (f.type === 'datetime-local') payload[f.name] = raw ? new Date(raw).toISOString() : null;
       else payload[f.name] = raw || defaults[f.name] || null;
     }
-    if (fd.has('table_id')) payload.table_id = String(fd.get('table_id') ?? '') || null;\n    if (fd.has('covers')) payload.covers = Number(fd.get('covers') ?? 1);\n    if (fd.has('table_id')) payload.table_id = String(fd.get('table_id') ?? '') || null;\n    if (fd.has('covers')) payload.covers = Number(fd.get('covers') ?? 1);\n    const { error: insertError } = await db.from(table).insert(payload);
+    if (fd.has('table_id')) payload.table_id = String(fd.get('table_id') ?? '') || null;
+    if (fd.has('covers')) payload.covers = Number(fd.get('covers') ?? 1);
+    const { error: insertError } = await db.from(table).insert(payload);
     if (insertError) setError(insertError.code === '23505' ? 'That reference already exists in this organisation.' : insertError.message);
     else { setNotice('Record created successfully.'); setForm(false); await refresh(); }
     setSaving(false);
