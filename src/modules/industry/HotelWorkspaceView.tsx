@@ -88,21 +88,14 @@ export function HotelWorkspaceView() {
   const changeReservationStatus = async (reservation: Reservation, status: string) => {
     if (!activeOrganisation || !canManage) return;
     setSaving(true); setError(null); setNotice(null);
-    const { error: e } = await supabase.from('hotel_reservations').update({ status }).eq('id', reservation.id).eq('organization_id', activeOrganisation.id);
-    if (e) setError(e.message);
+    const { data, error: updateError } = await supabase.from('hotel_reservations')
+      .update({ status }).eq('id', reservation.id).eq('organization_id', activeOrganisation.id).select('id').maybeSingle();
+    if (updateError) setError('Reservation status was not saved: ' + updateError.message);
+    else if (!data) setError('No reservation was updated. Check your organisation access and permissions.');
     else {
-      if (reservation.room_id && status === 'checked_in') await supabase.from('hotel_rooms').update({ status: 'occupied' }).eq('id', reservation.room_id).eq('organization_id', activeOrganisation.id);
-      if (reservation.room_id && ['checked_out', 'cancelled', 'no_show'].includes(status)) {
-        await supabase.from('hotel_rooms').update({ status: 'dirty' }).eq('id', reservation.room_id).eq('organization_id', activeOrganisation.id);
-        if (status === 'checked_out') {
-          await supabase.from('hotel_housekeeping_tasks').insert({
-            organization_id: activeOrganisation.id, room_id: reservation.room_id, room_label: reservation.room_label,
-            task_type: 'room_turnover', priority: 'high', status: 'pending',
-            notes: 'Guest checkout turnover for reservation ' + reservation.confirmation_code,
-          });
-        }
-      }
-      setNotice(status === 'checked_in' ? 'Guest checked in. Room marked occupied.' : status === 'checked_out' ? 'Guest checked out. Room marked dirty and a turnover task was created.' : 'Reservation updated.');
+      setNotice(status === 'checked_in' ? 'Guest checked in and the room was marked occupied.'
+        : status === 'checked_out' ? 'Guest checked out, the room was marked dirty and a turnover task was created.'
+        : 'Reservation updated.');
       await load();
     }
     setSaving(false);
