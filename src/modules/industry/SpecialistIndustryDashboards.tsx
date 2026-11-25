@@ -132,6 +132,12 @@ export function RestaurantWorkspaceView() {
  const [menuItems,setMenuItems]=useState<RowRecord[]>([]);
  const [menuCategories,setMenuCategories]=useState<RowRecord[]>([]);
  const [tables,setTables]=useState<RowRecord[]>([]);
+ const [paymentAccounts,setPaymentAccounts]=useState<RowRecord[]>([]);
+ const [orderPayments,setOrderPayments]=useState<RowRecord[]>([]);
+ const [paymentAmount,setPaymentAmount]=useState('');
+ const [paymentAccountId,setPaymentAccountId]=useState('');
+ const [paymentReference,setPaymentReference]=useState('');
+ const [paymentNotes,setPaymentNotes]=useState('');
  const [menuName,setMenuName]=useState('');
  const [menuPrice,setMenuPrice]=useState('');
  const [menuStation,setMenuStation]=useState('kitchen');
@@ -163,11 +169,14 @@ export function RestaurantWorkspaceView() {
    db.from('restaurant_tables').select('*').eq('organization_id',activeOrganisation.id).order('table_number')
   ]);
   if(menuResult.error||categoryResult.error||tableResult.error){setRestaurantError(menuResult.error?.message||categoryResult.error?.message||tableResult.error?.message||'Could not load restaurant setup.');return;}
-  setMenuItems(menuResult.data??[]);setMenuCategories(categoryResult.data??[]);setTables(tableResult.data??[]);setRestaurantError(null);
+  setMenuItems(menuResult.data??[]);setMenuCategories(categoryResult.data??[]);setTables(tableResult.data??[]);
+  const {data:accounts,error:accountsError}=await db.rpc('restaurant_get_payment_accounts',{p_organization_id:activeOrganisation.id});
+  if(accountsError){setPaymentAccounts([]);setRestaurantError(accountsError.message);}else setPaymentAccounts(accounts??[]);
+  setRestaurantError(null);
  },[db,activeOrganisation?.id]);
  useEffect(()=>{void refreshRestaurantSetup();},[refreshRestaurantSetup]);
  const addMenuItem=async(e:FormEvent<HTMLFormElement>)=>{
-  e.preventDefault();if(!db||!activeOrganisation)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  e.preventDefault();if(!db||!activeOrganisation||!canManageRestaurant)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
   const {error}=await db.from('restaurant_menu_items').insert({organization_id:activeOrganisation.id,category_id:menuCategoryId||null,name:menuName.trim(),price:Number(menuPrice),prep_station:menuStation,is_available:true});
   if(error)setRestaurantError(error.message);else{setMenuName('');setMenuPrice('');setMenuCategoryId('');setRestaurantNotice('Menu item saved.');await refreshRestaurantSetup();}
   setRestaurantSaving(false);
@@ -201,23 +210,42 @@ export function RestaurantWorkspaceView() {
   setRestaurantSaving(false);
  };
  const addDiningTable=async(e:FormEvent<HTMLFormElement>)=>{
-  e.preventDefault();if(!db||!activeOrganisation)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  e.preventDefault();if(!db||!activeOrganisation||!canManageRestaurant)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
   const {error}=await db.from('restaurant_tables').insert({organization_id:activeOrganisation.id,table_number:tableNumber.trim(),seats:Number(tableSeats)});
   if(error)setRestaurantError(error.code==='23505'?'That table number already exists.':error.message);else{setTableNumber('');setRestaurantNotice('Dining table added.');await refreshRestaurantSetup();}
   setRestaurantSaving(false);
  };
  const openOrderItems=async(order:RowRecord)=>{
   setSelectedOrder(order);setRestaurantError(null);setRestaurantNotice(null);setSelectedMenuItem('');setItemQuantity('1');setItemModifiers('');
-  const {data,error}=await db.from('restaurant_order_items').select('*').eq('organization_id',activeOrganisation?.id).eq('order_id',order.id).order('created_at');
-  if(error){setRestaurantError(error.message);setOrderItems([]);}else setOrderItems(data??[]);
+  const [{data,error},{data:payments,paymentsError}]=await Promise.all([
+   db.from('restaurant_order_items').select('*').eq('organization_id',activeOrganisation?.id).eq('order_id',order.id).order('created_at'),
+   db.from('restaurant_order_payments').select('id,amount,reference,paid_at,financial_account_id,received_by').eq('organization_id',activeOrganisation?.id).eq('order_id',order.id).order('paid_at')
+  ]);
+  if(error||paymentsError){setRestaurantError(error?.message||paymentsError?.message||'Could not load ticket details.');setOrderItems([]);setOrderPayments([]);}
+  else{setOrderItems(data??[]);setOrderPayments(payments??[]);setPaymentAmount('');setPaymentAccountId('');setPaymentReference('');setPaymentNotes('');}
  };
  const addOrderItem=async(e:FormEvent<HTMLFormElement>)=>{
   e.preventDefault();if(!db||!activeOrganisation||!selectedOrder)return;
   if(['completed','cancelled'].includes(selectedOrder.status)){setRestaurantError('This ticket is closed and can no longer be changed.');return;}
   const item=menuItems.find(x=>x.id===selectedMenuItem);if(!item)return;
   setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
-  const {error}=await db.from('restaurant_order_items').insert({organization_id:activeOrganisation.id,order_id:selectedOrder.id,menu_item_id:item.id,item_name:item.name,quantity:Number(itemQuantity),unit_price:Number(item.price),modifiers:itemModifiers.trim()||null});
+  if(!item.is_available){setRestaurantError('That menu item is no longer available.');return;}
+  const {error}=await db.rpc('restaurant_add_order_item',{p_organization_id:activeOrganisation.id,p_order_id:selectedOrder.id,p_menu_item_id:item.id,p_quantity:Number(itemQuantity),p_modifiers:itemModifiers.trim()||null,p_notes:null});
   if(error)setRestaurantError(error.message);else{setRestaurantNotice('Order item added. Ticket total recalculated automatically.');await openOrderItems(selectedOrder);await ctx.refresh();}
+  setRestaurantSaving(false);
+ };
+ const recordRestaurantPayment=async(e:FormEvent<HTMLFormElement>)=>{
+  e.preventDefault();if(!db||!activeOrganisation||!selectedOrder)return;
+  if(!paymentAccountId){setRestaurantError('Select the cash, bank or wallet account that received this payment.');return;}
+  const amount=Number(paymentAmount);
+  if(!Number.isFinite(amount)||amount<=0){setRestaurantError('Enter a valid payment amount.');return;}
+  setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  const {error}=await db.rpc('restaurant_record_payment',{
+   p_organization_id:activeOrganisation.id,p_order_id:selectedOrder.id,p_financial_account_id:paymentAccountId,
+   p_amount:amount,p_reference:paymentReference.trim()||null,p_notes:paymentNotes.trim()||null,p_idempotency_key:crypto.randomUUID()
+  });
+  if(error)setRestaurantError('Payment could not be recorded: '+error.message);
+  else{setRestaurantNotice('Payment recorded and posted to the finance ledger.');await openOrderItems(selectedOrder);await ctx.refresh();}
   setRestaurantSaving(false);
  };
  const advanceOrderStatus=async(row:RowRecord,status:string)=>{
@@ -274,6 +302,18 @@ export function RestaurantWorkspaceView() {
     <button disabled={restaurantSaving||!menuItems.length} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white">Add to ticket</button>
    </form>
    <div className="mt-3 divide-y divide-slate-100">{orderItems.map(item=><div key={item.id} className="flex justify-between py-2 text-xs"><span>{item.quantity} × {item.item_name} {item.modifiers&&<small className="text-slate-500"> · {item.modifiers}</small>}</span><b>{money(item.line_total,ctx.currency)}</b></div>)}</div>
+   <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-xs font-semibold">Payments & balance</h3><p className="text-xs">Paid <b>{money(orderPayments.reduce((sum,p)=>sum+Number(p.amount||0),0),ctx.currency)}</b> · Due <b>{money(Math.max(Number(selectedOrder.total_amount||0)-orderPayments.reduce((sum,p)=>sum+Number(p.amount||0),0),0),ctx.currency)}</b></p></div>
+    <div className="mt-2 divide-y divide-slate-100">{orderPayments.map(p=><div key={p.id} className="flex justify-between py-1.5 text-[11px]"><span>{p.reference} · {new Date(p.paid_at).toLocaleString()}</span><b>{money(p.amount,ctx.currency)}</b></div>)}</div>
+    {!['completed','cancelled'].includes(selectedOrder.status)&&<form onSubmit={e=>void recordRestaurantPayment(e)} className="mt-3 grid gap-2 sm:grid-cols-2">
+     <select required value={paymentAccountId} onChange={e=>setPaymentAccountId(e.target.value)} className={cls}><option value="">Select receiving account</option>{paymentAccounts.map(a=><option key={a.id} value={a.id}>{a.account_name} · {titleCase(a.account_type)}</option>)}</select>
+     <input required type="number" min="0.01" step="0.01" value={paymentAmount} onChange={e=>setPaymentAmount(e.target.value)} placeholder="Amount received" className={cls}/>
+     <input value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder="Payment reference (optional)" className={cls}/>
+     <input value={paymentNotes} onChange={e=>setPaymentNotes(e.target.value)} placeholder="Payment note (optional)" className={cls}/>
+     <button disabled={restaurantSaving||!paymentAccounts.length} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white sm:col-span-2">{restaurantSaving?'Recording…':'Record payment'}</button>
+     {!paymentAccounts.length&&<p className="text-[11px] text-amber-700 sm:col-span-2">No active cash/bank account is configured. The Owner or Manager must add one in Finance before collecting POS payments.</p>}
+    </form>}
+   </div>
   </section>}
   <section className="rounded-xl border border-slate-200 bg-white">
    <div className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-semibold">Service counter</h2><p className="mt-1 text-xs text-slate-500">Create a complete itemised ticket before it enters the kitchen.</p></div><button onClick={()=>setShowOrderForm(!showOrderForm)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"><Plus className="h-4 w-4"/> New order</button></div>
