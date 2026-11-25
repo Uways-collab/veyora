@@ -144,7 +144,8 @@ declare
   target_feature text := tg_argv[0];
 begin
   if (auth.jwt() ->> 'role') = 'service_role' then
-    if tg_op='DELETE' then return old; end if;\n    return new;
+    if tg_op='DELETE' then return old; end if;
+    return new;
   end if;
 
   if tg_op='DELETE' then
@@ -159,7 +160,8 @@ begin
       using errcode='42501';
   end if;
 
-  if tg_op='DELETE' then return old; end if;\n  return new;
+  if tg_op='DELETE' then return old; end if;
+  return new;
 end;
 $function$;
 revoke all on function private.guard_business_access() from public,anon,authenticated;
