@@ -61,6 +61,7 @@ declare
   completion_allowed boolean := coalesce(pg_catalog.current_setting('veyora.restaurant_completion',true),'')='allowed';
   non_status_old jsonb;
   non_status_new jsonb;
+  derived_update_allowed boolean := coalesce(pg_catalog.current_setting('veyora.restaurant_recalc',true),'')='allowed';
 begin
   select m.role into actor_role
   from public.organization_memberships m
@@ -76,7 +77,7 @@ begin
   if actor_role='staff' then
     non_status_old := pg_catalog.to_jsonb(old) - 'status' - 'updated_at';
     non_status_new := pg_catalog.to_jsonb(new) - 'status' - 'updated_at';
-    if non_status_old is distinct from non_status_new then
+    if non_status_old is distinct from non_status_new and not derived_update_allowed then
       raise exception 'Restaurant staff may update kitchen status only.' using errcode='42501';
     end if;
   elsif actor_role not in ('owner','admin','manager') then
@@ -153,7 +154,7 @@ create or replace function public.restaurant_create_order_with_items(
 )
 returns uuid
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $function$
 declare
@@ -228,6 +229,112 @@ end;
 $function$;
 revoke all on function public.restaurant_create_order_with_items(uuid,text,uuid,integer,text,text,jsonb) from public,anon;
 grant execute on function public.restaurant_create_order_with_items(uuid,text,uuid,integer,text,text,jsonb) to authenticated;
+
+create or replace function public.restaurant_add_order_item(
+  p_organization_id uuid,p_order_id uuid,p_menu_item_id uuid,p_quantity numeric,p_modifiers text,p_notes text
+)
+returns uuid language plpgsql security definer set search_path='' as $function$
+declare
+  v_role text;
+  v_menu public.restaurant_menu_items%rowtype;
+  v_order_status text;
+  v_item_id uuid;
+begin
+  if auth.uid() is null or not private.organization_has_access(p_organization_id,'industry') then
+    raise exception 'Active restaurant workspace access is required.' using errcode='42501';
+  end if;
+  select m.role into v_role from public.organization_memberships m
+  join public.organization_business_types b on b.organization_id=m.organization_id
+    and b.business_type='restaurant' and b.is_primary
+  where m.organization_id=p_organization_id and m.user_id=auth.uid();
+  if v_role is null or v_role not in ('owner','admin','manager','staff') then
+    raise exception 'Restaurant order access denied.' using errcode='42501';
+  end if;
+  if p_quantity is null or p_quantity<=0 then raise exception 'Quantity must be greater than zero.' using errcode='22023'; end if;
+  select o.status into v_order_status from public.restaurant_orders o
+  where o.id=p_order_id and o.organization_id=p_organization_id for update;
+  if v_order_status is null or v_order_status in ('completed','cancelled') then
+    raise exception 'This restaurant ticket is unavailable or already closed.' using errcode='42501';
+  end if;
+  select * into v_menu from public.restaurant_menu_items m
+  where m.id=p_menu_item_id and m.organization_id=p_organization_id and m.is_available for share;
+  if not found then raise exception 'Menu item is unavailable or belongs to another business.' using errcode='42501'; end if;
+  insert into public.restaurant_order_items(organization_id,order_id,menu_item_id,item_name,quantity,unit_price,modifiers,notes)
+  values(p_organization_id,p_order_id,v_menu.id,v_menu.name,p_quantity,v_menu.price,
+    nullif(pg_catalog.btrim(coalesce(p_modifiers,'')),''),nullif(pg_catalog.btrim(coalesce(p_notes,'')),'' ))
+  returning id into v_item_id;
+  return v_item_id;
+end;
+$function$;
+revoke all on function public.restaurant_add_order_item(uuid,uuid,uuid,numeric,text,text) from public,anon;
+grant execute on function public.restaurant_add_order_item(uuid,uuid,uuid,numeric,text,text) to authenticated;
+
+-- Never trust client-supplied menu names or prices on an order line.
+create or replace function private.restaurant_order_item_price_guard()
+returns trigger language plpgsql security definer set search_path='' as $function$
+declare
+  v_menu public.restaurant_menu_items%rowtype;
+begin
+  if tg_op='INSERT' and new.menu_item_id is null then
+    raise exception 'Choose a menu item for every new order line.' using errcode='22023';
+  end if;
+  if new.menu_item_id is not null then
+    select * into v_menu from public.restaurant_menu_items m
+    where m.id=new.menu_item_id and m.organization_id=new.organization_id and m.is_available;
+    if not found then raise exception 'Menu item is unavailable or belongs to another business.' using errcode='42501'; end if;
+    new.item_name:=v_menu.name;
+    new.unit_price:=v_menu.price;
+  end if;
+  return new;
+end;
+$function$;
+revoke all on function private.restaurant_order_item_price_guard() from public,anon,authenticated;
+drop trigger if exists restaurant_order_item_price_guard on public.restaurant_order_items;
+create trigger restaurant_order_item_price_guard
+before insert or update on public.restaurant_order_items
+for each row execute function private.restaurant_order_item_price_guard();
+
+-- Only the total-recalculation trigger may alter derived ticket totals and summaries.
+create or replace function private.restaurant_enforce_derived_totals()
+returns trigger language plpgsql security definer set search_path='' as $function$
+begin
+  if (new.total_amount is distinct from old.total_amount or new.items_summary is distinct from old.items_summary)
+     and coalesce(pg_catalog.current_setting('veyora.restaurant_recalc',true),'')<>'allowed' then
+    raise exception 'Restaurant ticket totals are calculated from item lines and cannot be edited manually.' using errcode='42501';
+  end if;
+  return new;
+end;
+$function$;
+revoke all on function private.restaurant_enforce_derived_totals() from public,anon,authenticated;
+drop trigger if exists restaurant_enforce_derived_totals on public.restaurant_orders;
+create trigger restaurant_enforce_derived_totals
+before update on public.restaurant_orders
+for each row execute function private.restaurant_enforce_derived_totals();
+
+create or replace function public.restaurant_recalculate_order_totals()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public,auth,private as $function$
+declare target_order uuid; target_org uuid;
+begin
+  target_order:=coalesce(new.order_id,old.order_id);
+  target_org:=coalesce(new.organization_id,old.organization_id);
+  if auth.uid() is null or not private.organization_has_access(target_org,'industry') then
+    raise exception 'Restaurant workspace access denied' using errcode='42501';
+  end if;
+  perform pg_catalog.set_config('veyora.restaurant_recalc','allowed',true);
+  update public.restaurant_orders o set
+    total_amount=coalesce((select sum(i.line_total) from public.restaurant_order_items i where i.order_id=target_order and i.organization_id=target_org),0),
+    items_summary=coalesce((select string_agg(i.quantity::text||' × '||i.item_name,', ' order by i.created_at) from public.restaurant_order_items i where i.order_id=target_order and i.organization_id=target_org),'Itemised order')
+  where o.id=target_order and o.organization_id=target_org;
+  return coalesce(new,old);
+end;
+$function$;
+revoke all on function public.restaurant_recalculate_order_totals() from public,anon,authenticated;
+
+-- All new orders and order lines must go through the validated server-side POS functions.
+revoke insert on public.restaurant_orders from authenticated;
+revoke insert on public.restaurant_order_items from authenticated;
+grant select,update on public.restaurant_orders to authenticated;
+grant select,update,delete on public.restaurant_order_items to authenticated;
 
 
 -- Vehicle stock and deal creation are manager-only; staff work leads, test drives and workshop tickets.
