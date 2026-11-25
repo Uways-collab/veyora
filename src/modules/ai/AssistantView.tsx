@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Bot, Loader2, MessageCircle, Send, Sparkles, UserRound } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { getSupabaseClient } from '../../core/supabase/client';
@@ -28,6 +28,36 @@ export function AssistantView() {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const historyKey = user && activeOrganisation ? `veyora_ai_chat:${user.id}:${activeOrganisation.id}` : null;
+  const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!historyKey) {
+      setMessages([]);
+      setLoadedHistoryKey(null);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(historyKey);
+      const parsed = raw ? JSON.parse(raw) as Message[] : [];
+      const safeMessages = Array.isArray(parsed)
+        ? parsed.filter((item) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string').slice(-80)
+        : [];
+      setMessages(safeMessages);
+    } catch {
+      setMessages([]);
+    }
+    setLoadedHistoryKey(historyKey);
+  }, [historyKey]);
+
+  useEffect(() => {
+    if (!historyKey || loadedHistoryKey !== historyKey) return;
+    try {
+      window.localStorage.setItem(historyKey, JSON.stringify(messages.slice(-80)));
+    } catch {
+      setError('This browser could not save local AI history. You can continue chatting, but this history may not persist.');
+    }
+  }, [historyKey, loadedHistoryKey, messages]);
 
   const send = async (event?: FormEvent, prompt?: string) => {
     event?.preventDefault();
@@ -72,10 +102,13 @@ export function AssistantView() {
           <h1 className="font-display text-2xl font-semibold tracking-tight text-slate-900">AI Business Assistant</h1>
           <p className="mt-1 text-sm text-slate-600">Ask questions about your operations and get practical guidance based on available workspace summaries.</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-          <span className="font-semibold text-slate-800">{activeOrganisation?.name ?? 'Workspace'}</span>
-          <span className="mx-1.5 text-slate-300">·</span>
-          <span className="capitalize">{activeRole ?? 'member'}</span>
+        <div className="flex items-center gap-2">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+            <span className="font-semibold text-slate-800">{activeOrganisation?.name ?? 'Workspace'}</span>
+            <span className="mx-1.5 text-slate-300">·</span>
+            <span className="capitalize">{activeRole ?? 'member'}</span>
+          </div>
+          <button type="button" onClick={() => { setMessages([]); setError(null); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">New chat</button>
         </div>
       </header>
 
@@ -119,7 +152,7 @@ export function AssistantView() {
             <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} rows={2} maxLength={2000} placeholder="Ask Veyora about your business…" className="max-h-32 min-h-12 flex-1 resize-y border-0 bg-transparent px-2 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400" />
             <button type="submit" disabled={busy || !draft.trim()} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-blue-700 px-4 text-xs font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"><Send className="h-4 w-4" /><span className="hidden sm:inline">Send</span></button>
           </div>
-          <p className="mt-2 px-1 text-[10px] leading-4 text-slate-400">AI responses can be inaccurate. Verify figures in the relevant Veyora module before making business decisions. Do not send passwords or payment credentials.</p>
+          <p className="mt-2 px-1 text-[10px] leading-4 text-slate-400">AI responses can be inaccurate. Verify figures in the relevant Veyora module. Chat history is saved only in this browser on this device, not in Veyora’s database, and will not sync to another device.</p>
         </form>
       </section>
     </div>
