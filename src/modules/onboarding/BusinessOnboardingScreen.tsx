@@ -6,8 +6,7 @@ import {
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
 } from '../../core/constants/businessOptions';
-import type { BusinessCategory, BusinessType } from '../../core/types/domain';
-import { getSupabaseClient } from '../../core/supabase/client';
+import type { BusinessCategory } from '../../core/types/domain';
 
 export function BusinessOnboardingScreen() {
   const {
@@ -22,7 +21,6 @@ export function BusinessOnboardingScreen() {
   } = useAuth();
 
   const [name, setName] = useState('');
-  const [businessType, setBusinessType] = useState<BusinessType>('retail');
   const [businessCategory, setBusinessCategory] = useState<BusinessCategory>('retail');
   const [country, setCountry] = useState('Nigeria');
   const [currency, setCurrency] = useState('NGN');
@@ -75,7 +73,8 @@ export function BusinessOnboardingScreen() {
     try {
       const { error, organisationId } = await createOrganisation({
         name: trimmedName,
-        businessType,
+        businessType: businessCategory,
+        configuration: { business_description: businessDescription.trim(), products_or_services: productsOrServices.trim(), operating_channels: operatingChannels, team_size: teamSize, location_count: locationCount, priorities: businessPriorities },
         country,
         baseCurrency: currency,
         timezone,
@@ -90,16 +89,6 @@ export function BusinessOnboardingScreen() {
         return;
       }
 
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const categoryRows = [{ organization_id: organisationId, business_type: businessCategory, is_primary: true, configuration: { business_description: businessDescription.trim(), products_or_services: productsOrServices.trim(), operating_channels: operatingChannels, team_size: teamSize, location_count: locationCount, priorities: businessPriorities } }];
-        const { error: categoryError } = await supabase
-          .from('organization_business_types')
-          .upsert(categoryRows, { onConflict: 'organization_id,business_type' });
-        if (categoryError) {
-          setErrorMsg('Workspace created, but industry selections could not be saved: ' + categoryError.message);
-        }
-      }
       setSuccessMsg('Business workspace "' + trimmedName + '" created with the ' + businessCategory.replaceAll('_', ' ') + ' workspace. Loading dashboard...');
     } catch (err: unknown) {
       setErrorMsg(
@@ -250,7 +239,7 @@ export function BusinessOnboardingScreen() {
             <div className="space-y-2">
               <label htmlFor="onboard-business-category" className="block text-xs font-semibold text-slate-900">Business type <span className="text-red-600">*</span></label>
               <p className="text-xs leading-5 text-slate-500">Each workspace belongs to one business type and receives only that business's specialist tools. To operate another business, create a separate business workspace.</p>
-              <select id="onboard-business-category" required value={businessCategory} onChange={(event) => { const value = event.target.value as BusinessCategory; setBusinessCategory(value); setBusinessType((["retail","wholesale","distribution","services","hybrid"] as BusinessType[]).includes(value as BusinessType) ? value as BusinessType : "hybrid"); }} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
+              <select id="onboard-business-category" required value={businessCategory} onChange={(event) => setBusinessCategory(event.target.value as BusinessCategory)} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
                 {BUSINESS_CATEGORY_OPTIONS.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
               </select>
             </div>
