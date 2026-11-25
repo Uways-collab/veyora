@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { AlertCircle, Download, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { fetchSalesModuleData } from '../sales/salesService';
-import type { SaleRecord, SalesModuleData } from '../sales/salesTypes';
+import type { SalesModuleData } from '../sales/salesTypes';
 import { fetchPurchaseReferenceData, fetchPurchasesList } from '../purchases/purchasesService';
 import type { PurchaseRecord } from '../purchases/purchasesTypes';
 import { loadFinanceReportLines } from '../finance/financeService';
@@ -37,7 +38,7 @@ function downloadCsv(filename: string, rows: unknown[][]): void {
 function Metric({ label, value, note }: { label: string; value: string; note: string }) {
   return <div className="rounded-lg border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-xl font-semibold tracking-tight text-slate-900">{value}</p><p className="mt-1 text-[11px] text-slate-500">{note}</p></div>;
 }
-function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
+function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return <section className="rounded-lg border border-slate-200 bg-white p-4"><div className="mb-3"><h3 className="text-sm font-semibold text-slate-900">{title}</h3>{note && <p className="mt-1 text-xs text-slate-500">{note}</p>}</div>{children}</section>;
 }
 function EmptyRows({ children = 'No matching transactions were found for this date range.' }: { children?: string }) {
