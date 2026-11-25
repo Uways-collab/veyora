@@ -167,10 +167,10 @@ export function IndustryWorkspacesView() {
       setSelectedCategories([]);
       return;
     }
-    const categories = (data ?? []).map((item) => String(item.business_type) as BusinessCategory);
-    setSelectedCategories(categories);
     const primary = data?.find((item) => item.is_primary)?.business_type as BusinessCategory | undefined;
-    setActiveCategory((current) => current && categories.includes(current) ? current : (primary && ALL_CATEGORIES.includes(primary) ? primary : categories.find((item) => ALL_CATEGORIES.includes(item)) ?? null));
+    const assigned = primary && ALL_CATEGORIES.includes(primary) ? primary : null;
+    setSelectedCategories(assigned ? [assigned] : []);
+    setActiveCategory(assigned);
   }, [industrySupabase, activeOrganisation?.id]);
 
   const loadRecords = useCallback(async () => {
@@ -334,24 +334,13 @@ export function IndustryWorkspacesView() {
       {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
       {notice && <div role="status" className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />{notice}</div>}
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-slate-900">Your business categories</h2><p className="text-xs text-slate-500">Select the specialist areas this organisation operates.</p></div><span className="text-[11px] text-slate-500">{selectedCategories.length} selected</span></div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {INDUSTRIES.map((item) => {
-            const Icon = item.icon;
-            const selected = selectedCategories.includes(item.category);
-            return (
-              <button key={item.category} type="button" disabled={!selected && (!canManageCategories || saving)} onClick={() => { if (selected) { setActiveCategory(item.category); setFormOpen(false); setError(null); } else void addCategory(item.category); }}
-                className={'rounded-xl border p-4 text-left transition ' + (activeCategory === item.category ? 'border-blue-400 bg-blue-50/70 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-slate-300') + ((!selected && !canManageCategories) ? ' cursor-not-allowed opacity-60' : '')}>
-                <div className="flex items-start justify-between gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Icon className="h-5 w-5" /></span><span className={'rounded-full px-2 py-1 text-[10px] font-semibold ' + (selected ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>{selected ? 'Selected' : canManageCategories ? 'Add category' : 'Not selected'}</span></div>
-                <div className="mt-3 text-sm font-semibold text-slate-900">{item.label}</div><p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
-                {selected && <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-blue-700">Open workspace <ArrowRight className="h-3 w-3" /></div>}
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-[11px] leading-5 text-slate-500">Category selection describes your business mix. Paid add-on checkout and entitlement enforcement are being completed separately; these initial workflows are available for controlled preview and testing.</p>
-      </section>
+      {industry && selectedCategories.includes(industry.category) && (
+        <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Business workspace</div>
+          <h2 className="mt-1 text-sm font-semibold text-slate-900">{industry.label}</h2>
+          <p className="mt-1 text-xs text-slate-500">This workspace is configured for one business type. To run another business, create a separate business workspace; unrelated industry tools are not added here.</p>
+        </section>
+      )}
 
       {industry && selectedCategories.includes(industry.category) ? (
         <>
