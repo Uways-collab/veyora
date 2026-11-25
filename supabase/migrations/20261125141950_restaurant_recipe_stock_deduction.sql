@@ -71,41 +71,102 @@ drop trigger if exists a_subscription_feature_guard on public.restaurant_recipe_
 create trigger a_subscription_feature_guard before insert or update or delete on public.restaurant_recipe_ingredients
 for each row execute function private.guard_business_access('industry');
 
--- Permit staff to deduct stock only when the restaurant completion RPC explicitly sets its private transaction flag.
-do $function$
-declare definition text; updated_definition text;
+-- Permit staff to deduct stock only while the secure restaurant completion RPC is running.
+create or replace function public.adjust_inventory_stock(
+  p_organization_id uuid,p_variant_id uuid,p_location_id uuid,p_quantity_change numeric,
+  p_movement_type text,p_reference text default null,p_notes text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path=''
+as $function$
+declare
+  v_user_id uuid;
+  v_product_type text;
+  v_quantity_before numeric(14,3);
+  v_quantity_after numeric(14,3);
+  v_movement_id uuid;
 begin
-  definition:=pg_catalog.replace(pg_catalog.pg_get_functiondef('public.adjust_inventory_stock(uuid,uuid,uuid,numeric,text,text,text)'::regprocedure),E'\\r\\n',E'\\n');
-  updated_definition:=pg_catalog.replace(
-    definition,
-    $old$    IF NOT public.has_inventory_role(
-        p_organization_id,
-        ARRAY['owner', 'admin', 'manager']::TEXT[]
-    ) THEN
-        RAISE EXCEPTION 'You are not authorised to adjust stock';
-    END IF;$old$,
-    $new$    IF NOT public.has_inventory_role(
-        p_organization_id,
-        ARRAY['owner', 'admin', 'manager']::TEXT[]
-    ) THEN
-        IF NOT (
-          coalesce(pg_catalog.current_setting('veyora.restaurant_stock_deduction',true),'')='allowed'
-          AND private.organization_has_access(p_organization_id,'industry')
-          AND EXISTS (
-            SELECT 1 FROM public.organization_memberships m
-            JOIN public.organization_business_types b ON b.organization_id=m.organization_id
-              AND b.business_type='restaurant' AND b.is_primary
-            WHERE m.organization_id=p_organization_id AND m.user_id=auth.uid() AND m.role='staff'
-          )
-        ) THEN
-          RAISE EXCEPTION 'You are not authorised to adjust stock';
-        END IF;
-    END IF;$new$
-  );
-  if updated_definition=definition then raise exception 'Could not install restaurant stock deduction role guard'; end if;
-  execute updated_definition;
+  v_user_id:=auth.uid();
+  if v_user_id is null then raise exception 'Authentication required'; end if;
+
+  if not public.has_inventory_role(p_organization_id,array['owner','admin','manager']::text[]) then
+    if not (
+      coalesce(pg_catalog.current_setting('veyora.restaurant_stock_deduction',true),'')='allowed'
+      and private.organization_has_access(p_organization_id,'industry')
+      and exists(
+        select 1 from public.organization_memberships m
+        join public.organization_business_types b on b.organization_id=m.organization_id
+          and b.business_type='restaurant' and b.is_primary
+        where m.organization_id=p_organization_id and m.user_id=v_user_id and m.role='staff'
+      )
+    ) then
+      raise exception 'You are not authorised to adjust stock';
+    end if;
+  end if;
+
+  if p_quantity_change is null or p_quantity_change=0 then raise exception 'Quantity change must not be zero'; end if;
+  if p_movement_type not in ('opening_stock','stock_in','stock_out','adjustment','return') then
+    raise exception 'Invalid stock movement type';
+  end if;
+  if p_movement_type in ('opening_stock','stock_in','return') and p_quantity_change<=0 then
+    raise exception 'This movement type requires a positive quantity';
+  end if;
+  if p_movement_type='stock_out' and p_quantity_change>=0 then
+    raise exception 'Stock out requires a negative quantity';
+  end if;
+
+  select p.product_type into v_product_type
+  from public.product_variants pv
+  join public.products p on p.id=pv.product_id and p.organization_id=pv.organization_id
+  where pv.id=p_variant_id and pv.organization_id=p_organization_id
+    and pv.is_active=true and p.is_active=true;
+  if v_product_type is distinct from 'physical' then
+    raise exception 'Only active physical products can have stock';
+  end if;
+
+  if not exists(select 1 from public.inventory_locations
+    where id=p_location_id and organization_id=p_organization_id and is_active=true) then
+    raise exception 'Active inventory location not found';
+  end if;
+
+  insert into public.inventory_balances(organization_id,variant_id,location_id,quantity)
+  values(p_organization_id,p_variant_id,p_location_id,0)
+  on conflict(organization_id,variant_id,location_id) do nothing;
+
+  select quantity into v_quantity_before from public.inventory_balances
+  where organization_id=p_organization_id and variant_id=p_variant_id and location_id=p_location_id
+  for update;
+
+  if p_movement_type='opening_stock' then
+    if v_quantity_before<>0 or exists(select 1 from public.stock_movements
+      where organization_id=p_organization_id and variant_id=p_variant_id and location_id=p_location_id) then
+      raise exception 'Opening stock has already been recorded';
+    end if;
+  end if;
+
+  v_quantity_after:=v_quantity_before+p_quantity_change;
+  if v_quantity_after<0 then
+    raise exception 'Insufficient stock. Available quantity: %',v_quantity_before;
+  end if;
+
+  update public.inventory_balances set quantity=v_quantity_after,updated_at=pg_catalog.now()
+  where organization_id=p_organization_id and variant_id=p_variant_id and location_id=p_location_id;
+
+  insert into public.stock_movements(
+    organization_id,variant_id,location_id,movement_type,quantity_change,
+    quantity_before,quantity_after,reference,notes,performed_by
+  )
+  values(
+    p_organization_id,p_variant_id,p_location_id,p_movement_type,p_quantity_change,
+    v_quantity_before,v_quantity_after,p_reference,p_notes,v_user_id
+  ) returning id into v_movement_id;
+
+  return v_movement_id;
 end;
 $function$;
+grant execute on function public.adjust_inventory_stock(uuid,uuid,uuid,numeric,text,text,text) to authenticated;
 
 -- Stock is deducted once, atomically, when a fully paid restaurant ticket is completed.
 create or replace function public.restaurant_complete_order(p_organization_id uuid,p_order_id uuid)
