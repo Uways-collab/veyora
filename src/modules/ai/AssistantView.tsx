@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Bot, Loader2, MessageCircle, Send, Sparkles, UserRound } from 'lucide-react';
+import { Bot, FileUp, Loader2, MessageCircle, Send, Sparkles, UserRound } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { getSupabaseClient } from '../../core/supabase/client';
 
@@ -108,6 +108,7 @@ export function AssistantView() {
             <span className="mx-1.5 text-slate-300">·</span>
             <span className="capitalize">{activeRole ?? 'member'}</span>
           </div>
+          <button type="button" onClick={() => { try { window.localStorage.setItem('veyora_open_invoice_scanner', '1'); } catch { /* navigation still works */ } window.location.hash = '#/purchases'; }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800"><FileUp className="h-3.5 w-3.5" /> Upload invoice</button>
           <button type="button" onClick={() => { setMessages([]); setError(null); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">New chat</button>
         </div>
       </header>
