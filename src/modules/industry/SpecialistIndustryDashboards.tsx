@@ -50,19 +50,20 @@ function useBoard(table: string, sort: string, fields: Field[], defaults: RowRec
     setSaving(false);
   };
   const updateField = async (row: RowRecord, field: string, value: unknown) => {
-    if (!db || !activeOrganisation) return;
+    if (!db || !activeOrganisation || !canManage) return;
     setSaving(true); setError(null); setNotice(null);
-    const { error: updateError } = await db.from(table).update({ [field]: value }).eq('id', row.id).eq('organization_id', activeOrganisation.id);
+    const { data, error: updateError } = await db.from(table).update({ [field]: value }).eq('id', row.id).eq('organization_id', activeOrganisation.id).select('id').maybeSingle();
     if (updateError) setError('Record update failed: ' + updateError.message);
+    else if (!data) setError('No record was updated. Check your organisation access and permissions.');
     else { setNotice('Record details updated.'); await refresh(); }
     setSaving(false);
   };
   const changeStatus = async (row: RowRecord, status: string) => {
-    if (!db || !activeOrganisation) return;
+    if (!db || !activeOrganisation || !canManage) return;
     setSaving(true); setError(null); setNotice(null);
-    const { error: updateError, count } = await db.from(table).update({ status }).eq('id', row.id).eq('organization_id', activeOrganisation.id).select('id');
+    const { data, error: updateError } = await db.from(table).update({ status }).eq('id', row.id).eq('organization_id', activeOrganisation.id).select('id').maybeSingle();
     if (updateError) setError('Workflow update failed: ' + updateError.message);
-    else if (!count && !row.id) setError('The record could not be found.');
+    else if (!data) setError('No record was updated. Check your organisation access and permissions.');
     else { setNotice('Workflow status updated.'); await refresh(); }
     setSaving(false);
   };
