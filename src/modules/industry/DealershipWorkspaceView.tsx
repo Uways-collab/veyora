@@ -90,10 +90,12 @@ export function DealershipWorkspaceView() {
 
   const changeStatus = async (table: string, id: string, status: string) => {
     if (!supabase || !activeOrganisation || !canManage) return;
-    setError(null); setNotice(null);
-    const { error: updateError } = await supabase.from(table).update({ status }).eq('id', id).eq('organization_id', activeOrganisation.id);
+    setSaving(true); setError(null); setNotice(null);
+    const { data, error: updateError } = await supabase.from(table).update({ status }).eq('id', id).eq('organization_id', activeOrganisation.id).select('id').maybeSingle();
     if (updateError) setError('The workflow status was not saved: ' + updateError.message);
+    else if (!data) setError('No record was updated. Check your organisation access and permissions.');
     else { setNotice('Workflow updated.'); await load(); }
+    setSaving(false);
   };
 
   if (!activeOrganisation) return null;
