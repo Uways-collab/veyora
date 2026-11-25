@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { AlertCircle, ArrowDownRight, ArrowUpRight, CalendarClock, CheckCircle2, ClipboardCheck, ClipboardList, Factory, Home, Loader2, MapPin, Plus, RefreshCw, Truck, Utensils, Wallet } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, CheckCircle2, ClipboardCheck, Factory, Home, Loader2, Plus, RefreshCw, Truck, Utensils } from 'lucide-react';
 import { getSupabaseClient } from '../../core/supabase/client';
 import { useAuth } from '../../core/auth/AuthContext';
 
 type RowRecord = Record<string, any>;
 type Field = { name: string; label: string; type?: string; required?: boolean; options?: string[]; wide?: boolean; min?: string; step?: string };
-type BoardProps = { table: string; sort: string; fields: Field[]; defaults: RowRecord; children: (ctx: BoardContext) => ReactNode };
-type BoardContext = { rows: RowRecord[]; loading: boolean; saving: boolean; error: string | null; notice: string | null; create: (e: FormEvent<HTMLFormElement>) => Promise<void>; changeStatus: (row: RowRecord, status: string) => Promise<void>; refresh: () => Promise<void>; form: boolean; setForm: (v: boolean) => void; fields: Field[]; currency: string };
+
+type BoardContext = { rows: RowRecord[]; loading: boolean; saving: boolean; error: string | null; notice: string | null; create: (e: FormEvent<HTMLFormElement>) => Promise<void>; changeStatus: (row: RowRecord, status: string) => Promise<void>; updateField: (row: RowRecord, field: string, value: unknown) => Promise<void>; refresh: () => Promise<void>; form: boolean; setForm: (v: boolean) => void; fields: Field[]; currency: string };
 const cls = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500';
 const label = 'block space-y-1 text-xs font-medium text-slate-700';
 const titleCase = (s: string) => s.replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -48,6 +48,14 @@ function useBoard(table: string, sort: string, fields: Field[], defaults: RowRec
     else { setNotice('Record created successfully.'); setForm(false); await refresh(); }
     setSaving(false);
   };
+  const updateField = async (row: RowRecord, field: string, value: unknown) => {
+    if (!db || !activeOrganisation) return;
+    setSaving(true); setError(null); setNotice(null);
+    const { error: updateError } = await db.from(table).update({ [field]: value }).eq('id', row.id).eq('organization_id', activeOrganisation.id);
+    if (updateError) setError('Record update failed: ' + updateError.message);
+    else { setNotice('Record details updated.'); await refresh(); }
+    setSaving(false);
+  };
   const changeStatus = async (row: RowRecord, status: string) => {
     if (!db || !activeOrganisation) return;
     setSaving(true); setError(null); setNotice(null);
@@ -57,7 +65,7 @@ function useBoard(table: string, sort: string, fields: Field[], defaults: RowRec
     else { setNotice('Workflow status updated.'); await refresh(); }
     setSaving(false);
   };
-  return { rows, loading, saving, error, notice, create, changeStatus, refresh, form, setForm, fields, currency };
+  return { rows, loading, saving, error, notice, create, changeStatus, updateField, refresh, form, setForm, fields, currency };
 }
 
 function RecordForm({ ctx, onClose, submitLabel }: { ctx: BoardContext; onClose: () => void; submitLabel: string }) {
@@ -148,7 +156,7 @@ export function ManufacturingWorkspaceView() {
  return <Shell eyebrow="Production floor" heading="Manufacturing operations" description="Plan production runs, release work orders, track output, perform quality checks and close completed batches." icon={<Factory className="h-4 w-4"/>} ctx={ctx}>
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Active work orders" value={String(active.length)} hint="Released, in progress or QA"/><Metric label="Planned output" value={totalPlanned.toLocaleString()} hint="Units across recent orders"/><Metric label="Completed output" value={totalDone.toLocaleString()} hint="Reported completed units"/><Metric label="Awaiting quality" value={String(n('quality_check'))} hint="Requires inspection approval"/></div>
   <section className="rounded-xl border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="font-semibold">Production work orders</h2><p className="mt-1 text-xs text-slate-500">Batch planning, work-in-progress and output reporting.</p></div><button onClick={()=>ctx.setForm(!ctx.form)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"><Plus className="h-4 w-4"/> New work order</button></div>{ctx.form&&<RecordForm ctx={ctx} onClose={()=>ctx.setForm(false)} submitLabel="Release work order"/>}
-   {ctx.loading?<p className="p-10 text-center text-xs text-slate-500">Loading production plan…</p>:<div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Work order','Product','Planned','Completed','Progress','Due date','Production stage'].map(x=><th key={x} className="whitespace-nowrap px-4 py-3">{x}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{ctx.rows.map(r=>{const pct=Number(r.planned_quantity)>0?Math.min(100,Math.round(Number(r.completed_quantity||0)/Number(r.planned_quantity)*100)):0;return <tr key={r.id}><td className="px-4 py-3 font-semibold">{r.order_number}</td><td className="px-4 py-3">{r.product_name}</td><td className="px-4 py-3">{Number(r.planned_quantity).toLocaleString()}</td><td className="px-4 py-3">{Number(r.completed_quantity||0).toLocaleString()}</td><td className="min-w-32 px-4 py-3"><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-blue-600" style={{width:pct+'%'}}/></div><span className="text-[10px] text-slate-500">{pct}%</span></td><td className="whitespace-nowrap px-4 py-3">{dateText(r.due_date)}</td><td className="px-4 py-3"><StatusSelect row={r} ctx={ctx} options={r.status==='planned'?['released','cancelled']:r.status==='released'?['in_progress','cancelled']:r.status==='in_progress'?['quality_check','cancelled']:r.status==='quality_check'?['completed','in_progress']:[]}/></td></tr>})}</tbody></table>{!ctx.rows.length&&<p className="p-10 text-center text-xs text-slate-500">No production work orders yet.</p>}</div>}
+   {ctx.loading?<p className="p-10 text-center text-xs text-slate-500">Loading production plan…</p>:<div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Work order','Product','Planned','Completed','Progress','Due date','Production stage'].map(x=><th key={x} className="whitespace-nowrap px-4 py-3">{x}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{ctx.rows.map(r=>{const pct=Number(r.planned_quantity)>0?Math.min(100,Math.round(Number(r.completed_quantity||0)/Number(r.planned_quantity)*100)):0;return <tr key={r.id}><td className="px-4 py-3 font-semibold">{r.order_number}</td><td className="px-4 py-3">{r.product_name}</td><td className="px-4 py-3">{Number(r.planned_quantity).toLocaleString()}</td><td className="px-4 py-3"><input aria-label={'Completed quantity for '+r.order_number} type="number" min="0" max={r.planned_quantity} step="0.001" defaultValue={r.completed_quantity||0} disabled={ctx.saving||['completed','cancelled'].includes(r.status)} onBlur={e=>{const value=Number(e.currentTarget.value);if(value>=0&&value<=Number(r.planned_quantity)&&value!==Number(r.completed_quantity||0))void ctx.updateField(r,'completed_quantity',value);}} className="w-24 rounded-md border border-slate-200 px-2 py-1"/></td><td className="min-w-32 px-4 py-3"><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-blue-600" style={{width:pct+'%'}}/></div><span className="text-[10px] text-slate-500">{pct}%</span></td><td className="whitespace-nowrap px-4 py-3">{dateText(r.due_date)}</td><td className="px-4 py-3"><StatusSelect row={r} ctx={ctx} options={r.status==='planned'?['released','cancelled']:r.status==='released'?['in_progress','cancelled']:r.status==='in_progress'?['quality_check','cancelled']:r.status==='quality_check'?['completed','in_progress']:[]}/></td></tr>})}</tbody></table>{!ctx.rows.length&&<p className="p-10 text-center text-xs text-slate-500">No production work orders yet.</p>}</div>}
   </section>
   <section className="rounded-xl border border-slate-200 bg-white p-4"><div className="flex items-center gap-2"><ClipboardCheck className="h-4 w-4 text-blue-700"/><h3 className="font-semibold">Quality control queue</h3></div><p className="mt-1 text-xs text-slate-500">Work orders awaiting quality review before completion.</p>{ctx.rows.filter(r=>r.status==='quality_check').map(r=><div key={r.id} className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs"><span><b>{r.order_number} · {r.product_name}</b><small className="block text-slate-500">{r.completed_quantity} of {r.planned_quantity} units reported</small></span><button disabled={ctx.saving} onClick={()=>void ctx.changeStatus(r,'completed')} className="rounded-md bg-emerald-700 px-3 py-2 text-[10px] font-semibold text-white">Approve & complete</button></div>)}{!ctx.rows.some(r=>r.status==='quality_check')&&<p className="mt-4 text-xs text-slate-500">No batches waiting for quality inspection.</p>}</section>
  </Shell>;
