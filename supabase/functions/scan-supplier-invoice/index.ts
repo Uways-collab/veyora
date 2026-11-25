@@ -27,6 +27,15 @@ function matchesFileSignature(bytes: Uint8Array, mimeType: string): boolean {
   return false;
 }
 
+function getServiceKey(): string | null {
+  const direct = Deno.env.get('SUPABASE_SECRET_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (direct) return direct;
+  const keys = Deno.env.get('SUPABASE_SECRET_KEYS');
+  if (!keys) return null;
+  try { return (JSON.parse(keys) as Record<string, string>).default ?? null; }
+  catch { return null; }
+}
+
 function invoicePrompt() {
   return `Read this supplier invoice carefully. Extract only information visibly present.
 Do not guess missing values. Use null for missing or unreadable fields. Keep all amounts numeric
@@ -81,6 +90,11 @@ Deno.serve(async (req: Request) => {
   });
   const { data: authData, error: authError } = await supabase.auth.getUser(token);
   if (authError || !authData.user) return json({ error: 'Your session is invalid or expired' }, 401);
+  const serviceKey = getServiceKey();
+  if (!serviceKey) return json({ error: 'AI usage metering is not configured on the server.' }, 503);
+  const serviceClient = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 
   let body: { scan_id?: unknown };
   try { body = await req.json(); } catch { return json({ error: 'Request body must be valid JSON' }, 400); }
@@ -109,6 +123,30 @@ Deno.serve(async (req: Request) => {
     .update({ status: 'processing', error_message: null, updated_at: new Date().toISOString() })
     .eq('id', scanId).in('status', ['uploaded', 'failed']).select('id').maybeSingle();
   if (claimError || !claimedScan) return json({ error: 'This invoice scan is already being processed. Wait for it to finish before retrying.' }, 409);
+
+  const { data: usageReservation, error: reservationError } = await serviceClient.rpc('reserve_ai_usage', {
+    p_organization_id: scan.organization_id,
+    p_user_id: authData.user.id,
+    p_feature: 'invoice_scan',
+  });
+  if (reservationError || !usageReservation) {
+    const message = reservationError?.message ?? '';
+    const quotaExceeded = message.includes('MONTHLY_AI_LIMIT_REACHED');
+    const accessExpired = message.includes('SUBSCRIPTION_INACTIVE');
+    const userMessage = quotaExceeded
+      ? 'This workspace has used its monthly invoice-scanning allowance. Upgrade the plan or wait for the next billing month.'
+      : accessExpired
+        ? 'This workspace subscription has expired or payment is overdue. The Owner must restore billing before invoice scanning can resume.'
+        : 'Invoice-scanning allowance could not be reserved. Please try again shortly.';
+    await serviceClient.from('invoice_scans').update({
+      status: 'failed', error_message: userMessage, updated_at: new Date().toISOString(),
+    }).eq('id', scanId).eq('organization_id', scan.organization_id);
+    return json({ error: userMessage }, quotaExceeded ? 429 : accessExpired ? 402 : 503);
+  }
+  const usageReservationId = typeof usageReservation === 'string'
+    ? usageReservation
+    : (usageReservation as { id?: string })?.id;
+  if (!usageReservationId) return json({ error: 'Invoice usage reservation returned an invalid reference.' }, 503);
 
   try {
     const { data: file, error: downloadError } = await supabase.storage.from('invoice-documents').download(scan.file_path);
@@ -166,6 +204,11 @@ Deno.serve(async (req: Request) => {
       updated_at: new Date().toISOString(),
     }).eq('id', scanId);
     if (saveError) throw new Error('Invoice was read but the extracted details could not be saved');
+    await serviceClient.from('ai_usage_records').update({
+      model: MODEL,
+      input_tokens: Number(aiPayload?.usageMetadata?.promptTokenCount) || 0,
+      output_tokens: Number(aiPayload?.usageMetadata?.candidatesTokenCount) || 0,
+    }).eq('id', usageReservationId).eq('organization_id', scan.organization_id);
     return json({ scan_id: scanId, status: 'ready', extracted_data: extracted });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invoice processing failed';
