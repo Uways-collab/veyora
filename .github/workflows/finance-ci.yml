@@ -50,6 +50,8 @@ jobs:
         run: |
           deno check supabase/functions/invite-organization-member/index.ts
           deno check supabase/functions/veyora-ai-assistant/index.ts
+      - name: Type-check invoice scanner Edge Function
+        run: deno check supabase/functions/scan-supplier-invoice/index.ts
 
   production-build:
     name: Vite production build
