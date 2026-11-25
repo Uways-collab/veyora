@@ -78,22 +78,22 @@ begin
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', t || '_member_select', t);
     execute format(
-      'create policy %I on public.%I for select to authenticated using (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active = true))',
+      'create policy %I on public.%I for select to authenticated using (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid())))',
       t || '_member_select', t, t
     );
     execute format('drop policy if exists %I on public.%I', t || '_staff_insert', t);
     execute format(
-      'create policy %I on public.%I for insert to authenticated with check (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active = true and m.role in (''owner'',''admin'',''manager'',''staff'')))',
+      'create policy %I on public.%I for insert to authenticated with check (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.role in (''owner'',''admin'',''manager'',''staff'')))',
       t || '_staff_insert', t, t
     );
     execute format('drop policy if exists %I on public.%I', t || '_manager_update', t);
     execute format(
-      'create policy %I on public.%I for update to authenticated using (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active = true and m.role in (''owner'',''admin'',''manager''))) with check (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active = true and m.role in (''owner'',''admin'',''manager'')))',
+      'create policy %I on public.%I for update to authenticated using (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.role in (''owner'',''admin'',''manager''))) with check (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.role in (''owner'',''admin'',''manager'')))',
       t || '_manager_update', t, t, t
     );
     execute format('drop policy if exists %I on public.%I', t || '_admin_delete', t);
     execute format(
-      'create policy %I on public.%I for delete to authenticated using (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active = true and m.role in (''owner'',''admin'')))',
+      'create policy %I on public.%I for delete to authenticated using (exists (select 1 from public.organization_memberships m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.role in (''owner'',''admin'')))',
       t || '_admin_delete', t, t
     );
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
