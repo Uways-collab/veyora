@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { BarcodeCameraScanner } from '../inventory/BarcodeCameraScanner';
 import {
   AlertTriangle,
   CheckCircle2,
