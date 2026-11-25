@@ -23,6 +23,7 @@ with check (exists(
 
 -- Menu and table configuration is manager-only; service staff can read it and create tickets.
 drop policy if exists restaurant_menu_categories_member_insert on public.restaurant_menu_categories;
+drop policy if exists restaurant_menu_categories_manager_insert on public.restaurant_menu_categories;
 create policy restaurant_menu_categories_manager_insert on public.restaurant_menu_categories
 for insert to authenticated with check (exists(
   select 1 from public.organization_memberships m
@@ -32,6 +33,7 @@ for insert to authenticated with check (exists(
     and m.user_id=(select auth.uid()) and m.role in ('owner','admin','manager')
 ));
 drop policy if exists restaurant_menu_items_member_insert on public.restaurant_menu_items;
+drop policy if exists restaurant_menu_items_manager_insert on public.restaurant_menu_items;
 create policy restaurant_menu_items_manager_insert on public.restaurant_menu_items
 for insert to authenticated with check (exists(
   select 1 from public.organization_memberships m
@@ -41,6 +43,7 @@ for insert to authenticated with check (exists(
     and m.user_id=(select auth.uid()) and m.role in ('owner','admin','manager')
 ));
 drop policy if exists restaurant_tables_member_insert on public.restaurant_tables;
+drop policy if exists restaurant_tables_manager_insert on public.restaurant_tables;
 create policy restaurant_tables_manager_insert on public.restaurant_tables
 for insert to authenticated with check (exists(
   select 1 from public.organization_memberships m
@@ -345,6 +348,7 @@ grant select,update,delete on public.restaurant_order_items to authenticated;
 
 -- Vehicle stock and deal creation are manager-only; staff work leads, test drives and workshop tickets.
 drop policy if exists dealer_vehicles_member_insert on public.dealer_vehicles;
+drop policy if exists dealer_vehicles_manager_insert on public.dealer_vehicles;
 create policy dealer_vehicles_manager_insert on public.dealer_vehicles
 for insert to authenticated with check (exists(
  select 1 from public.organization_memberships m
@@ -354,6 +358,7 @@ for insert to authenticated with check (exists(
   and m.user_id=(select auth.uid()) and m.role in ('owner','admin','manager')
 ));
 drop policy if exists dealer_deals_member_insert on public.dealer_deals;
+drop policy if exists dealer_deals_manager_insert on public.dealer_deals;
 create policy dealer_deals_manager_insert on public.dealer_deals
 for insert to authenticated with check (exists(
  select 1 from public.organization_memberships m
@@ -439,6 +444,7 @@ for select to authenticated using (
 );
 revoke all on public.restaurant_order_payments from public,anon,authenticated;
 grant select on public.restaurant_order_payments to authenticated;
+drop trigger if exists a_subscription_feature_guard on public.restaurant_order_payments;
 create trigger a_subscription_feature_guard before insert or update or delete on public.restaurant_order_payments
 for each row execute function private.guard_business_access('industry');
 
