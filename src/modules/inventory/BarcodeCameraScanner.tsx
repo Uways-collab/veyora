@@ -6,7 +6,7 @@ type BarcodeDetectorLike = {
 };
 type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
 
-export function BarcodeCameraScanner({ onDetected }: { onDetected: (value: string) => void }) {
+export function BarcodeCameraScanner({ onDetected, className = '' }: { onDetected: (value: string) => void; className?: string }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -75,7 +75,7 @@ export function BarcodeCameraScanner({ onDetected }: { onDetected: (value: strin
 
   return (
     <>
-      <button type="button" onClick={() => { setError(null); setOpen(true); }} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50" aria-label="Scan barcode with camera">
+      <button type="button" onClick={() => { setError(null); setOpen(true); }} className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 ${className}`} aria-label="Scan barcode with camera">
         <ScanLine className="h-3.5 w-3.5" /> Scan barcode
       </button>
       {open && (
