@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { BarcodeCameraScanner } from './BarcodeCameraScanner';
 import {
   Archive,
   ArrowLeft,
