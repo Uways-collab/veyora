@@ -157,14 +157,12 @@ export function RestaurantWorkspaceView() {
  const [orderItems,setOrderItems]=useState<RowRecord[]>([]);
  const refreshRestaurantSetup=useCallback(async()=>{
   if(!db||!activeOrganisation){setMenuItems([]);setTables([]);return;}
-  const [menuResult,tableResult]=await Promise.all([
+  const [menuResult,categoryResult,tableResult]=await Promise.all([
    db.from('restaurant_menu_items').select('*').eq('organization_id',activeOrganisation.id).order('name'),
    db.from('restaurant_menu_categories').select('*').eq('organization_id',activeOrganisation.id).order('sort_order'),
    db.from('restaurant_tables').select('*').eq('organization_id',activeOrganisation.id).order('table_number')
   ]);
-  if(menuResult.error||tableResult.error){setRestaurantError(menuResult.error?.message||tableResult.error?.message||'Could not load restaurant setup.');return;}
-  const [categoryResult]=await Promise.all([db.from('restaurant_menu_categories').select('*').eq('organization_id',activeOrganisation.id).order('sort_order')]);
-  if(categoryResult.error){setRestaurantError(categoryResult.error.message);return;}
+  if(menuResult.error||categoryResult.error||tableResult.error){setRestaurantError(menuResult.error?.message||categoryResult.error?.message||tableResult.error?.message||'Could not load restaurant setup.');return;}
   setMenuItems(menuResult.data??[]);setMenuCategories(categoryResult.data??[]);setTables(tableResult.data??[]);setRestaurantError(null);
  },[db,activeOrganisation?.id]);
  useEffect(()=>{void refreshRestaurantSetup();},[refreshRestaurantSetup]);
