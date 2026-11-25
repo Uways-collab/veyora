@@ -100,7 +100,7 @@ export function BusinessOnboardingScreen() {
           setErrorMsg('Workspace created, but industry selections could not be saved: ' + categoryError.message);
         }
       }
-      setSuccessMsg('Business workspace "' + trimmedName + '" created with ' + 1 business type. Loading dashboard...');
+      setSuccessMsg('Business workspace "' + trimmedName + '" created with the ' + businessCategory.replaceAll('_', ' ') + ' workspace. Loading dashboard...');
     } catch (err: unknown) {
       setErrorMsg(
         err instanceof Error ? err.message : 'Unexpected error creating business workspace.'
