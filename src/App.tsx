@@ -104,7 +104,17 @@ function ProtectedWorkspaceRouter() {
       }
     };
     void loadSubscription();
-    return () => { cancelled = true; };
+    const refreshOnReturn = () => { void loadSubscription(); };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshOnReturn();
+    };
+    window.addEventListener('focus', refreshOnReturn);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshOnReturn);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, [activeOrganisation?.id]);
 
 
