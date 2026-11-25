@@ -24,8 +24,7 @@ export function BusinessOnboardingScreen() {
 
   const [name, setName] = useState('');
   const [businessType, setBusinessType] = useState<BusinessType>('retail');
-  const [businessCategories, setBusinessCategories] = useState<BusinessCategory[]>(['retail']);
-  const [primaryCategory, setPrimaryCategory] = useState<BusinessCategory>('retail');
+  const [businessCategory, setBusinessCategory] = useState<BusinessCategory>('retail');
   const [country, setCountry] = useState('Nigeria');
   const [currency, setCurrency] = useState('NGN');
   const [timezone, setTimezone] = useState('Africa/Lagos');
@@ -94,12 +93,7 @@ export function BusinessOnboardingScreen() {
 
       const supabase = getSupabaseClient();
       if (supabase) {
-        const categoryRows = businessCategories.map((category) => ({
-          organization_id: organisationId,
-          business_type: category,
-          is_primary: category === primaryCategory,
-          configuration: { business_description: businessDescription.trim(), products_or_services: productsOrServices.trim(), operating_channels: operatingChannels, team_size: teamSize, location_count: locationCount, priorities: businessPriorities },
-        }));
+        const categoryRows = [{ organization_id: organisationId, business_type: businessCategory, is_primary: true, configuration: { business_description: businessDescription.trim(), products_or_services: productsOrServices.trim(), operating_channels: operatingChannels, team_size: teamSize, location_count: locationCount, priorities: businessPriorities } }];
         const { error: categoryError } = await supabase
           .from('organization_business_types')
           .upsert(categoryRows, { onConflict: 'organization_id,business_type' });
@@ -107,7 +101,7 @@ export function BusinessOnboardingScreen() {
           setErrorMsg('Workspace created, but industry selections could not be saved: ' + categoryError.message);
         }
       }
-      setSuccessMsg('Business workspace "' + trimmedName + '" created with ' + businessCategories.length + ' business categories. Loading dashboard...');
+      setSuccessMsg('Business workspace "' + trimmedName + '" created with ' + 1 business type. Loading dashboard...');
     } catch (err: unknown) {
       setErrorMsg(
         err instanceof Error ? err.message : 'Unexpected error creating business workspace.'
@@ -216,25 +210,6 @@ export function BusinessOnboardingScreen() {
                   />
                 </div>
 
-                <div className="sm:col-span-2 space-y-1">
-                  <label htmlFor="onboard-business-type" className="block text-xs font-medium text-slate-700">
-                    Core Operating Model <span className="text-red-600">*</span>
-                  </label>
-                  <select
-                    id="onboard-business-type"
-                    value={businessType}
-                    onChange={(e) => setBusinessType(e.target.value as BusinessType)}
-                    className="w-full h-10 px-3 rounded-md border border-slate-300 text-sm text-slate-900 bg-white focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
-                  >
-                    {BUSINESS_TYPE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label} — {opt.description}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] leading-5 text-slate-500">This keeps the existing shared inventory and service workflows compatible. Choose your specialist business categories below.</p>
-                </div>
-
                 <div className="space-y-1">
                   <label htmlFor="onboard-country" className="block text-xs font-medium text-slate-700">
                     Country <span className="text-red-600">*</span>
@@ -273,47 +248,12 @@ export function BusinessOnboardingScreen() {
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="space-y-1 border-b border-slate-200 pb-2.5">
-                <div className="text-xs font-semibold text-slate-900">Business Categories</div>
-                <p className="text-xs leading-5 text-slate-500">Choose every type of business you operate under this organisation. You can select more than one.</p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {BUSINESS_CATEGORY_OPTIONS.map((category) => {
-                  const checked = businessCategories.includes(category.value);
-                  return (
-                    <label key={category.value} className={"flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors " + (checked ? "border-blue-400 bg-blue-50/60" : "border-slate-200 hover:border-slate-300")}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(event) => {
-                          if (event.target.checked) {
-                            if (!businessCategories.includes(category.value)) {
-                              setBusinessCategories([...businessCategories, category.value]);
-                            }
-                            return;
-                          }
-                          const next = businessCategories.filter((value) => value !== category.value);
-                          if (next.length === 0) return;
-                          setBusinessCategories(next);
-                          if (primaryCategory === category.value) setPrimaryCategory(next[0]);
-                        }}
-                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-semibold text-slate-800">{category.label}</span>
-                        <span className="mt-1 block text-[11px] leading-5 text-slate-500">{category.description}</span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-              <div className="max-w-sm space-y-1">
-                <label htmlFor="onboard-primary-category" className="block text-xs font-medium text-slate-700">Primary business category</label>
-                <select id="onboard-primary-category" value={primaryCategory} onChange={(event) => { const value = event.target.value as BusinessCategory; setPrimaryCategory(value); setBusinessType((["retail", "wholesale", "distribution", "services", "hybrid"] as BusinessType[]).includes(value as BusinessType) ? value as BusinessType : "hybrid"); }} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
-                  {BUSINESS_CATEGORY_OPTIONS.filter((category) => businessCategories.includes(category.value)).map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
-                </select>
-              </div>
+            <div className="space-y-2">
+              <label htmlFor="onboard-business-category" className="block text-xs font-semibold text-slate-900">Business type <span className="text-red-600">*</span></label>
+              <p className="text-xs leading-5 text-slate-500">Each workspace belongs to one business type and receives only that business's specialist tools. To operate another business, create a separate business workspace.</p>
+              <select id="onboard-business-category" required value={businessCategory} onChange={(event) => { const value = event.target.value as BusinessCategory; setBusinessCategory(value); setBusinessType((["retail","wholesale","distribution","services","hybrid"] as BusinessType[]).includes(value as BusinessType) ? value as BusinessType : "hybrid"); }} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
+                {BUSINESS_CATEGORY_OPTIONS.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
+              </select>
             </div>
 
             {/* Business discovery questions */}
