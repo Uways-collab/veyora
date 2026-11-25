@@ -179,8 +179,9 @@ export function RestaurantWorkspaceView() {
  };
  const advanceOrderStatus=async(row:RowRecord,status:string)=>{
   if(!db||!activeOrganisation)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
-  const {error}=await db.rpc('restaurant_update_order_status',{p_order_id:row.id,p_status:status});
+  const {data,error}=await db.from('restaurant_orders').update({status}).eq('id',row.id).eq('organization_id',activeOrganisation.id).select('id').maybeSingle();
   if(error)setRestaurantError('Kitchen status could not be updated: '+error.message);
+  else if(!data)setRestaurantError('Kitchen ticket was not updated. Check staff access.');
   else{setRestaurantNotice('Kitchen ticket updated.');await ctx.refresh();await refreshRestaurantSetup();}
   setRestaurantSaving(false);
  };
