@@ -849,8 +849,19 @@ export function PosCheckoutPanel({
                 }}
                 placeholder="Search product, SKU, or scan barcode..."
                 aria-label="Search catalog by name, SKU, or barcode"
-                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                className="w-full pl-8 pr-28 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
+              <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                <BarcodeCameraScanner onDetected={(value) => {
+                  const match = catalogItems.find((item) => (item.barcode ?? '').trim() === value);
+                  if (match) {
+                    handleAddToCart(match);
+                    setSearchQuery('');
+                  } else {
+                    setSearchQuery(value);
+                  }
+                }} />
+              </div>
             </div>
 
             <div className="sm:col-span-3">
