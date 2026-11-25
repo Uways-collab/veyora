@@ -132,7 +132,8 @@ begin
   if not private.organization_has_access(target_org,'industry') then
     raise exception 'Restaurant workspace access denied.' using errcode='42501';
   end if;
-  return case when tg_op='DELETE' then old else new end;
+  if tg_op='DELETE' then return old; end if;
+  return new;
 end;
 $function$;
 revoke all on function private.restaurant_order_item_open_ticket_guard() from public,anon,authenticated;
@@ -179,7 +180,7 @@ begin
     raise exception 'Choose dine-in, takeaway or delivery.' using errcode='22023';
   end if;
   if coalesce(p_covers,1)<1 then raise exception 'Guest count must be at least one.' using errcode='22023'; end if;
-  if jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)<1 or jsonb_array_length(p_items)>100 then
+  if p_items is null or jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)<1 or jsonb_array_length(p_items)>100 then
     raise exception 'Add between 1 and 100 menu items to the ticket.' using errcode='22023';
   end if;
 
@@ -194,7 +195,7 @@ begin
     raise exception 'Only dine-in orders can be assigned to a dining table.' using errcode='22023';
   end if;
 
-  v_order_number := 'R-'||pg_catalog.to_char(pg_catalog.now(),'YYMMDD')||'-'||pg_catalog.upper(pg_catalog.substr(pg_catalog.replace(gen_random_uuid()::text,'-',''),1,6));
+  v_order_number := 'R-'||pg_catalog.to_char(pg_catalog.now(),'YYMMDD')||'-'||pg_catalog.upper(pg_catalog.substr(pg_catalog.replace(pg_catalog.gen_random_uuid()::text,'-',''),1,6));
   insert into public.restaurant_orders(
     organization_id,order_number,order_type,table_id,table_label,covers,
     customer_name,items_summary,total_amount,status,notes,created_by
@@ -229,6 +230,12 @@ revoke all on function public.restaurant_create_order_with_items(uuid,text,uuid,
 grant execute on function public.restaurant_create_order_with_items(uuid,text,uuid,integer,text,text,jsonb) to authenticated;
 
 -- Dealer receipts are immutable and every payment is posted to the organisation ledger.
+-- Tenant-safe composite targets for payment/account references.
+create unique index if not exists finance_accounts_id_org_uidx
+on public.finance_accounts(id,organization_id);
+create unique index if not exists finance_journal_entries_id_org_uidx
+on public.finance_journal_entries(id,organization_id);
+
 create table if not exists public.dealer_payments (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -457,7 +464,7 @@ begin
   end if;
 
   v_journal_id:=public.finance_post_journal(
-    p_organization_id,pg_catalog.current_date,'Vehicle sale '||v_deal.deal_number,
+    p_organization_id,current_date,'Vehicle sale '||v_deal.deal_number,
     'dealer_sale',p_deal_id,coalesce(p_idempotency_key,p_deal_id),v_lines
   );
   perform pg_catalog.set_config('veyora.dealer_completion_rpc','allowed',true);
