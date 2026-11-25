@@ -178,6 +178,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     targetPhase: 'Commercial Billing Foundation',
   },
   {
+    id: 'platform_admin',
+    label: 'Platform Admin',
+    group: 'administration',
+    stage: 'foundation_active',
+    summary: 'Owner-only platform registration, workspace and subscription totals.',
+    primaryEntities: ['Registered Users', 'Business Workspaces', 'Subscriptions'],
+    plannedTables: ['auth.users', 'organizations', 'organization_memberships', 'organization_subscriptions'],
+    connectedModules: ['billing', 'settings'],
+    targetPhase: 'Platform Administration',
+  },
+  {
     id: 'settings',
     label: 'Settings',
     group: 'administration',
