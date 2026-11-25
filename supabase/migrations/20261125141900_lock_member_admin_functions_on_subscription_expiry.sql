@@ -11,7 +11,7 @@ begin
     definition,
     '(?s)(IF v_user_id IS NULL THEN.*?END IF;)',
     E'\\1\n\n  IF NOT private.organization_has_access(p_organization_id,NULL) THEN\n    RAISE EXCEPTION ''An active subscription is required to view the team.'' USING ERRCODE=''42501'';\n  END IF;',
-    '1'
+    1,1,''
   );
   if updated_definition=definition then raise exception 'Could not protect get_organization_members'; end if;
   execute updated_definition;
@@ -22,7 +22,7 @@ begin
     definition,
     '(?s)(IF v_user_id IS NULL THEN.*?END IF;)',
     E'\\1\n\n    IF NOT private.organization_has_access(p_organization_id,NULL) THEN\n      RAISE EXCEPTION ''An active subscription is required to manage team roles.'' USING ERRCODE=''42501'';\n    END IF;',
-    '1'
+    1,1,''
   );
   if updated_definition=definition then raise exception 'Could not protect manage_organization_member_role'; end if;
   execute updated_definition;
@@ -33,7 +33,7 @@ begin
     definition,
     '(?s)(IF v_user_id IS NULL THEN.*?END IF;)',
     E'\\1\n\n    IF NOT private.organization_has_access(p_organization_id,NULL) THEN\n      RAISE EXCEPTION ''An active subscription is required to remove team members.'' USING ERRCODE=''42501'';\n    END IF;',
-    '1'
+    1,1,''
   );
   if updated_definition=definition then raise exception 'Could not protect remove_organization_member'; end if;
   execute updated_definition;
@@ -44,7 +44,7 @@ begin
     definition,
     '(?s)(IF v_user_id IS NULL THEN.*?END IF;)',
     E'\\1\n\n  IF NOT private.organization_has_access(p_organization_id,NULL) THEN\n    RAISE EXCEPTION ''An active subscription is required to update the business profile.'' USING ERRCODE=''42501'';\n  END IF;',
-    '1'
+    1,1,''
   );
   if updated_definition=definition then raise exception 'Could not protect update_organization_profile'; end if;
   execute updated_definition;
@@ -55,7 +55,7 @@ begin
     definition,
     '(?s)(if p_organization_id is null then.*?end if;)',
     E'\\1\n  if not private.organization_subscription_is_active(p_organization_id) then\n    raise exception ''An active subscription is required before inviting team members'' using errcode=''42501'';\n  end if;',
-    '1'
+    1,1,''
   );
   if updated_definition=definition then raise exception 'Could not protect create_organization_invitation'; end if;
   execute updated_definition;
