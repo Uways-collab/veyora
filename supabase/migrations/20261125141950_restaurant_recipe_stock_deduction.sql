@@ -75,7 +75,7 @@ for each row execute function private.guard_business_access('industry');
 do $function$
 declare definition text; updated_definition text;
 begin
-  definition:=pg_catalog.pg_get_functiondef('public.adjust_inventory_stock(uuid,uuid,uuid,numeric,text,text,text)'::regprocedure);
+  definition:=pg_catalog.replace(pg_catalog.pg_get_functiondef('public.adjust_inventory_stock(uuid,uuid,uuid,numeric,text,text,text)'::regprocedure),E'\\r\\n',E'\\n');
   updated_definition:=pg_catalog.replace(
     definition,
     $old$    IF NOT public.has_inventory_role(
