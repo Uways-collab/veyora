@@ -133,6 +133,14 @@ export function RestaurantWorkspaceView() {
  const [menuCategories,setMenuCategories]=useState<RowRecord[]>([]);
  const [tables,setTables]=useState<RowRecord[]>([]);
  const [paymentAccounts,setPaymentAccounts]=useState<RowRecord[]>([]);
+ const [inventoryVariants,setInventoryVariants]=useState<RowRecord[]>([]);
+ const [inventoryProducts,setInventoryProducts]=useState<RowRecord[]>([]);
+ const [inventoryLocations,setInventoryLocations]=useState<RowRecord[]>([]);
+ const [recipeIngredients,setRecipeIngredients]=useState<RowRecord[]>([]);
+ const [recipeMenuItemId,setRecipeMenuItemId]=useState<string|null>(null);
+ const [recipeVariantId,setRecipeVariantId]=useState('');
+ const [recipeLocationId,setRecipeLocationId]=useState('');
+ const [recipeQuantity,setRecipeQuantity]=useState('1');
  const [orderPayments,setOrderPayments]=useState<RowRecord[]>([]);
  const [paymentAmount,setPaymentAmount]=useState('');
  const [paymentAccountId,setPaymentAccountId]=useState('');
@@ -162,18 +170,48 @@ export function RestaurantWorkspaceView() {
  const [restaurantSaving,setRestaurantSaving]=useState(false);
  const [orderItems,setOrderItems]=useState<RowRecord[]>([]);
  const refreshRestaurantSetup=useCallback(async()=>{
-  if(!db||!activeOrganisation){setMenuItems([]);setMenuCategories([]);setTables([]);setPaymentAccounts([]);return;}
-  const [menuResult,categoryResult,tableResult]=await Promise.all([
+  if(!db||!activeOrganisation){setMenuItems([]);setMenuCategories([]);setTables([]);setPaymentAccounts([]);setInventoryVariants([]);setInventoryProducts([]);setInventoryLocations([]);setRecipeIngredients([]);return;}
+  const [menuResult,categoryResult,tableResult,variantResult,productResult,locationResult]=await Promise.all([
    db.from('restaurant_menu_items').select('*').eq('organization_id',activeOrganisation.id).order('name'),
    db.from('restaurant_menu_categories').select('*').eq('organization_id',activeOrganisation.id).order('sort_order'),
-   db.from('restaurant_tables').select('*').eq('organization_id',activeOrganisation.id).order('table_number')
+   db.from('restaurant_tables').select('*').eq('organization_id',activeOrganisation.id).order('table_number'),
+   db.from('product_variants').select('id,product_id,variant_name,sku,unit_of_measure,is_active').eq('organization_id',activeOrganisation.id).eq('is_active',true).order('sku'),
+   db.from('products').select('id,name,product_type,is_active').eq('organization_id',activeOrganisation.id).eq('is_active',true).eq('product_type','physical').order('name'),
+   db.from('inventory_locations').select('id,name,location_type').eq('organization_id',activeOrganisation.id).eq('is_active',true).order('name')
   ]);
-  if(menuResult.error||categoryResult.error||tableResult.error){setRestaurantError(menuResult.error?.message||categoryResult.error?.message||tableResult.error?.message||'Could not load restaurant setup.');return;}
+  if(menuResult.error||categoryResult.error||tableResult.error||variantResult.error||productResult.error||locationResult.error){setRestaurantError(menuResult.error?.message||categoryResult.error?.message||tableResult.error?.message||variantResult.error?.message||productResult.error?.message||locationResult.error?.message||'Could not load restaurant setup.');return;}
   setMenuItems(menuResult.data??[]);setMenuCategories(categoryResult.data??[]);setTables(tableResult.data??[]);
+  setInventoryVariants(variantResult.data??[]);setInventoryProducts(productResult.data??[]);setInventoryLocations(locationResult.data??[]);
   const {data:accounts,error:accountsError}=await db.rpc('restaurant_get_payment_accounts',{p_organization_id:activeOrganisation.id});
   if(accountsError){setPaymentAccounts([]);setRestaurantError(accountsError.message);}else{setPaymentAccounts(accounts??[]);setPaymentAccountId(current=>current||accounts?.[0]?.id||'');setRestaurantError(null);}
  },[db,activeOrganisation?.id]);
  useEffect(()=>{void refreshRestaurantSetup();},[refreshRestaurantSetup]);
+ const refreshRecipeIngredients=async(menuItemId:string)=>{
+  if(!db||!activeOrganisation){setRecipeIngredients([]);return;}
+  const {data,error}=await db.from('restaurant_recipe_ingredients').select('*').eq('organization_id',activeOrganisation.id).eq('menu_item_id',menuItemId).order('created_at');
+  if(error)setRestaurantError(error.message);else setRecipeIngredients(data??[]);
+ };
+ const openRecipeEditor=async(menuItemId:string)=>{
+  if(!canManageRestaurant)return;setRecipeMenuItemId(menuItemId);setRecipeVariantId('');setRecipeLocationId(inventoryLocations[0]?.id??'');setRecipeQuantity('1');await refreshRecipeIngredients(menuItemId);
+ };
+ const addRecipeIngredient=async(e:FormEvent<HTMLFormElement>)=>{
+  e.preventDefault();if(!db||!activeOrganisation||!recipeMenuItemId||!canManageRestaurant)return;
+  if(!recipeVariantId||!recipeLocationId||Number(recipeQuantity)<=0){setRestaurantError('Choose a stock item, location and positive quantity per serving.');return;}
+  setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
+  const {error}=await db.from('restaurant_recipe_ingredients').insert({
+   organization_id:activeOrganisation.id,menu_item_id:recipeMenuItemId,variant_id:recipeVariantId,
+   location_id:recipeLocationId,quantity_per_serving:Number(recipeQuantity)
+  });
+  if(error)setRestaurantError(error.code==='23505'?'That stock item is already linked to this recipe.':error.message);
+  else{setRestaurantNotice('Recipe ingredient saved. Stock will be deducted when the ticket is completed.');await refreshRecipeIngredients(recipeMenuItemId);}
+  setRestaurantSaving(false);
+ };
+ const removeRecipeIngredient=async(id:string)=>{
+  if(!db||!activeOrganisation||!canManageRestaurant)return;setRestaurantSaving(true);setRestaurantError(null);
+  const {error}=await db.from('restaurant_recipe_ingredients').delete().eq('id',id).eq('organization_id',activeOrganisation.id);
+  if(error)setRestaurantError(error.message);else if(recipeMenuItemId)await refreshRecipeIngredients(recipeMenuItemId);
+  setRestaurantSaving(false);
+ };
  const addMenuItem=async(e:FormEvent<HTMLFormElement>)=>{
   e.preventDefault();if(!db||!activeOrganisation||!canManageRestaurant)return;setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
   const {error}=await db.from('restaurant_menu_items').insert({organization_id:activeOrganisation.id,category_id:menuCategoryId||null,name:menuName.trim(),price:Number(menuPrice),prep_station:menuStation,is_available:true});
@@ -280,7 +318,7 @@ export function RestaurantWorkspaceView() {
      <select value={menuStation} onChange={e=>setMenuStation(e.target.value)} className={cls}><option value="kitchen">Kitchen</option><option value="bar">Bar</option><option value="dessert">Dessert</option><option value="other">Other</option></select>
      <button disabled={restaurantSaving} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white sm:col-span-2">Add menu item</button>
     </form>}
-    <div className="mt-3 divide-y divide-slate-100">{menuItems.map(item=><div key={item.id} className="flex items-center justify-between gap-3 py-2 text-xs"><span className="min-w-0"><b>{item.name}</b><small className="ml-2 text-slate-500">{titleCase(item.prep_station)}{item.category_id&&menuCategories.find(c=>c.id===item.category_id)?' · '+menuCategories.find(c=>c.id===item.category_id)?.name:''}</small><small className="ml-2 text-slate-500">{item.is_available?'Available':'Unavailable'}</small></span><div className="flex items-center gap-2"><b>{money(item.price,ctx.currency)}</b>{canManageRestaurant&&<button disabled={restaurantSaving} onClick={()=>void toggleMenuAvailability(item)} className="rounded-md border border-slate-300 px-2 py-1 text-[10px]">{item.is_available?'Disable':'Enable'}</button>}</div></div>)}{!menuItems.length&&<p className="py-4 text-xs text-slate-500">Add your first menu item to begin building itemised tickets.</p>}</div>
+    <div className="mt-3 divide-y divide-slate-100">{menuItems.map(item=><div key={item.id} className="flex items-center justify-between gap-3 py-2 text-xs"><span className="min-w-0"><b>{item.name}</b><small className="ml-2 text-slate-500">{titleCase(item.prep_station)}{item.category_id&&menuCategories.find(c=>c.id===item.category_id)?' · '+menuCategories.find(c=>c.id===item.category_id)?.name:''}</small><small className="ml-2 text-slate-500">{item.is_available?'Available':'Unavailable'}</small></span><div className="flex items-center gap-2"><b>{money(item.price,ctx.currency)}</b>{canManageRestaurant&&<><button disabled={restaurantSaving} onClick={()=>void openRecipeEditor(item.id)} className="rounded-md border border-slate-300 px-2 py-1 text-[10px]">Recipe</button><button disabled={restaurantSaving} onClick={()=>void toggleMenuAvailability(item)} className="rounded-md border border-slate-300 px-2 py-1 text-[10px]">{item.is_available?'Disable':'Enable'}</button></>}</div></div>)}{!menuItems.length&&<p className="py-4 text-xs text-slate-500">Add your first menu item to begin building itemised tickets.</p>}</div>
    </div>
    <div className="rounded-xl border border-slate-200 bg-white p-4">
     <div className="flex items-center justify-between"><div><h2 className="font-semibold">Dining tables</h2><p className="mt-1 text-xs text-slate-500">Track table capacity and live occupancy.</p></div><span className="text-xs text-slate-500">{tables.length} tables</span></div>
@@ -292,6 +330,17 @@ export function RestaurantWorkspaceView() {
     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{tables.map(table=><div key={table.id} className="rounded-lg border border-slate-200 p-3"><b className="text-xs">{table.table_number}</b><p className="mt-1 text-[10px] text-slate-500">{table.seats} seats · {titleCase(table.status)}</p></div>)}{!tables.length&&<p className="col-span-full py-4 text-xs text-slate-500">Add dining tables to track dine-in service.</p>}</div>
    </div>
   </section>
+  {recipeMenuItemId&&<section className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4">
+   <div className="flex items-center justify-between gap-2"><div><h2 className="font-semibold">Recipe · {menuItems.find(m=>m.id===recipeMenuItemId)?.name}</h2><p className="mt-1 text-xs text-slate-600">Ingredients are deducted from inventory when a paid ticket is completed. Insufficient stock prevents completion.</p></div><button onClick={()=>{setRecipeMenuItemId(null);setRecipeIngredients([]);}} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">Close recipe</button></div>
+   <form onSubmit={e=>void addRecipeIngredient(e)} className="mt-3 grid gap-2 sm:grid-cols-[2fr_1.5fr_110px_auto]">
+    <select required value={recipeVariantId} onChange={e=>setRecipeVariantId(e.target.value)} className={cls}><option value="">Choose physical stock item</option>{inventoryVariants.filter(v=>inventoryProducts.some(p=>p.id===v.product_id)).map(v=><option key={v.id} value={v.id}>{inventoryProducts.find(p=>p.id===v.product_id)?.name} · {v.variant_name} · {v.sku}</option>)}</select>
+    <select required value={recipeLocationId} onChange={e=>setRecipeLocationId(e.target.value)} className={cls}><option value="">Choose stock location</option>{inventoryLocations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select>
+    <input required type="number" min="0.0001" step="0.0001" value={recipeQuantity} onChange={e=>setRecipeQuantity(e.target.value)} placeholder="Qty / serving" className={cls}/>
+    <button disabled={restaurantSaving||!inventoryVariants.length||!inventoryLocations.length} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white">Add ingredient</button>
+   </form>
+   <div className="mt-3 divide-y divide-emerald-100">{recipeIngredients.map(ri=>{const variant=inventoryVariants.find(v=>v.id===ri.variant_id);const product=inventoryProducts.find(p=>p.id===variant?.product_id);const location=inventoryLocations.find(l=>l.id===ri.location_id);return <div key={ri.id} className="flex items-center justify-between gap-3 py-2 text-xs"><span><b>{product?.name??'Stock item'} · {variant?.variant_name??''}</b><small className="ml-2 text-slate-500">{ri.quantity_per_serving} {variant?.unit_of_measure??'units'} / serving · {location?.name??'Location'}</small></span><button disabled={restaurantSaving} onClick={()=>void removeRecipeIngredient(ri.id)} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px]">Remove</button></div>})}{!recipeIngredients.length&&<p className="py-3 text-xs text-slate-500">No ingredients linked yet. This menu item will not deduct stock until you add recipe ingredients.</p>}</div>
+   {(!inventoryVariants.length||!inventoryLocations.length)&&<p className="mt-2 text-[11px] text-amber-700">Add active physical products and at least one active inventory location before configuring recipes.</p>}
+  </section>}
   {selectedOrder&&<section className="rounded-xl border border-blue-200 bg-blue-50/30 p-4">
    <div className="flex items-center justify-between"><div><h2 className="font-semibold">Ticket #{selectedOrder.order_number} items</h2><p className="mt-1 text-xs text-slate-500">Itemised lines update the order total on the database automatically.</p></div><button onClick={()=>setSelectedOrder(null)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs">Close</button></div>
    <form onSubmit={e=>void addOrderItem(e)} className="mt-3 grid gap-2 sm:grid-cols-4">
