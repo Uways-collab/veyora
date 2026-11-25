@@ -883,9 +883,9 @@ export async function uploadExpenseReceipt(
   const storagePath = `${orgId}/expenses/receipt-${Date.now()}-${uniqueToken}.${ext}`;
   const { error } = await supabase.storage
     .from(EXPENSE_RECEIPT_BUCKET)
-    .upload(storagePath, file, {
+    .upload(storagePath, uploadBlob, {
       upsert: false,
-      contentType: file.type,
+      contentType: uploadType,
       cacheControl: '3600',
     });
 
