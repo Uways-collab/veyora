@@ -2,20 +2,20 @@ import { useState } from 'react';
 import {
   BarChart3,
   Boxes,
-  Clock,
   Landmark,
   ShoppingBag,
   ShoppingCart,
 } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { InventoryReportsPanel } from './InventoryReportsPanel';
+import { OperationalReportsPanel } from './OperationalReportsPanel';
 
 type ReportDomainId = 'inventory' | 'sales' | 'purchases' | 'finance';
 
 interface ReportDomainDefinition {
   id: ReportDomainId;
   label: string;
-  status: 'active' | 'upcoming';
+  status: 'active';
   description: string;
 }
 
@@ -30,23 +30,23 @@ const REPORT_DOMAINS: ReportDomainDefinition[] = [
   {
     id: 'sales',
     label: 'Sales Reports',
-    status: 'upcoming',
+    status: 'active',
     description:
-      'Sales reporting is planned. The Sales workspace remains available for day-to-day sales operations; this status applies only to reports.',
+      'Live completed-sale, payment, return, outstanding-balance, and gross-margin reporting from recorded transactions.',
   },
   {
     id: 'purchases',
     label: 'Purchases Reports',
-    status: 'upcoming',
+    status: 'active',
     description:
-      'Purchases reporting is planned. The Purchases workspace remains available for purchasing operations; this status applies only to reports.',
+      'Live purchase-order, supplier-spend, order-status, and receiving summaries from recorded purchase records.',
   },
   {
     id: 'finance',
     label: 'Finance Reports',
-    status: 'upcoming',
+    status: 'active',
     description:
-      'Finance reporting is planned. This does not indicate that the Finance workspace itself is unavailable.',
+      'Live revenue, expenses, net profit, and posted general-ledger activity from finance journal lines.',
   },
 ];
 
@@ -66,9 +66,6 @@ function getDomainIcon(id: ReportDomainId) {
 export function ReportsView({ canExport = false }: { canExport?: boolean }) {
   const { activeOrganisation, activeRole } = useAuth();
   const [selectedDomain, setSelectedDomain] = useState<ReportDomainId>('inventory');
-
-  const activeDomainDef =
-    REPORT_DOMAINS.find((domain) => domain.id === selectedDomain) ?? REPORT_DOMAINS[0];
 
   return (
     <div className="space-y-6">
@@ -102,7 +99,7 @@ export function ReportsView({ canExport = false }: { canExport?: boolean }) {
 
         <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-3 py-1.5 shrink-0 self-start sm:self-auto">
           <BarChart3 className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
-          <span>Inventory reporting active · Sales, Purchases &amp; Finance reporting planned</span>
+          <span>Sales, Purchases, Finance &amp; Inventory reports active</span>
         </div>
       </section>
 
@@ -142,7 +139,7 @@ export function ReportsView({ canExport = false }: { canExport?: boolean }) {
                       : 'bg-slate-50 text-slate-600 border-slate-200'
                   }`}
                 >
-                  {isActive ? 'Active' : 'Planned'}
+                  Active
                 </span>
               </div>
               <p className="mt-2 text-[11px] text-slate-500 leading-relaxed line-clamp-2">
@@ -157,47 +154,7 @@ export function ReportsView({ canExport = false }: { canExport?: boolean }) {
       {selectedDomain === 'inventory' ? (
         <InventoryReportsPanel canExport={canExport} />
       ) : (
-        <section
-          aria-labelledby="upcoming-report-domain-heading"
-          className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8"
-        >
-          <div className="max-w-xl space-y-4">
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-medium">
-              <Clock className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-              <span>
-                Planned Report Domain
-              </span>
-            </div>
-
-            <div className="space-y-1.5">
-              <h2
-                id="upcoming-report-domain-heading"
-                className="font-display text-lg font-semibold text-slate-900"
-              >
-                {activeDomainDef.label}
-              </h2>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                {activeDomainDef.description}
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-600">
-              To avoid displaying estimated or unverified figures, no metrics are shown until
-              the underlying Supabase tables and transactions for this module are live.
-            </div>
-
-            <div>
-              <button
-                type="button"
-                onClick={() => setSelectedDomain('inventory')}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 transition-colors"
-              >
-                <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Open Active Inventory Reports</span>
-              </button>
-            </div>
-          </div>
-        </section>
+        <OperationalReportsPanel domain={selectedDomain} canExport={canExport} />
       )}
     </div>
   );
