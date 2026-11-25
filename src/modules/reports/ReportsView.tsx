@@ -8,14 +8,14 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { InventoryReportsPanel } from './InventoryReportsPanel';
-import { OperationalReportsPanel } from './OperationalReportsPanel';
+import { BusinessReportsPanel } from './BusinessReportsPanel';
 
 type ReportDomainId = 'inventory' | 'sales' | 'purchases' | 'finance';
 
 interface ReportDomainDefinition {
   id: ReportDomainId;
   label: string;
-  status: 'active';
+  status: 'active' | 'upcoming';
   description: string;
 }
 
@@ -32,21 +32,21 @@ const REPORT_DOMAINS: ReportDomainDefinition[] = [
     label: 'Sales Reports',
     status: 'active',
     description:
-      'Live completed-sale, payment, return, outstanding-balance, and gross-margin reporting from recorded transactions.',
+      'Live sales totals, returns, collections, customer balances, product performance and transaction detail.',
   },
   {
     id: 'purchases',
     label: 'Purchases Reports',
     status: 'active',
     description:
-      'Live purchase-order, supplier-spend, order-status, and receiving summaries from recorded purchase records.',
+      'Purchase commitments, goods received, supplier spend, order status and purchase-order detail.',
   },
   {
     id: 'finance',
     label: 'Finance Reports',
     status: 'active',
     description:
-      'Live revenue, expenses, net profit, and posted general-ledger activity from finance journal lines.',
+      'Posted-ledger profit and loss, balance sheet, trial balance and general-ledger activity.',
   },
 ];
 
@@ -99,7 +99,7 @@ export function ReportsView({ canExport = false }: { canExport?: boolean }) {
 
         <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-3 py-1.5 shrink-0 self-start sm:self-auto">
           <BarChart3 className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
-          <span>Sales, Purchases, Finance &amp; Inventory reports active</span>
+          <span>Inventory, Sales, Purchases &amp; Finance reports active</span>
         </div>
       </section>
 
@@ -139,7 +139,7 @@ export function ReportsView({ canExport = false }: { canExport?: boolean }) {
                       : 'bg-slate-50 text-slate-600 border-slate-200'
                   }`}
                 >
-                  Active
+                  {isActive ? 'Active' : 'Planned'}
                 </span>
               </div>
               <p className="mt-2 text-[11px] text-slate-500 leading-relaxed line-clamp-2">
@@ -154,7 +154,7 @@ export function ReportsView({ canExport = false }: { canExport?: boolean }) {
       {selectedDomain === 'inventory' ? (
         <InventoryReportsPanel canExport={canExport} />
       ) : (
-        <OperationalReportsPanel domain={selectedDomain} canExport={canExport} />
+        <BusinessReportsPanel domain={selectedDomain} canExport={canExport} />
       )}
     </div>
   );
