@@ -66,8 +66,8 @@ export async function compressImageToWebp(
         }
       }
 
-      const nextWidth = Math.max(96, Math.floor(width * 0.78));
-      const nextHeight = Math.max(96, Math.floor(height * 0.78));
+      const nextWidth = Math.max(1, Math.floor(width * 0.78));
+      const nextHeight = Math.max(1, Math.floor(height * 0.78));
       if (nextWidth === width && nextHeight === height) break;
       width = nextWidth;
       height = nextHeight;
