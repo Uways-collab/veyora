@@ -229,8 +229,30 @@ $function$;
 revoke all on function public.restaurant_create_order_with_items(uuid,text,uuid,integer,text,text,jsonb) from public,anon;
 grant execute on function public.restaurant_create_order_with_items(uuid,text,uuid,integer,text,text,jsonb) to authenticated;
 
+
+-- Vehicle stock and deal creation are manager-only; staff work leads, test drives and workshop tickets.
+drop policy if exists dealer_vehicles_member_insert on public.dealer_vehicles;
+create policy dealer_vehicles_manager_insert on public.dealer_vehicles
+for insert to authenticated with check (exists(
+ select 1 from public.organization_memberships m
+ join public.organization_business_types b on b.organization_id=m.organization_id
+  and b.business_type='car_dealership' and b.is_primary
+ where m.organization_id=dealer_vehicles.organization_id
+  and m.user_id=(select auth.uid()) and m.role in ('owner','admin','manager')
+));
+drop policy if exists dealer_deals_member_insert on public.dealer_deals;
+create policy dealer_deals_manager_insert on public.dealer_deals
+for insert to authenticated with check (exists(
+ select 1 from public.organization_memberships m
+ join public.organization_business_types b on b.organization_id=m.organization_id
+  and b.business_type='car_dealership' and b.is_primary
+ where m.organization_id=dealer_deals.organization_id
+  and m.user_id=(select auth.uid()) and m.role in ('owner','admin','manager')
+));
+
 -- Dealer receipts are immutable and every payment is posted to the organisation ledger.
 -- Tenant-safe composite targets for payment/account references.
+create unique index if not exists dealer_deals_id_org_uidx on public.dealer_deals(id,organization_id);
 create unique index if not exists finance_accounts_id_org_uidx
 on public.finance_accounts(id,organization_id);
 create unique index if not exists finance_journal_entries_id_org_uidx
@@ -296,7 +318,7 @@ $function$;
 revoke all on function private.dealer_guard_payment_derived_fields() from public,anon,authenticated;
 drop trigger if exists dealer_deal_payment_completion_guard on public.dealer_deals;
 create trigger dealer_deal_payment_completion_guard
-before update on public.dealer_deals
+before insert or update on public.dealer_deals
 for each row execute function private.dealer_guard_payment_derived_fields();
 
 create or replace function public.dealer_record_payment(
@@ -480,6 +502,12 @@ grant execute on function public.dealer_complete_delivery(uuid,uuid,uuid) to aut
 create or replace function private.dealer_guard_payment_derived_fields()
 returns trigger language plpgsql security definer set search_path='' as $function$
 begin
+  if tg_op='INSERT' then
+    if new.deposit_amount<>0 or new.status<>'draft' then
+      raise exception 'New dealership deals must start unpaid in Draft. Record deposits through the payment workflow.' using errcode='42501';
+    end if;
+    return new;
+  end if;
   if new.deposit_amount is distinct from old.deposit_amount
      and coalesce(pg_catalog.current_setting('veyora.dealer_payment_rpc',true),'')<>'allowed' then
     raise exception 'Deal payment totals can only be changed through the verified payment workflow.' using errcode='42501';
