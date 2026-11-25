@@ -134,23 +134,25 @@ Deno.serve(async (req: Request) => {
   });
   const requestLimit = Number(plan.ai_assistant_requests) || 0;
   if (requestLimit < 1) return json({ error: 'This plan has no AI assistant requests available.' }, 403);
-  const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
-  const { count: usedRequests, error: quotaError } = await serviceClient
-    .from('ai_usage_records').select('id', { count: 'exact', head: true })
-    .eq('organization_id', organizationId).eq('feature', 'business_assistant')
-    .gte('created_at', monthStart);
-  if (quotaError) return json({ error: 'AI usage limits could not be checked. Please try again shortly.' }, 503);
-  if ((usedRequests ?? 0) >= requestLimit) {
-    return json({ error: 'This workspace has used its monthly AI assistant allowance. Upgrade the plan or purchase additional AI credits.' }, 429);
-  }
-  const { data: usageReservation, error: reservationError } = await serviceClient
-    .from('ai_usage_records').insert({
-      organization_id: organizationId, user_id: authData.user.id,
-      feature: 'business_assistant', model: PRIMARY_MODEL, input_tokens: 0, output_tokens: 0,
-    }).select('id').single();
+  const { data: usageReservation, error: reservationError } = await serviceClient.rpc('reserve_ai_usage', {
+    p_organization_id: organizationId,
+    p_user_id: authData.user.id,
+    p_feature: 'business_assistant',
+  });
   if (reservationError || !usageReservation) {
-    return json({ error: 'AI usage could not be reserved for this request.' }, 503);
+    const message = reservationError?.message ?? '';
+    if (message.includes('MONTHLY_AI_LIMIT_REACHED')) {
+      return json({ error: 'This workspace has used its monthly AI assistant allowance. Upgrade the plan or purchase additional AI credits.' }, 429);
+    }
+    if (message.includes('SUBSCRIPTION_INACTIVE')) {
+      return json({ error: 'This workspace subscription has expired or payment is overdue. The Owner must restore billing before AI access can resume.' }, 402);
+    }
+    return json({ error: 'AI usage could not be reserved for this request. Please try again shortly.' }, 503);
   }
+  const usageReservationId = typeof usageReservation === 'string'
+    ? usageReservation
+    : (usageReservation as { id?: string })?.id;
+  if (!usageReservationId) return json({ error: 'AI usage reservation returned an invalid reference.' }, 503);
 
   const { data: organization, error: organizationError } = await userClient
     .from('organizations')
@@ -417,7 +419,7 @@ Deno.serve(async (req: Request) => {
     model: activeModel,
     input_tokens: Number(usage.promptTokenCount) || 0,
     output_tokens: Number(usage.candidatesTokenCount) || 0,
-  }).eq('id', usageReservation.id).eq('organization_id', organizationId);
+  }).eq('id', usageReservationId).eq('organization_id', organizationId);
   if (usageError) {
     return json({ error: 'The response was generated but usage could not be recorded. Please contact the workspace Owner.' }, 503);
   }
