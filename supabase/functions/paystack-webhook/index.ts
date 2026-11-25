@@ -258,6 +258,7 @@ Deno.serve(async (req: Request) => {
       if (recurringSubscriptionCode) {
         const { error: recurringChargeError } = await serviceClient.from('organization_subscriptions').update({
           status: 'active',
+          cancel_at_period_end: false,
           latest_payment_reference: data.reference ?? null,
           current_period_starts_at: data.paid_at ?? data.created_at ?? new Date().toISOString(),
           current_period_ends_at: data.subscription?.next_payment_date ?? data.period_end ?? null,
@@ -320,6 +321,7 @@ Deno.serve(async (req: Request) => {
       if (code && (data.status === 'success' || data.paid === true)) {
         await serviceClient.from('organization_subscriptions').update({
           status: 'active',
+          cancel_at_period_end: false,
           current_period_starts_at: data.period_start ?? data.paid_at ?? new Date().toISOString(),
           current_period_ends_at: data.period_end ?? data.due_date ?? null,
           latest_payment_reference: data.transaction?.reference ?? data.reference ?? null,
