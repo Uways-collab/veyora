@@ -362,7 +362,7 @@ export function IndustryWorkspacesView() {
         </section>}
         </>
       ) : (
-        <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">Choose a selected business category</h2><p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-500">Add or select one of the categories above to open its specialist operational workspace. Your existing core modules remain available separately.</p></section>
+        <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">No single specialist business type is assigned</h2><p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-500">For safety, this organisation will not open multiple industry workspaces. Your existing core modules and records remain unchanged. Choose one business type when setting up a separate business workspace.</p></section>
       )}
     </div>
   );
