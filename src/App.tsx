@@ -21,6 +21,7 @@ import { ReportsView } from './modules/reports/ReportsView';
 import { SalesView } from './modules/sales/SalesView';
 import { SettingsView, type SettingsTab } from './modules/settings/SettingsView';
 import { PlannedModuleView } from './modules/shared/PlannedModuleView';
+import { getSupabaseClient } from './core/supabase/client';
 import { SuppliersView } from './modules/suppliers/SuppliersView';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
@@ -40,6 +41,7 @@ function ProtectedWorkspaceRouter() {
     hasLoadedOrgs,
     memberships,
     activeOrganisation,
+    activeRole,
     workspaceLoadError,
     refreshMemberships,
     signOut,
@@ -47,6 +49,75 @@ function ProtectedWorkspaceRouter() {
 
   const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromHash());
   const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab>('auth_orgs');
+
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+  const [subscriptionAccess, setSubscriptionAccess] = useState<{
+    allowed: boolean;
+    status: string | null;
+    features: Record<string, boolean>;
+    planName: string | null;
+    trialEndsAt: string | null;
+    periodEndsAt: string | null;
+  }>({ allowed: false, status: null, features: {}, planName: null, trialEndsAt: null, periodEndsAt: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSubscription = async () => {
+      if (!activeOrganisation) {
+        setSubscriptionAccess({ allowed: false, status: null, features: {}, planName: null, trialEndsAt: null, periodEndsAt: null });
+        setSubscriptionLoading(false);
+        return;
+      }
+      const db = getSupabaseClient() as any;
+      if (!db) {
+        setSubscriptionAccess({ allowed: false, status: null, features: {}, planName: null, trialEndsAt: null, periodEndsAt: null });
+        setSubscriptionLoading(false);
+        return;
+      }
+      setSubscriptionLoading(true);
+      const { data: sub, error: subError } = await db.from('organization_subscriptions')
+        .select('status,trial_ends_at,current_period_ends_at,card_verified_at,cancel_at_period_end,plan_id')
+        .eq('organization_id', activeOrganisation.id).maybeSingle();
+      let plan: any = null;
+      if (!subError && sub?.plan_id) {
+        const { data } = await db.from('subscription_plans')
+          .select('name,features').eq('id', sub.plan_id).maybeSingle();
+        plan = data;
+      }
+      const now = Date.now();
+      const trialValid = sub?.status === 'trialing' && Boolean(sub.card_verified_at) &&
+        Boolean(sub.trial_ends_at) && new Date(sub.trial_ends_at).getTime() > now;
+      const paidValid = sub?.status === 'active' &&
+        (!sub.current_period_ends_at || new Date(sub.current_period_ends_at).getTime() > now);
+      const cancellationValid = sub?.status === 'cancelled' && sub.cancel_at_period_end === true &&
+        Boolean(sub.current_period_ends_at) && new Date(sub.current_period_ends_at).getTime() > now;
+      if (!cancelled) {
+        setSubscriptionAccess({
+          allowed: !subError && Boolean(plan) && (trialValid || paidValid || cancellationValid),
+          status: sub?.status ?? null,
+          features: plan?.features && typeof plan.features === 'object' ? plan.features : {},
+          planName: plan?.name ?? null,
+          trialEndsAt: sub?.trial_ends_at ?? null,
+          periodEndsAt: sub?.current_period_ends_at ?? null,
+        });
+        setSubscriptionLoading(false);
+      }
+    };
+    void loadSubscription();
+    const refreshOnReturn = () => { void loadSubscription(); };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshOnReturn();
+    };
+    window.addEventListener('focus', refreshOnReturn);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshOnReturn);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [activeOrganisation?.id]);
+
+
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has('reference')) {
@@ -171,6 +242,38 @@ function ProtectedWorkspaceRouter() {
     return <BusinessOnboardingScreen />;
   }
 
+  // Subscription status is re-evaluated from the active organisation only.
+  if (subscriptionLoading) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4"><div className="rounded-xl border border-slate-200 bg-white p-6 text-center"><p className="text-sm font-semibold text-slate-900">Checking subscription access…</p><p className="mt-1 text-xs text-slate-500">Verifying this business workspace before loading its records.</p></div></div>;
+  }
+
+  const featureKey = activeModule === 'industry' ? 'industry' : activeModule;
+  const moduleAllowed = subscriptionAccess.features[featureKey] !== false;
+
+  if (!subscriptionAccess.allowed && !(activeModule === 'billing' && activeRole === 'owner')) {
+    return <AppShell activeModule={activeModule} onSelectModule={handleSelectModule}>
+      <section className="mx-auto max-w-xl rounded-2xl border border-amber-200 bg-white p-6 sm:p-8">
+        <div className="text-xs font-semibold uppercase tracking-wider text-amber-700">Subscription access paused</div>
+        <h1 className="mt-2 text-xl font-semibold text-slate-900">This business workspace is locked</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-600">The 14-day trial has ended, the card payment is overdue, or this business has no active subscription. Business records and operations stay protected until payment is confirmed.</p>
+        {activeRole === 'owner'
+          ? <button type="button" onClick={() => handleSelectModule('billing')} className="mt-5 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white">Open billing to restore access</button>
+          : <p className="mt-5 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Ask the business Owner to update the payment method and restore this workspace. Staff and managers cannot pay for or unlock another business.</p>}
+      </section>
+    </AppShell>;
+  }
+
+  if (subscriptionAccess.allowed && !moduleAllowed && activeModule !== 'billing') {
+    return <AppShell activeModule={activeModule} onSelectModule={handleSelectModule}>
+      <section className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+        <div className="text-xs font-semibold uppercase tracking-wider text-blue-700">Plan feature not included</div>
+        <h1 className="mt-2 text-xl font-semibold text-slate-900">{MODULE_REGISTRY.find(m => m.id === activeModule)?.label ?? 'This feature'} is not included in the {subscriptionAccess.planName ?? 'current'} plan</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-600">This organisation cannot open this feature on its current plan. The Owner can review the plan and upgrade from Subscription & Billing.</p>
+        {activeRole === 'owner' && <button type="button" onClick={() => handleSelectModule('billing')} className="mt-5 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white">Review plans</button>}
+      </section>
+    </AppShell>;
+  }
+
   // Gate 5: Authenticated & Organisation Member -> Protected Workspace Routes
   const renderModule = () => {
     switch (activeModule) {
@@ -191,7 +294,7 @@ function ProtectedWorkspaceRouter() {
       case 'finance':
         return <FinanceView />;
       case 'reports':
-        return <ReportsView />;
+        return <ReportsView canExport={subscriptionAccess.features.api_exports === true} />;
       case 'ai_assistant':
         return <AssistantView />;
       case 'industry':

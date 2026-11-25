@@ -63,7 +63,7 @@ function getDomainIcon(id: ReportDomainId) {
   }
 }
 
-export function ReportsView() {
+export function ReportsView({ canExport = false }: { canExport?: boolean }) {
   const { activeOrganisation, activeRole } = useAuth();
   const [selectedDomain, setSelectedDomain] = useState<ReportDomainId>('inventory');
 
@@ -155,7 +155,7 @@ export function ReportsView() {
 
       {/* Selected Domain Workspace */}
       {selectedDomain === 'inventory' ? (
-        <InventoryReportsPanel />
+        <InventoryReportsPanel canExport={canExport} />
       ) : (
         <section
           aria-labelledby="upcoming-report-domain-heading"

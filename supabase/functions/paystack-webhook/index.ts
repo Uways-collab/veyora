@@ -156,7 +156,6 @@ Deno.serve(async (req: Request) => {
             await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
               .eq('organization_id', transaction.organization_id);
             await serviceClient.from('paystack_webhook_events').update({ processed_at: new Date().toISOString(), processing_error: null }).eq('event_id', eventId);
-            await serviceClient.from('paystack_webhook_events').update({ processed_at: new Date().toISOString(), processing_error: null }).eq('event_id', eventId);
             return json({ received: true, refunded: true });
           }
 
@@ -171,6 +170,7 @@ Deno.serve(async (req: Request) => {
             });
             await serviceClient.from('billing_transactions').update({ provider_refund_id: Number(refund.id), refund_expected_at: refund.expected_at ?? null }).eq('id', transaction.id);
             await serviceClient.from('organization_subscriptions').update({ status: 'expired' }).eq('organization_id', transaction.organization_id);
+            await serviceClient.from('paystack_webhook_events').update({ processed_at: new Date().toISOString(), processing_error: null }).eq('event_id', eventId);
             return json({ received: true, refunded: true });
           }
 
@@ -199,6 +199,7 @@ Deno.serve(async (req: Request) => {
               });
               await serviceClient.from('billing_transactions').update({ provider_refund_id: Number(refund.id), refund_expected_at: refund.expected_at ?? null }).eq('id', transaction.id);
               await serviceClient.from('organization_subscriptions').update({ status: 'expired' }).eq('organization_id', transaction.organization_id);
+              await serviceClient.from('paystack_webhook_events').update({ processed_at: new Date().toISOString(), processing_error: null }).eq('event_id', eventId);
               return json({ received: true, refunded: true });
             }
             providerSubscriptionCode = String(created.subscription_code ?? '');
@@ -253,6 +254,17 @@ Deno.serve(async (req: Request) => {
           }
         }
       }
+      const recurringSubscriptionCode = subscriptionCode(data);
+      if (recurringSubscriptionCode) {
+        const { error: recurringChargeError } = await serviceClient.from('organization_subscriptions').update({
+          status: 'active',
+          cancel_at_period_end: false,
+          latest_payment_reference: data.reference ?? null,
+          current_period_starts_at: data.paid_at ?? data.created_at ?? new Date().toISOString(),
+          current_period_ends_at: data.subscription?.next_payment_date ?? data.period_end ?? null,
+        }).eq('provider_subscription_code', recurringSubscriptionCode);
+        if (recurringChargeError) throw new Error('Could not reactivate the workspace after a successful recurring charge.');
+      }
     } else if (eventType === 'refund.processed' || eventType === 'refund.failed') {
       const reference = String(data.transaction?.reference ?? data.transaction_reference ?? data.reference ?? '');
       const transactionId = typeof data.transaction === 'number' ? data.transaction : typeof data.transaction?.id === 'number' ? data.transaction.id : null;
@@ -286,27 +298,43 @@ Deno.serve(async (req: Request) => {
       const reference = String(data.reference ?? '');
       if (reference) await serviceClient.from('billing_transactions').update({ status: 'failed' })
         .eq('reference', reference).eq('purpose', 'trial_card_verification');
+      const code = subscriptionCode(data);
+      if (code) {
+        const { error: failedChargeError } = await serviceClient.from('organization_subscriptions')
+          .update({ status: 'past_due' }).eq('provider_subscription_code', code);
+        if (failedChargeError) throw new Error('Could not lock the workspace after a failed recurring charge.');
+      }
     } else if (eventType === 'invoice.payment_failed') {
       const code = subscriptionCode(data);
-      if (code) await serviceClient.from('organization_subscriptions').update({ status: 'past_due' })
-        .eq('provider_subscription_code', code);
+      if (!code) throw new Error('Failed invoice webhook did not include a subscription code.');
+      const { error: invoiceFailureError } = await serviceClient.from('organization_subscriptions')
+        .update({ status: 'past_due' }).eq('provider_subscription_code', code);
+      if (invoiceFailureError) throw new Error('Could not lock the workspace after a failed invoice payment.');
     } else if (eventType === 'subscription.not_renew') {
       const code = subscriptionCode(data);
-      if (code) await serviceClient.from('organization_subscriptions').update({ cancel_at_period_end: true })
-        .eq('provider_subscription_code', code);
+      if (code) {
+        const { error: nonRenewalError } = await serviceClient.from('organization_subscriptions')
+          .update({ cancel_at_period_end: true }).eq('provider_subscription_code', code);
+        if (nonRenewalError) throw new Error('Could not record the subscription non-renewal request.');
+      }
     } else if (eventType === 'subscription.disable') {
       const code = subscriptionCode(data);
-      if (code) await serviceClient.from('organization_subscriptions').update({ status: 'cancelled' })
-        .eq('provider_subscription_code', code);
+      if (code) {
+        const { error: disabledSubscriptionError } = await serviceClient.from('organization_subscriptions')
+          .update({ status: 'cancelled', cancel_at_period_end: false }).eq('provider_subscription_code', code);
+        if (disabledSubscriptionError) throw new Error('Could not lock the disabled subscription.');
+      }
     } else if (eventType === 'invoice.update') {
       const code = subscriptionCode(data);
       if (code && (data.status === 'success' || data.paid === true)) {
-        await serviceClient.from('organization_subscriptions').update({
+        const { error: invoiceSuccessError } = await serviceClient.from('organization_subscriptions').update({
           status: 'active',
+          cancel_at_period_end: false,
           current_period_starts_at: data.period_start ?? data.paid_at ?? new Date().toISOString(),
           current_period_ends_at: data.period_end ?? data.due_date ?? null,
           latest_payment_reference: data.transaction?.reference ?? data.reference ?? null,
         }).eq('provider_subscription_code', code);
+        if (invoiceSuccessError) throw new Error('Could not restore access after a successful invoice payment.');
       }
     }
 

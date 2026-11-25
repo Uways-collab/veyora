@@ -152,19 +152,16 @@ export function AuthScreen({ initialMode }: { initialMode?: AuthViewMode }) {
   const displayError = localError ?? authError;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 text-slate-900 flex flex-col">
+    <div className="min-h-screen overflow-hidden bg-[#f5f7fb] text-slate-900 flex flex-col">
       {/* Minimal Header */}
-      <header className="sticky top-0 z-10 h-16 bg-white/85 backdrop-blur border-b border-slate-200/80 px-5 sm:px-8 flex items-center justify-between">
+      <header className="sticky top-0 z-10 h-[76px] bg-white/85 backdrop-blur-xl border-b border-slate-200/70 px-5 sm:px-8 lg:px-12 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <img src="/veyora-logo.svg" alt="Veyora" className="h-9 w-auto max-w-[180px] object-contain" />
         </div>
-        <span className="text-xs text-slate-500">
-          Multi-Tenant Workspace Access
-        </span>
+        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500"><span className="h-2 w-2 rounded-full bg-emerald-500" />Built for ambitious businesses <span className="mx-2 text-slate-300">·</span><span>Secure workspace access</span></div>
       </header>
 
-      <main className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md space-y-6">
+      <main className="flex-1 flex items-center justify-center px-4 py-8 sm:px-6 lg:px-10 lg:py-12"><div className="mx-auto grid w-full max-w-6xl items-center gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16"><aside className="hidden lg:block"><div className="max-w-xl"><div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-blue-800"><span className="h-1.5 w-1.5 rounded-full bg-blue-600" />YOUR BUSINESS, IN SYNC</div><h1 className="mt-7 max-w-lg font-display text-5xl font-semibold leading-[1.12] tracking-tight text-slate-950">Run your business with <span className="text-blue-700">clarity.</span></h1><p className="mt-5 max-w-lg text-base leading-7 text-slate-600">Bring your people, daily operations, money and decisions into one connected workspace—shaped around the way your business actually works.</p><div className="mt-9 grid gap-3"><div className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm shadow-slate-900/[0.03]"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 12h18M12 3v18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" /></svg></span><div><p className="text-sm font-semibold text-slate-900">Operations that fit your industry</p><p className="mt-0.5 text-xs text-slate-500">Workflows for the way you really operate.</p></div></div><div className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm shadow-slate-900/[0.03]"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-700"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 19V5m0 14h16M8 15l3-4 3 2 5-7" /></svg></span><div><p className="text-sm font-semibold text-slate-900">A clearer view of performance</p><p className="mt-0.5 text-xs text-slate-500">Connect sales, stock, finance and reporting.</p></div></div><div className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm shadow-slate-900/[0.03]"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 7.7 7.5 9.5 4.3-1.8 7.5-4.9 7.5-9.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><p className="text-sm font-semibold text-slate-900">Your organisation stays yours</p><p className="mt-0.5 text-xs text-slate-500">Private workspaces with role-based access.</p></div></div></div><p className="mt-8 text-xs text-slate-400">One connected platform. Specialist tools when you need them.</p></div></aside><div className="w-full max-w-xl justify-self-center space-y-6">
           {status === 'unconfigured' ? (
             <section className="bg-white/95 border border-slate-200/80 rounded-2xl p-6 sm:p-8 space-y-5 shadow-xl shadow-slate-900/5">
               <div className="flex items-center gap-2.5 text-slate-900">
@@ -246,7 +243,7 @@ export function AuthScreen({ initialMode }: { initialMode?: AuthViewMode }) {
               </form>
             </section>
           ) : (
-            <section className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8 space-y-6">
+            <section className="rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.22)] sm:p-9 space-y-7">
               {/* Mode Switcher for Sign In / Register */}
               {mode !== 'forgot' ? (
                 <div className="space-y-4">
@@ -481,11 +478,7 @@ export function AuthScreen({ initialMode }: { initialMode?: AuthViewMode }) {
             </section>
           )}
 
-          <p className="text-center text-xs text-slate-500">
-            Authenticated via Supabase Auth · Tenant isolation enforced by PostgreSQL RLS
-          </p>
-        </div>
-      </main>
+          <p className="text-center text-xs text-slate-400">Protected by secure sign-in and organisation-level access controls.</p></div></div></main>
     </div>
   );
 }

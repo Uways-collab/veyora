@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AlertCircle, ArrowRight, Building2, CalendarDays, CarFront, CheckCircle2, ClipboardList, Factory, Hotel, Loader2, MapPin, Plus, RefreshCw, Utensils, X } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
+import { HotelWorkspaceView } from './HotelWorkspaceView';
+import { DealershipWorkspaceView } from './DealershipWorkspaceView';
+import { RealEstateWorkspaceView, RestaurantWorkspaceView, LogisticsWorkspaceView, ManufacturingWorkspaceView } from './SpecialistIndustryDashboards';
 import { getSupabaseClient } from '../../core/supabase/client';
 import type { BusinessCategory } from '../../core/types/domain';
 
@@ -160,14 +163,14 @@ export function IndustryWorkspacesView() {
     const { data, error: queryError } = await industrySupabase.from('organization_business_types')
       .select('business_type,is_primary').eq('organization_id', activeOrganisation.id);
     if (queryError) {
-      setError('Unable to load your selected business categories: ' + queryError.message);
+      setError('Unable to load your selected business type: ' + queryError.message);
       setSelectedCategories([]);
       return;
     }
-    const categories = (data ?? []).map((item) => String(item.business_type) as BusinessCategory);
-    setSelectedCategories(categories);
     const primary = data?.find((item) => item.is_primary)?.business_type as BusinessCategory | undefined;
-    setActiveCategory((current) => current && categories.includes(current) ? current : (primary && ALL_CATEGORIES.includes(primary) ? primary : categories.find((item) => ALL_CATEGORIES.includes(item)) ?? null));
+    const assigned = primary && ALL_CATEGORIES.includes(primary) ? primary : null;
+    setSelectedCategories(assigned ? [assigned] : []);
+    setActiveCategory(assigned);
   }, [industrySupabase, activeOrganisation?.id]);
 
   const loadRecords = useCallback(async () => {
@@ -187,23 +190,6 @@ export function IndustryWorkspacesView() {
 
   useEffect(() => { void loadCategories(); }, [loadCategories]);
   useEffect(() => { void loadRecords(); }, [loadRecords]);
-
-  const addCategory = async (category: BusinessCategory) => {
-    if (!industrySupabase || !activeOrganisation || !canManageCategories) return;
-    setSaving(true); setError(null); setNotice(null);
-    // Preserve the organisation's existing core operating model as primary.
-    const isPrimary = false;
-    const { error: insertError } = await industrySupabase.from('organization_business_types').upsert({
-      organization_id: activeOrganisation.id, business_type: category, is_primary: isPrimary, configuration: {},
-    }, { onConflict: 'organization_id,business_type' });
-    if (insertError) setError('Could not add this business category: ' + insertError.message);
-    else {
-      setNotice('Business category added. Its operational workspace is now available.');
-      await loadCategories();
-      setActiveCategory(category);
-    }
-    setSaving(false);
-  };
 
   const startCreate = () => {
     if (!industry) return;
@@ -257,6 +243,64 @@ export function IndustryWorkspacesView() {
     catch { return amount.toFixed(2) + ' ' + currency; }
   };
 
+  const overviewMetrics = useMemo(() => {
+    if (!industry) return [];
+    const count = (statuses: string[]) => rows.filter((row) => statuses.includes(String(row[industry.statusField] ?? ''))).length;
+    const sum = (field: string) => rows.reduce((total, row) => total + (Number(row[field]) || 0), 0);
+    const today = new Date().toISOString().slice(0, 10);
+    const inNext30Days = (field: string) => rows.filter((row) => {
+      const date = new Date(String(row[field] ?? ''));
+      const days = (date.getTime() - Date.now()) / 86400000;
+      return Number.isFinite(date.getTime()) && days >= 0 && days <= 30;
+    }).length;
+    switch (industry.category) {
+      case 'hotel':
+        return [
+          { label: 'Reservations in view', value: String(rows.length), helper: 'Guest bookings recorded' },
+          { label: 'Currently checked in', value: String(count(['checked_in'])), helper: 'Guests staying now' },
+          { label: 'Arrivals today', value: String(rows.filter((row) => String(row.check_in ?? '').slice(0, 10) === today).length), helper: 'Scheduled check-ins' },
+          { label: 'Booking value', value: money(sum('total_amount')), helper: 'Value across loaded bookings' },
+        ];
+      case 'car_dealership':
+        return [
+          { label: 'Vehicles in stock', value: String(count(['in_stock'])), helper: 'Available for sale' },
+          { label: 'Reserved vehicles', value: String(count(['reserved'])), helper: 'Deals being held' },
+          { label: 'Vehicles sold', value: String(count(['sold'])), helper: 'Marked as sold' },
+          { label: 'Listed value', value: money(sum('asking_price')), helper: 'Asking prices in loaded stock' },
+        ];
+      case 'real_estate':
+        return [
+          { label: 'Active leases', value: String(count(['active'])), helper: 'Current tenant agreements' },
+          { label: 'Monthly rent', value: money(rows.filter((row) => row.status === 'active').reduce((total, row) => total + (Number(row.monthly_rent) || 0), 0)), helper: 'Across active leases' },
+          { label: 'Leases ending soon', value: String(inNext30Days('lease_end')), helper: 'Within the next 30 days' },
+          { label: 'Lease records', value: String(rows.length), helper: 'Latest records in this workspace' },
+        ];
+      case 'restaurant':
+        return [
+          { label: 'Open kitchen orders', value: String(count(['new', 'accepted', 'preparing'])), helper: 'Awaiting completion' },
+          { label: 'Ready to serve', value: String(count(['ready'])), helper: 'Ready for collection or service' },
+          { label: 'Completed orders', value: String(count(['completed', 'served'])), helper: 'Finished service' },
+          { label: 'Order value', value: money(sum('total_amount')), helper: 'Value across loaded orders' },
+        ];
+      case 'logistics':
+        return [
+          { label: 'In transit', value: String(count(['in_transit'])), helper: 'Currently on the road' },
+          { label: 'Awaiting dispatch', value: String(count(['pending', 'assigned'])), helper: 'Jobs not yet delivered' },
+          { label: 'Delivered', value: String(count(['delivered'])), helper: 'Completed deliveries' },
+          { label: 'Needs attention', value: String(count(['failed', 'returned'])), helper: 'Failed or returned jobs' },
+        ];
+      case 'manufacturing':
+        return [
+          { label: 'In production', value: String(count(['released', 'in_progress'])), helper: 'Orders on the production floor' },
+          { label: 'Quality checks', value: String(count(['quality_check'])), helper: 'Awaiting quality approval' },
+          { label: 'Completed units', value: sum('completed_quantity').toLocaleString(), helper: 'Across loaded production orders' },
+          { label: 'Planned units', value: sum('planned_quantity').toLocaleString(), helper: 'Across loaded production orders' },
+        ];
+      default:
+        return [];
+    }
+  }, [industry, rows]);
+
   if (!activeOrganisation) return null;
 
   return (
@@ -273,27 +317,23 @@ export function IndustryWorkspacesView() {
       {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
       {notice && <div role="status" className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />{notice}</div>}
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-slate-900">Your business categories</h2><p className="text-xs text-slate-500">Select the specialist areas this organisation operates.</p></div><span className="text-[11px] text-slate-500">{selectedCategories.length} selected</span></div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {INDUSTRIES.map((item) => {
-            const Icon = item.icon;
-            const selected = selectedCategories.includes(item.category);
-            return (
-              <button key={item.category} type="button" disabled={!selected && (!canManageCategories || saving)} onClick={() => { if (selected) { setActiveCategory(item.category); setFormOpen(false); setError(null); } else void addCategory(item.category); }}
-                className={'rounded-xl border p-4 text-left transition ' + (activeCategory === item.category ? 'border-blue-400 bg-blue-50/70 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-slate-300') + ((!selected && !canManageCategories) ? ' cursor-not-allowed opacity-60' : '')}>
-                <div className="flex items-start justify-between gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Icon className="h-5 w-5" /></span><span className={'rounded-full px-2 py-1 text-[10px] font-semibold ' + (selected ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}>{selected ? 'Selected' : canManageCategories ? 'Add category' : 'Not selected'}</span></div>
-                <div className="mt-3 text-sm font-semibold text-slate-900">{item.label}</div><p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
-                {selected && <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-blue-700">Open workspace <ArrowRight className="h-3 w-3" /></div>}
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-[11px] leading-5 text-slate-500">Category selection describes your business mix. Paid add-on checkout and entitlement enforcement are being completed separately; these initial workflows are available for controlled preview and testing.</p>
-      </section>
+      {industry && selectedCategories.includes(industry.category) && (
+        <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Business workspace</div>
+          <h2 className="mt-1 text-sm font-semibold text-slate-900">{industry.label}</h2>
+          <p className="mt-1 text-xs text-slate-500">This workspace is configured for one business type. To run another business, create a separate business workspace; unrelated industry tools are not added here.</p>
+        </section>
+      )}
 
       {industry && selectedCategories.includes(industry.category) ? (
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <>
+        <section className="hidden space-y-3">
+          <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-slate-900">{industry.label} overview</h2><p className="text-xs text-slate-500">A live operational snapshot from the latest records loaded for this workspace.</p></div><span className="text-[10px] font-medium text-slate-400">Up to 200 recent records</span></div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {overviewMetrics.map((metric, index) => <div key={metric.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.02]"><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-slate-500">{metric.label}</p><span className={'h-2 w-2 rounded-full ' + (index === 0 ? 'bg-blue-500' : index === 1 ? 'bg-emerald-500' : index === 2 ? 'bg-violet-500' : 'bg-amber-500')} /></div><p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 tabular-nums">{metric.value}</p><p className="mt-1 text-[11px] text-slate-500">{metric.helper}</p></div>)}
+          </div>
+        </section>
+        {industry.category === 'hotel' ? <HotelWorkspaceView /> : industry.category === 'car_dealership' ? <DealershipWorkspaceView /> : industry.category === 'real_estate' ? <RealEstateWorkspaceView /> : industry.category === 'restaurant' ? <RestaurantWorkspaceView /> : industry.category === 'logistics' ? <LogisticsWorkspaceView /> : industry.category === 'manufacturing' ? <ManufacturingWorkspaceView /> : <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h2 className="text-base font-semibold text-slate-900">{industry.label}</h2><p className="mt-1 text-xs text-slate-500">{industry.description}</p></div>
             <button type="button" onClick={startCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-800"><Plus className="h-4 w-4" /> New {industry.singular}</button>
@@ -318,10 +358,11 @@ export function IndustryWorkspacesView() {
           {loading ? <div className="flex items-center justify-center gap-2 p-12 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading workspace…</div>
             : rows.length === 0 ? <div className="p-12 text-center"><span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><ClipboardList className="h-5 w-5" /></span><h3 className="mt-3 text-sm font-semibold text-slate-900">No {industry.singular.toLowerCase()} records yet</h3><p className="mt-1 text-xs text-slate-500">Create your first record to start using this workflow.</p></div>
             : <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-[11px] font-semibold text-slate-500"><tr>{industry.columns.map((column) => <th key={column.key} className="whitespace-nowrap px-4 py-3">{column.label}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row) => <tr key={String(row.id)} className="hover:bg-slate-50/70">{industry.columns.map((column) => <td key={column.key} className="max-w-[240px] whitespace-nowrap px-4 py-3 text-slate-700">{column.kind === 'money' ? money(row[column.key]) : column.kind === 'date' ? formatDate(row[column.key]) : column.kind === 'status' ? <select aria-label={'Update status for ' + industry.singular} disabled={!canUpdateRecords} value={String(row[column.key] ?? '')} onChange={(event) => void updateStatus(String(row.id), event.target.value)} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100">{industry.statuses.map((status) => <option key={status.value} value={status.value} disabled={status.value !== String(row[column.key] ?? '') && !(STATUS_TRANSITIONS[industry.category]?.[String(row[column.key] ?? '')] ?? []).includes(status.value)}>{status.label}</option>)}</select> : <span className="block truncate" title={String(row[column.key] ?? '')}>{String(row[column.key] ?? '—')}</span>}</td>)}</tr>)}</tbody></table></div>}
-          <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">This first release manages the specialist record and its workflow status. It does not automatically post financial entries, deduct inventory, charge customers or dispatch vehicles.</div>
-        </section>
+          <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">This initial workflow manages specialist records and statuses only. Connected financial, inventory and external actions are enabled only when their controls are implemented.</div>
+        </section>}
+        </>
       ) : (
-        <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">Choose a selected business category</h2><p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-500">Add or select one of the categories above to open its specialist operational workspace. Your existing core modules remain available separately.</p></section>
+        <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">No single specialist business type is assigned</h2><p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-500">For safety, this organisation will not open multiple industry workspaces. Your existing core modules and records remain unchanged. Choose one business type when setting up a separate business workspace.</p></section>
       )}
     </div>
   );

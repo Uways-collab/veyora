@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../../core/supabase/client';
+import { compressImageToWebp, MAX_IMAGE_UPLOAD_BYTES } from '../../core/images/compressImage';
 import { verifyActiveWorkspaceContext } from '../inventory/inventoryService';
 import { normalizePaymentMethodCode, roundMoney } from '../sales/salesFormatters';
 import { fetchActivePaymentMethods } from '../sales/salesService';
@@ -845,7 +846,28 @@ export async function uploadExpenseReceipt(
   }
 
   const orgId = verified.organizationId;
-  const ext = getReceiptExtension(file);
+  const isImage = file.type.startsWith('image/');
+  let compressedImage: Awaited<ReturnType<typeof compressImageToWebp>> | null = null;
+  try {
+    if (isImage) {
+      compressedImage = await compressImageToWebp(file, {
+        maxBytes: MAX_IMAGE_UPLOAD_BYTES,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      });
+    }
+  } catch (err) {
+    return {
+      storagePath: null,
+      error: err instanceof Error ? err.message : 'Unable to compress receipt image.',
+    };
+  }
+  const uploadBlob: Blob = compressedImage?.blob ?? file;
+  const uploadType = compressedImage?.contentType ?? file.type;
+  const ext = compressedImage?.extension ?? getReceiptExtension(file);
+  if (isImage && uploadBlob.size > MAX_IMAGE_UPLOAD_BYTES) {
+    return { storagePath: null, error: 'Compressed receipt image exceeds the 100 KB upload limit.' };
+  }
   let uniqueToken = '';
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {

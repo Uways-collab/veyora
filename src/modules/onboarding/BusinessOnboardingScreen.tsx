@@ -3,12 +3,10 @@ import { Building2, CheckCircle2, Loader2, LogOut, RefreshCw, ShieldCheck } from
 import { useAuth } from '../../core/auth/AuthContext';
 import {
   BUSINESS_CATEGORY_OPTIONS,
-  BUSINESS_TYPE_OPTIONS,
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
 } from '../../core/constants/businessOptions';
-import type { BusinessCategory, BusinessType } from '../../core/types/domain';
-import { getSupabaseClient } from '../../core/supabase/client';
+import type { BusinessCategory } from '../../core/types/domain';
 
 export function BusinessOnboardingScreen() {
   const {
@@ -23,14 +21,18 @@ export function BusinessOnboardingScreen() {
   } = useAuth();
 
   const [name, setName] = useState('');
-  const [businessType, setBusinessType] = useState<BusinessType>('retail');
-  const [businessCategories, setBusinessCategories] = useState<BusinessCategory[]>(['retail']);
-  const [primaryCategory, setPrimaryCategory] = useState<BusinessCategory>('retail');
-  const [country, setCountry] = useState('United States');
-  const [currency, setCurrency] = useState('USD');
-  const [timezone, setTimezone] = useState('America/New_York');
+  const [businessCategory, setBusinessCategory] = useState<BusinessCategory>('retail');
+  const [country, setCountry] = useState('Nigeria');
+  const [currency, setCurrency] = useState('NGN');
+  const [timezone, setTimezone] = useState('Africa/Lagos');
   const [businessEmail, setBusinessEmail] = useState('');
   const [businessPhone, setBusinessPhone] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
+  const [productsOrServices, setProductsOrServices] = useState('');
+  const [operatingChannels, setOperatingChannels] = useState<string[]>(['physical']);
+  const [teamSize, setTeamSize] = useState('1-5');
+  const [locationCount, setLocationCount] = useState('1');
+  const [businessPriorities, setBusinessPriorities] = useState<string[]>(['sales']);
 
   const submitLockRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
@@ -58,6 +60,8 @@ export function BusinessOnboardingScreen() {
     setSuccessMsg(null);
 
     const trimmedName = name.trim();
+    if (businessDescription.trim().length < 12) { setErrorMsg('Please describe your business in at least 12 characters so we can set up the right workspace.'); return; }
+    if (operatingChannels.length === 0) { setErrorMsg('Choose at least one way your business serves customers.'); return; }
     if (trimmedName.length < 2) {
       setErrorMsg('Business name must be at least 2 characters.');
       return;
@@ -69,7 +73,8 @@ export function BusinessOnboardingScreen() {
     try {
       const { error, organisationId } = await createOrganisation({
         name: trimmedName,
-        businessType,
+        businessType: businessCategory,
+        configuration: { business_description: businessDescription.trim(), products_or_services: productsOrServices.trim(), operating_channels: operatingChannels, team_size: teamSize, location_count: locationCount, priorities: businessPriorities },
         country,
         baseCurrency: currency,
         timezone,
@@ -84,22 +89,7 @@ export function BusinessOnboardingScreen() {
         return;
       }
 
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const categoryRows = businessCategories.map((category) => ({
-          organization_id: organisationId,
-          business_type: category,
-          is_primary: category === primaryCategory,
-          configuration: {},
-        }));
-        const { error: categoryError } = await supabase
-          .from('organization_business_types')
-          .upsert(categoryRows, { onConflict: 'organization_id,business_type' });
-        if (categoryError) {
-          setErrorMsg('Workspace created, but industry selections could not be saved: ' + categoryError.message);
-        }
-      }
-      setSuccessMsg('Business workspace "' + trimmedName + '" created with ' + businessCategories.length + ' business categories. Loading dashboard...');
+      setSuccessMsg('Business workspace "' + trimmedName + '" created with the ' + businessCategory.replaceAll('_', ' ') + ' workspace. Loading dashboard...');
     } catch (err: unknown) {
       setErrorMsg(
         err instanceof Error ? err.message : 'Unexpected error creating business workspace.'
@@ -208,25 +198,6 @@ export function BusinessOnboardingScreen() {
                   />
                 </div>
 
-                <div className="sm:col-span-2 space-y-1">
-                  <label htmlFor="onboard-business-type" className="block text-xs font-medium text-slate-700">
-                    Core Operating Model <span className="text-red-600">*</span>
-                  </label>
-                  <select
-                    id="onboard-business-type"
-                    value={businessType}
-                    onChange={(e) => setBusinessType(e.target.value as BusinessType)}
-                    className="w-full h-10 px-3 rounded-md border border-slate-300 text-sm text-slate-900 bg-white focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
-                  >
-                    {BUSINESS_TYPE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label} — {opt.description}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] leading-5 text-slate-500">This keeps the existing shared inventory and service workflows compatible. Choose your specialist business categories below.</p>
-                </div>
-
                 <div className="space-y-1">
                   <label htmlFor="onboard-country" className="block text-xs font-medium text-slate-700">
                     Country <span className="text-red-600">*</span>
@@ -265,46 +236,51 @@ export function BusinessOnboardingScreen() {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <label htmlFor="onboard-business-category" className="block text-xs font-semibold text-slate-900">Business type <span className="text-red-600">*</span></label>
+              <p className="text-xs leading-5 text-slate-500">Each workspace belongs to one business type and receives only that business's specialist tools. To operate another business, create a separate business workspace.</p>
+              <select id="onboard-business-category" required value={businessCategory} onChange={(event) => setBusinessCategory(event.target.value as BusinessCategory)} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
+                {BUSINESS_CATEGORY_OPTIONS.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
+              </select>
+            </div>
+
+            {/* Business discovery questions */}
             <div className="space-y-4">
-              <div className="space-y-1 border-b border-slate-200 pb-2.5">
-                <div className="text-xs font-semibold text-slate-900">Business Categories</div>
-                <p className="text-xs leading-5 text-slate-500">Choose every type of business you operate under this organisation. You can select more than one.</p>
+              <div className="border-b border-slate-200 pb-2.5">
+                <div className="text-xs font-semibold text-slate-900">Tell us how your business really works</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">These answers help Veyora shape the right workspace, dashboard and specialist workflows. You can update them later.</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {BUSINESS_CATEGORY_OPTIONS.map((category) => {
-                  const checked = businessCategories.includes(category.value);
-                  return (
-                    <label key={category.value} className={"flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors " + (checked ? "border-blue-400 bg-blue-50/60" : "border-slate-200 hover:border-slate-300")}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(event) => {
-                          if (event.target.checked) {
-                            if (!businessCategories.includes(category.value)) {
-                              setBusinessCategories([...businessCategories, category.value]);
-                            }
-                            return;
-                          }
-                          const next = businessCategories.filter((value) => value !== category.value);
-                          if (next.length === 0) return;
-                          setBusinessCategories(next);
-                          if (primaryCategory === category.value) setPrimaryCategory(next[0]);
-                        }}
-                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-xs font-semibold text-slate-800">{category.label}</span>
-                        <span className="mt-1 block text-[11px] leading-5 text-slate-500">{category.description}</span>
-                      </span>
-                    </label>
-                  );
-                })}
+              <div className="space-y-1">
+                <label htmlFor="onboard-business-description" className="block text-xs font-medium text-slate-700">In a sentence or two, what does your business do? <span className="text-red-600">*</span></label>
+                <textarea id="onboard-business-description" required minLength={12} maxLength={1000} rows={3} value={businessDescription} onChange={(e) => setBusinessDescription(e.target.value)} placeholder="Example: We operate a hotel with short-stay rooms, event spaces and an in-house restaurant." className="w-full rounded-xl border border-slate-300 px-3.5 py-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/15" />
               </div>
-              <div className="max-w-sm space-y-1">
-                <label htmlFor="onboard-primary-category" className="block text-xs font-medium text-slate-700">Primary business category</label>
-                <select id="onboard-primary-category" value={primaryCategory} onChange={(event) => { const value = event.target.value as BusinessCategory; setPrimaryCategory(value); setBusinessType((["retail", "wholesale", "distribution", "services", "hybrid"] as BusinessType[]).includes(value as BusinessType) ? value as BusinessType : "hybrid"); }} className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900">
-                  {BUSINESS_CATEGORY_OPTIONS.filter((category) => businessCategories.includes(category.value)).map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
-                </select>
+              <div className="space-y-1">
+                <label htmlFor="onboard-products-services" className="block text-xs font-medium text-slate-700">What are your main products or services?</label>
+                <textarea id="onboard-products-services" rows={2} maxLength={1000} value={productsOrServices} onChange={(e) => setProductsOrServices(e.target.value)} placeholder="List the main things customers pay you for." className="w-full rounded-xl border border-slate-300 px-3.5 py-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/15" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <span className="block text-xs font-medium text-slate-700">How do you serve customers?</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{value:'physical',label:'In person'},{value:'online',label:'Online'},{value:'field',label:'On-site / field'},{value:'appointments',label:'Appointments'}].map((item) => <label key={item.value} className={'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs cursor-pointer '+(operatingChannels.includes(item.value)?'border-blue-400 bg-blue-50 text-blue-800':'border-slate-200 text-slate-600')}><input type="checkbox" checked={operatingChannels.includes(item.value)} onChange={(e) => setOperatingChannels((current) => e.target.checked ? [...current,item.value] : current.filter((value) => value !== item.value))} className="rounded border-slate-300 text-blue-700 focus:ring-blue-600" />{item.label}</label>)}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label htmlFor="onboard-team-size" className="block text-xs font-medium text-slate-700">Team size</label>
+                    <select id="onboard-team-size" value={teamSize} onChange={(e) => setTeamSize(e.target.value)} className="w-full h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-xs"><option value="1-5">1–5</option><option value="6-20">6–20</option><option value="21-50">21–50</option><option value="51-200">51–200</option><option value="201+">201+</option></select>
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="onboard-locations" className="block text-xs font-medium text-slate-700">Locations</label>
+                    <select id="onboard-locations" value={locationCount} onChange={(e) => setLocationCount(e.target.value)} className="w-full h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-xs"><option value="1">1 location</option><option value="2-5">2–5</option><option value="6-20">6–20</option><option value="21+">21+</option></select>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <span className="block text-xs font-medium text-slate-700">What do you most want Veyora to help you improve?</span>
+                <div className="flex flex-wrap gap-2">
+                  {[{value:'sales',label:'Sales & customers'},{value:'stock',label:'Stock & purchasing'},{value:'bookings',label:'Bookings & scheduling'},{value:'staff',label:'Staff & daily operations'},{value:'finance',label:'Cash flow & finance'},{value:'insights',label:'Reports & decisions'}].map((item) => <label key={item.value} className={'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs cursor-pointer '+(businessPriorities.includes(item.value)?'border-blue-400 bg-blue-50 text-blue-800':'border-slate-200 text-slate-600')}><input type="checkbox" checked={businessPriorities.includes(item.value)} onChange={(e) => setBusinessPriorities((current) => e.target.checked ? [...current,item.value] : current.filter((value) => value !== item.value))} className="rounded border-slate-300 text-blue-700 focus:ring-blue-600" />{item.label}</label>)}
+                </div>
               </div>
             </div>
 

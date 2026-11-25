@@ -697,7 +697,7 @@ export function ExpenseFormModal({
               htmlFor="expense-receipt-input"
               className="block font-medium text-slate-700"
             >
-              Receipt Attachment <span className="text-slate-400 font-normal">(optional, PNG/JPG/WebP/PDF max 5 MB)</span>
+              Receipt Attachment <span className="text-slate-400 font-normal">(images compressed to 100 KB max; PDF up to 5 MB)</span>
             </label>
 
             <div className="flex flex-wrap items-center gap-2.5 p-3 rounded-md border border-slate-200 bg-slate-50/70">

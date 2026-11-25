@@ -23,12 +23,7 @@ export type ModuleStage = 'foundation_active' | 'planned_module';
 
 export type OrganisationRole = 'owner' | 'admin' | 'manager' | 'staff';
 
-export type BusinessType =
-  | 'retail'
-  | 'wholesale'
-  | 'distribution'
-  | 'services'
-  | 'hybrid';
+export type BusinessType = BusinessCategory;
 
 export type BusinessCategory =
   | 'retail'

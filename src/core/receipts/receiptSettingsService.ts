@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../supabase/client';
+import { compressImageToWebp, MAX_IMAGE_UPLOAD_BYTES } from '../images/compressImage';
 import type { Organisation, OrganisationRole } from '../types/domain';
 import {
   DEFAULT_RECEIPT_SETTINGS,
@@ -186,65 +187,6 @@ export async function saveOrganizationReceiptSettings(
   };
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-      } else {
-        reject(new Error('Failed to read image file.'));
-      }
-    };
-    reader.onerror = () => reject(new Error('Failed to read image file.'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function optimizeReceiptLogoToPng(
-  sourceDataUrl: string
-): Promise<{ dataUrl: string; blob: Blob }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const maxW = 360;
-      const maxH = 140;
-      const naturalW = img.naturalWidth || maxW;
-      const naturalH = img.naturalHeight || maxH;
-      const scale = Math.min(1, maxW / naturalW, maxH / naturalH);
-      const targetW = Math.max(1, Math.round(naturalW * scale));
-      const targetH = Math.max(1, Math.round(naturalH * scale));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Canvas rendering is unavailable in this browser.'));
-        return;
-      }
-
-      ctx.clearRect(0, 0, targetW, targetH);
-      ctx.drawImage(img, 0, 0, targetW, targetH);
-
-      const dataUrl = canvas.toDataURL('image/png');
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error('Unable to encode optimized logo PNG.'));
-            return;
-          }
-          resolve({ dataUrl, blob });
-        },
-        'image/png',
-        0.92
-      );
-    };
-    img.onerror = () => reject(new Error('Selected file could not be decoded as an image.'));
-    img.src = sourceDataUrl;
-  });
-}
-
 const ALLOWED_LOGO_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -296,15 +238,21 @@ export async function processAndStoreReceiptLogo(
   }
 
   try {
-    const rawDataUrl = await readFileAsDataUrl(file);
-    const { dataUrl, blob } = await optimizeReceiptLogoToPng(rawDataUrl);
+    const compressed = await compressImageToWebp(file, {
+      maxBytes: MAX_IMAGE_UPLOAD_BYTES,
+      maxWidth: 360,
+      maxHeight: 140,
+    });
+    if (compressed.blob.size > MAX_IMAGE_UPLOAD_BYTES) {
+      throw new Error('Compressed image exceeds the 100 KB upload limit.');
+    }
 
-    const storagePath = `${organisationId}/settings/receipt-logo-${Date.now()}.png`;
+    const storagePath = `${organisationId}/settings/receipt-logo-${Date.now()}.${compressed.extension}`;
     const { error: uploadErr } = await supabase.storage
       .from(RECEIPT_STORAGE_BUCKET)
-      .upload(storagePath, blob, {
+      .upload(storagePath, compressed.blob, {
         upsert: false,
-        contentType: 'image/png',
+        contentType: compressed.contentType,
         cacheControl: '3600',
       });
 
@@ -317,7 +265,7 @@ export async function processAndStoreReceiptLogo(
     }
 
     return {
-      logoUrl: dataUrl,
+      logoUrl: compressed.dataUrl,
       logoStoragePath: storagePath,
       error: null,
     };
