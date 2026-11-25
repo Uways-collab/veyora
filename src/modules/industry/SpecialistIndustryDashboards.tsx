@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { AlertCircle, ArrowUpRight, CheckCircle2, ClipboardCheck, Factory, Home, Loader2, Plus, RefreshCw, Truck, Utensils } from 'lucide-react';
 import { getSupabaseClient } from '../../core/supabase/client';
 import { useAuth } from '../../core/auth/AuthContext';
