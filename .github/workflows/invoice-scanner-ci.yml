@@ -1,0 +1,29 @@
+name: Invoice Scanner Edge CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  edge-function:
+    name: Invoice Edge Function Deno check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install project dependencies for Deno npm resolution
+        run: npm install --legacy-peer-deps --no-package-lock --no-audit --no-fund
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check invoice scanner Edge Function
+        run: deno check supabase/functions/scan-supplier-invoice/index.ts

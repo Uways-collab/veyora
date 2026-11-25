@@ -27,6 +27,7 @@ import {
   type PurchaseStatusValue,
 } from './purchasesTypes';
 import { formatPaymentTermsLabel } from './suppliersService';
+import { getSupabaseClient } from '../../core/supabase/client';
 import type { SupplierRecord } from './suppliersTypes';
 
 interface PurchaseDetailModalProps {
@@ -76,6 +77,7 @@ export function PurchaseDetailModal({
   const [receipts, setReceipts] = useState<PurchaseReceiptRecord[]>([]);
   const [receiptsLoading, setReceiptsLoading] = useState(false);
   const [receiptsError, setReceiptsError] = useState<string | null>(null);
+  const [invoiceDocumentUrl, setInvoiceDocumentUrl] = useState<string | null>(null);
   const receiptSeqRef = useRef(0);
 
   const purchaseId = purchase?.id ?? null;
@@ -115,6 +117,19 @@ export function PurchaseDetailModal({
       }
     }
   }, [organisationId, purchaseId, purchaseStatus, purchaseItems, catalogVariants, locationsById]);
+
+  useEffect(() => {
+    let active = true;
+    const path = purchase?.invoiceDocumentPath;
+    setInvoiceDocumentUrl(null);
+    if (!path) return () => { active = false; };
+    const supabase = getSupabaseClient();
+    if (!supabase) return () => { active = false; };
+    void supabase.storage.from('invoice-documents').createSignedUrl(path, 60 * 30).then(({ data, error }) => {
+      if (active && !error && data?.signedUrl) setInvoiceDocumentUrl(data.signedUrl);
+    });
+    return () => { active = false; };
+  }, [purchase?.id, purchase?.invoiceDocumentPath]);
 
   useEffect(() => {
     void loadReceipts();
@@ -270,6 +285,8 @@ export function PurchaseDetailModal({
                 <div className="font-mono text-slate-800 mt-0.5">
                   {purchase.supplierInvoiceNumber || '—'}
                 </div>
+                <div className="text-[11px] text-slate-500 mt-1">Invoice date: {formatPurchaseDate(purchase.supplierInvoiceDate, timeZone)}</div>
+                {invoiceDocumentUrl && <a href={invoiceDocumentUrl} target="_blank" rel="noreferrer" className="inline-block mt-1 text-[11px] font-medium text-blue-700 underline">View original invoice</a>}
               </div>
               <div>
                 <div className="text-[11px] font-medium text-slate-500">Currency</div>

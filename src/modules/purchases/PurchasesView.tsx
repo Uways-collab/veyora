@@ -5,9 +5,10 @@ import { PurchaseReturnsPanel } from './PurchaseReturnsPanel';
 import { PurchasesListPanel } from './PurchasesListPanel';
 import { canManagePurchases } from './purchasesTypes';
 import { SuppliersPanel } from './SuppliersPanel';
+import { InvoiceScannerPanel } from './InvoiceScannerPanel';
 import { canManageSuppliers } from './suppliersTypes';
 
-type PurchasesTab = 'orders' | 'returns' | 'suppliers';
+type PurchasesTab = 'orders' | 'returns' | 'suppliers' | 'invoice';
 
 export function PurchasesView() {
   const { status, activeMembership, activeOrganisation, activeRole } = useAuth();
@@ -36,26 +37,27 @@ export function PurchasesView() {
   const isOrdersTab = activeTab === 'orders';
   const isReturnsTab = activeTab === 'returns';
   const isSuppliersTab = activeTab === 'suppliers';
+  const isInvoiceTab = activeTab === 'invoice';
 
   const isRefreshing = isOrdersTab
     ? isOrdersRefreshing
     : isReturnsTab
       ? isReturnsRefreshing
-      : isSuppliersRefreshing;
+      : isSuppliersTab ? isSuppliersRefreshing : false;
 
-  const canCreateInActiveTab = isSuppliersTab ? canManageVendorDirectory : canManageOrders;
+  const canCreateInActiveTab = isInvoiceTab ? false : isSuppliersTab ? canManageVendorDirectory : canManageOrders;
 
   const sectionLabel = isOrdersTab
     ? 'Purchase Orders'
     : isReturnsTab
       ? 'Purchase Returns'
-      : 'Suppliers';
+      : isInvoiceTab ? 'Invoice Scanner' : 'Suppliers';
 
   const primaryCreateLabel = isOrdersTab
     ? 'New Purchase Draft'
     : isReturnsTab
       ? 'New Return Draft'
-      : 'Add Supplier';
+      : isInvoiceTab ? 'Scan Invoice' : 'Add Supplier';
 
   const handlePrimaryCreate = () => {
     if (isOrdersTab) {
@@ -116,7 +118,7 @@ export function PurchasesView() {
               <span>{primaryCreateLabel}</span>
             </button>
           )}
-          <button
+          {!isInvoiceTab && <button
             type="button"
             onClick={handleHeaderRefresh}
             disabled={!activeOrgId || !isAuthenticated || isRefreshing}
@@ -127,7 +129,7 @@ export function PurchasesView() {
               aria-hidden="true"
             />
             <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-          </button>
+          </button>}
         </div>
       </section>
 
@@ -176,6 +178,7 @@ export function PurchasesView() {
         >
           Suppliers
         </button>
+        <button type="button" role="tab" aria-selected={isInvoiceTab} onClick={() => setActiveTab('invoice')} className={isInvoiceTab ? 'px-3.5 py-1.5 text-xs font-medium rounded bg-white text-slate-900 shadow-xs' : 'px-3.5 py-1.5 text-xs font-medium rounded text-slate-600 hover:text-slate-900'}>AI Invoice Scanner</button>
       </div>
 
       {/* Active Section */}
@@ -205,7 +208,7 @@ export function PurchasesView() {
           onRefreshingChange={setIsReturnsRefreshing}
           onReturnMutated={() => setRefreshOrdersSignal((prev) => prev + 1)}
         />
-      ) : (
+      ) : isSuppliersTab ? (
         <SuppliersPanel
           organisationId={activeOrgId}
           organisationName={activeOrganisation?.name}
@@ -216,6 +219,8 @@ export function PurchasesView() {
           externalRefreshSignal={refreshSuppliersSignal}
           onRefreshingChange={setIsSuppliersRefreshing}
         />
+      ) : (
+        <InvoiceScannerPanel organisationId={activeOrgId} currencyCode={currencyCode} canManage={canManageOrders} />
       )}
     </div>
   );

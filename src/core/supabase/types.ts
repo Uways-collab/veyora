@@ -542,6 +542,48 @@ export interface Database {
         };
         Relationships: [];
       };
+      invoice_scans: {
+        Row: {
+          id: string;
+          organization_id: string;
+          uploaded_by: string;
+          file_path: string;
+          file_name: string;
+          mime_type: string;
+          file_size: number;
+          status: string;
+          extracted_data: Record<string, unknown>;
+          error_message: string | null;
+          purchase_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          uploaded_by: string;
+          file_path: string;
+          file_name: string;
+          mime_type: string;
+          file_size: number;
+          status?: string;
+          extracted_data?: Record<string, unknown>;
+          error_message?: string | null;
+          purchase_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: string;
+          extracted_data?: Record<string, unknown>;
+          error_message?: string | null;
+          purchase_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      purchase_invoice_number_claims: InventoryTableRecord;
+      invoice_scan_audit_logs: InventoryTableRecord;
       purchase_returns: InventoryTableRecord;
       purchase_return_items: InventoryTableRecord;
     };
@@ -950,6 +992,54 @@ export interface Database {
           p_date_to?: string | null;
         };
         Returns: unknown;
+      };
+      invoice_scanner_create_product_variant: {
+        Args: {
+          p_organization_id: string;
+          p_scan_id: string;
+          p_product_name: string;
+          p_description: string | null;
+          p_variant_name: string;
+          p_sku: string;
+          p_barcode: string | null;
+          p_unit_of_measure: string;
+          p_cost_price: number;
+          p_selling_price: number;
+          p_attributes?: Record<string, unknown>;
+        };
+        Returns: string;
+      };
+      invoice_scanner_apply_selling_price: {
+        Args: {
+          p_organization_id: string;
+          p_scan_id: string;
+          p_variant_id: string;
+          p_selling_price: number;
+          p_pricing_method: string;
+          p_target_percent: number | null;
+        };
+        Returns: Record<string, unknown>;
+      };
+      invoice_scanner_create_purchase_draft: {
+        Args: {
+          p_organization_id: string;
+          p_scan_id: string;
+          p_reviewed_data: Record<string, unknown>;
+          p_supplier_id: string;
+          p_items: Array<{ variant_id: string; quantity: number; unit_cost: number }>;
+          p_discount_amount: number;
+          p_tax_amount: number;
+          p_supplier_invoice_number: string | null;
+          p_expected_delivery_date: string | null;
+          p_due_date: string | null;
+          p_invoice_date: string | null;
+          p_grand_total: number | null;
+          p_delivery_charges: number | null;
+          p_allow_possible_duplicate: boolean;
+          p_currency: string;
+          p_notes: string | null;
+        };
+        Returns: string;
       };
       purchases_v1_search_suppliers: {
         Args: {

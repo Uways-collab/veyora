@@ -1,0 +1,674 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, FileImage, FileText, Loader2, Plus, RefreshCw, ScanLine, Trash2, Upload, X } from 'lucide-react';
+import { getSupabaseClient } from '../../core/supabase/client';
+import { fetchPurchaseReferenceData, formatPurchaseMoney } from './purchasesService';
+import type { PurchaseCatalogVariant, PurchaseReferenceData } from './purchasesTypes';
+import type { SupplierRecord } from './suppliersTypes';
+
+type InvoiceLine = {
+  rowKey: string;
+  productName: string;
+  description: string;
+  sku: string;
+  barcode: string;
+  brand: string;
+  size: string;
+  variant: string;
+  quantity: string;
+  unit: string;
+  unitCost: string;
+  discount: number | null;
+  tax: number | null;
+  lineTotal: number | null;
+  confidence: string;
+  variantId: string;
+  newSku: string;
+  newBarcode: string;
+  newVariant: string;
+  newUnit: string;
+  newSellingPrice: string;
+  edited: boolean;
+  createdNewProduct: boolean;
+};
+
+type ExtractedInvoice = {
+  supplier?: { name?: string | null; contact_person?: string | null; email?: string | null; phone?: string | null; address?: string | null; tax_number?: string | null };
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  due_date?: string | null;
+  purchase_order_reference?: string | null;
+  currency?: string | null;
+  subtotal?: number | null;
+  discount_amount?: number | null;
+  tax_amount?: number | null;
+  delivery_charges?: number | null;
+  grand_total?: number | null;
+  line_items?: Array<Record<string, unknown>>;
+  warnings?: string[];
+  [key: string]: unknown;
+};
+
+type ScanRow = { id: string; file_path: string; status: string; extracted_data: ExtractedInvoice; error_message: string | null; updated_at: string };
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+function normalizeCurrencyCode(value: string, fallback: string): string {
+  const raw = value.trim().toUpperCase();
+  if (!raw) return fallback.toUpperCase();
+  if (raw === '₦' || raw === 'NGN' || raw === 'NAIRA' || raw === 'N') return 'NGN';
+  if (raw === '£' || raw === 'GBP' || raw === 'POUND') return 'GBP';
+  if (raw === '€' || raw === 'EUR' || raw === 'EURO') return 'EUR';
+  if (raw === '$' || raw === 'US$' || raw === 'USD') return fallback.toUpperCase() === 'USD' ? 'USD' : raw;
+  return raw;
+}
+const ACCEPTED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+
+function cleanText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+function numericText(value: unknown, fallback = ''): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : fallback;
+}
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function bestVariantMatch(line: Record<string, unknown>, variants: PurchaseCatalogVariant[]): PurchaseCatalogVariant | null {
+  const sku = cleanText(line.sku).toLowerCase();
+  const name = normalize(cleanText(line.product_name));
+  const barcode = cleanText(line.barcode);
+  const variant = normalize(cleanText(line.variant));
+  const brand = normalize(cleanText(line.brand));
+  const size = normalize(cleanText(line.size));
+  if (barcode) {
+    const barcodeMatches = variants.filter((item) => (item.barcode ?? '').trim() === barcode);
+    if (barcodeMatches.length === 1) return barcodeMatches[0];
+    if (barcodeMatches.length > 1) return null;
+  }
+  if (sku) {
+    const skuMatches = variants.filter((item) => item.sku.trim().toLowerCase() === sku);
+    if (skuMatches.length === 1) return skuMatches[0];
+    if (skuMatches.length > 1) return null;
+  }
+  const exactMatches = variants.filter((item) => {
+    const attributes = normalize(Object.values(item.attributes ?? {}).join(' '));
+    return normalize(item.productName) === name &&
+      (!variant || normalize(item.variantName) === variant) &&
+      (!brand || attributes.includes(brand)) &&
+      (!size || attributes.includes(size) || normalize(item.variantName).includes(size));
+  });
+  return exactMatches.length === 1 ? exactMatches[0] : null;
+}
+function suggestedPrice(cost: number, method: 'markup' | 'margin', percent: number): number | null {
+  if (!Number.isFinite(cost) || cost <= 0 || !Number.isFinite(percent) || percent < 0) return null;
+  if (method === 'markup') return cost * (1 + percent / 100);
+  if (percent >= 100) return null;
+  return cost / (1 - percent / 100);
+}
+
+export function InvoiceScannerPanel({
+  organisationId,
+  currencyCode,
+  canManage,
+}: {
+  organisationId: string | null;
+  currencyCode: string;
+  canManage: boolean;
+}) {
+  const [referenceData, setReferenceData] = useState<PurchaseReferenceData | null>(null);
+  const activeOrgIdRef = useRef(organisationId);
+  const [file, setFile] = useState<File | null>(null);
+  const [scan, setScan] = useState<ScanRow | null>(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<'idle' | 'uploading' | 'extracting' | 'saving'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierName, setSupplierName] = useState('');
+  const [supplierEmail, setSupplierEmail] = useState('');
+  const [supplierContactPerson, setSupplierContactPerson] = useState('');
+  const [supplierPhone, setSupplierPhone] = useState('');
+  const [supplierAddress, setSupplierAddress] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [invoiceCurrency, setInvoiceCurrency] = useState(currencyCode);
+  const [subtotal, setSubtotal] = useState('');
+  const [discount, setDiscount] = useState('0');
+  const [tax, setTax] = useState('0');
+  const [delivery, setDelivery] = useState('0');
+  const [grandTotal, setGrandTotal] = useState('');
+  const [lines, setLines] = useState<InvoiceLine[]>([]);
+  const [pricingMethod, setPricingMethod] = useState<'markup' | 'margin'>('markup');
+  const [pricingPercent, setPricingPercent] = useState('20');
+  const [createdPurchaseId, setCreatedPurchaseId] = useState<string | null>(null);
+  const [duplicate, setDuplicate] = useState<{ purchase_number: string; status: string; kind: 'exact' | 'possible' } | null>(null);
+  const [duplicateOverride, setDuplicateOverride] = useState(false);
+  const [duplicateChecking, setDuplicateChecking] = useState(false);
+  const [priceMessage, setPriceMessage] = useState<string | null>(null);
+  const [editedFields, setEditedFields] = useState<string[]>([]);
+  const markEdited = (field: string) => setEditedFields((current) => current.includes(field) ? current : [...current, field]);
+
+  useEffect(() => {
+    activeOrgIdRef.current = organisationId;
+    setScan(null);
+    setFile(null);
+    setPreviewUrl('');
+    setError(null);
+    setSupplierId('');
+    setSupplierName(''); setSupplierEmail(''); setSupplierContactPerson(''); setSupplierPhone(''); setSupplierAddress('');
+    setInvoiceNumber('');
+    setInvoiceDate('');
+    setDueDate('');
+    setInvoiceCurrency(currencyCode);
+    setSubtotal('');
+    setDiscount('0');
+    setTax('0');
+    setDelivery('');
+    setGrandTotal('');
+    setLines([]);
+    setCreatedPurchaseId(null);
+    setDuplicate(null);
+    setDuplicateOverride(false);
+    setEditedFields([]);
+    setPriceMessage(null);
+  }, [organisationId, currencyCode]);
+
+  useEffect(() => {
+    let active = true;
+    setReferenceData(null);
+    if (!organisationId || !canManage) {
+      setReferenceData(null);
+      return;
+    }
+    void fetchPurchaseReferenceData(organisationId).then((data) => {
+      if (active) setReferenceData(data);
+    });
+    return () => { active = false; };
+  }, [organisationId, canManage]);
+
+  const suppliers = referenceData?.activeSuppliers ?? [];
+  const variants = referenceData?.catalogVariants ?? [];
+  const lineSubtotal = useMemo(() => lines.reduce((sum, line) => {
+    const quantity = Number(line.quantity);
+    const cost = Number(line.unitCost);
+    return sum + (Number.isFinite(quantity) && Number.isFinite(cost) ? quantity * cost : 0);
+  }, 0), [lines]);
+  const calculatedTotal = lineSubtotal - Math.max(0, Number(discount) || 0) + Math.max(0, Number(tax) || 0);
+  const totalDifference = grandTotal.trim() ? Math.abs((Number(grandTotal) || 0) - calculatedTotal) : 0;
+  const subtotalDifference = subtotal.trim() ? Math.abs((Number(subtotal) || 0) - lineSubtotal) : 0;
+  const currencyMismatch = Boolean(invoiceCurrency.trim()) &&
+    invoiceCurrency.trim().toUpperCase() !== currencyCode.trim().toUpperCase();
+
+  const resetScan = () => {
+    if (scan && scan.status !== 'linked') {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        void supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scan.id);
+        void supabase.storage.from('invoice-documents').remove([scan.file_path]);
+      }
+    }
+    setFile(null); setScan(null); setPreviewUrl(''); setError(null); setStage('idle');
+    setSupplierId(''); setSupplierName(''); setSupplierEmail(''); setSupplierPhone(''); setSupplierAddress(''); setInvoiceNumber(''); setInvoiceDate(''); setDueDate('');
+    setInvoiceCurrency(currencyCode); setSubtotal(''); setDiscount('0'); setTax('0');
+    setDelivery(''); setGrandTotal(''); setLines([]); setCreatedPurchaseId(null);
+    setDuplicate(null); setDuplicateOverride(false); setEditedFields([]);
+  };
+
+  const applyExtraction = (data: ExtractedInvoice) => {
+    setInvoiceNumber(cleanText(data.invoice_number));
+    setInvoiceDate(cleanText(data.invoice_date));
+    setDueDate(cleanText(data.due_date));
+    setInvoiceCurrency(cleanText(data.currency) ? normalizeCurrencyCode(cleanText(data.currency), currencyCode) : '');
+    setSubtotal(numericText(data.subtotal));
+    setDiscount(numericText(data.discount_amount));
+    setTax(numericText(data.tax_amount));
+    setDelivery(numericText(data.delivery_charges));
+    setGrandTotal(numericText(data.grand_total));
+    const extractedSupplierName = cleanText(data.supplier?.name);
+    setSupplierName(extractedSupplierName);
+    setSupplierEmail(cleanText(data.supplier?.email));
+    setSupplierContactPerson(cleanText(data.supplier?.contact_person));
+    setSupplierPhone(cleanText(data.supplier?.phone));
+    setSupplierAddress(cleanText(data.supplier?.address));
+    const supplierMatch = extractedSupplierName ? (suppliers.find((supplier) => normalize(supplier.name) === normalize(extractedSupplierName))
+      ?? suppliers.find((supplier) => normalize(supplier.name).includes(normalize(extractedSupplierName)) || normalize(extractedSupplierName).includes(normalize(supplier.name)))) : undefined;
+    setSupplierId(supplierMatch?.id ?? '');
+    setDuplicate(null); setDuplicateOverride(false);
+    setEditedFields([]);
+    setLines((data.line_items ?? []).map((raw, index) => {
+      const match = bestVariantMatch(raw, variants);
+      return {
+        rowKey: `invoice-line-${index}-${Date.now()}`,
+        productName: cleanText(raw.product_name) || 'Unclear product name',
+        description: cleanText(raw.description),
+        sku: cleanText(raw.sku),
+        barcode: cleanText(raw.barcode),
+        brand: cleanText(raw.brand),
+        size: cleanText(raw.size),
+        variant: cleanText(raw.variant),
+        quantity: numericText(raw.quantity),
+        unit: cleanText(raw.unit_of_measure),
+        unitCost: numericText(raw.unit_cost),
+        discount: typeof raw.discount === 'number' ? raw.discount : null,
+        tax: typeof raw.tax === 'number' ? raw.tax : null,
+        lineTotal: typeof raw.line_total === 'number' ? raw.line_total : null,
+        confidence: cleanText(raw.confidence) || 'low',
+        variantId: match?.variantId ?? '',
+        newSku: cleanText(raw.sku),
+        newBarcode: cleanText(raw.barcode),
+        newVariant: cleanText(raw.variant) || 'Default',
+        newUnit: cleanText(raw.unit_of_measure),
+        newSellingPrice: '',
+        edited: false,
+        createdNewProduct: false,
+      };
+    }));
+  };
+
+  const processExistingScan = async (scanId: string) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) throw new Error('Veyora is not connected to the database.');
+    setStage('extracting');
+    const { data, error: invokeError } = await supabase.functions.invoke('scan-supplier-invoice', {
+      body: { scan_id: scanId },
+    });
+    if (invokeError) throw new Error(invokeError.message || 'Invoice extraction failed.');
+    if (data?.error) throw new Error(String(data.error));
+    const extracted = data?.extracted_data as ExtractedInvoice | undefined;
+    if (!extracted || !Array.isArray(extracted.line_items)) throw new Error('The scan did not return readable invoice line items.');
+    const { data: saved, error: readError } = await supabase.from('invoice_scans')
+      .select('id,file_path,status,extracted_data,error_message').eq('id', scanId).single();
+    if (readError || !saved) throw new Error(readError?.message || 'Could not load the saved invoice scan.');
+    if (activeOrgIdRef.current !== organisationId) {
+      await supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scanId);
+      await supabase.storage.from('invoice-documents').remove([saved.file_path]);
+      return;
+    }
+    setScan(saved as ScanRow);
+    applyExtraction(extracted);
+    const { data: signed, error: signedError } = await supabase.storage.from('invoice-documents')
+      .createSignedUrl(saved.file_path, 60 * 30);
+    if (!signedError && signed?.signedUrl) setPreviewUrl(signed.signedUrl);
+    setStage('idle');
+  };
+
+  const handleUploadAndScan = async () => {
+    if (!organisationId || !file || !canManage) return;
+    if (!ACCEPTED_MIME.has(file.type)) { setError('Choose a JPG, PNG, WebP image or PDF invoice.'); return; }
+    if (file.size <= 0 || file.size > MAX_FILE_BYTES) { setError('The invoice must be smaller than 10 MB.'); return; }
+    const supabase = getSupabaseClient();
+    if (!supabase) { setError('Veyora is not connected to the database.'); return; }
+    setBusy(true); setError(null); setCreatedPurchaseId(null);
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) { setBusy(false); setError('Sign in again before scanning an invoice.'); return; }
+    const scanId = crypto.randomUUID();
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120) || 'supplier-invoice';
+    const filePath = `${organisationId}/invoices/${scanId}/${safeName}`;
+    try {
+      setStage('uploading');
+      const { error: uploadError } = await supabase.storage.from('invoice-documents').upload(filePath, file, {
+        contentType: file.type, upsert: false,
+      });
+      if (uploadError) throw new Error(uploadError.message);
+      const { error: insertError } = await supabase.from('invoice_scans').insert({
+        id: scanId, organization_id: organisationId, uploaded_by: userData.user.id,
+        file_path: filePath, file_name: file.name, mime_type: file.type, file_size: file.size,
+      });
+      if (insertError) {
+        await supabase.storage.from('invoice-documents').remove([filePath]);
+        throw new Error(insertError.message);
+      }
+      if (activeOrgIdRef.current !== organisationId) {
+        await supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scanId);
+        await supabase.storage.from('invoice-documents').remove([filePath]);
+        return;
+      }
+      setScan({ id: scanId, file_path: filePath, status: 'uploaded', extracted_data: {}, error_message: null, updated_at: new Date().toISOString() });
+      await processExistingScan(scanId);
+    } catch (err) {
+      if (activeOrgIdRef.current !== organisationId) {
+        await supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scanId);
+        await supabase.storage.from('invoice-documents').remove([filePath]);
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Invoice scanning failed. Try again.');
+      setStage('idle');
+      const { data: row } = await supabase.from('invoice_scans')
+        .select('id,file_path,status,extracted_data,error_message').eq('id', scanId).maybeSingle();
+      if (row) setScan(row as ScanRow);
+    } finally {
+      setBusy(false); setStage('idle');
+    }
+  };
+
+  const retryScan = async () => {
+    if (!scan || !organisationId) return;
+    setBusy(true); setError(null);
+    try { await processExistingScan(scan.id); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Retry failed.'); }
+    finally { setBusy(false); setStage('idle'); }
+  };
+
+  const updateLine = (rowKey: string, patch: Partial<InvoiceLine>) => {
+    setLines((current) => current.map((line) => line.rowKey === rowKey ? { ...line, ...patch, edited: true } : line));
+  };
+
+  const createNewProduct = async (line: InvoiceLine) => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !organisationId || !scan) return;
+    const cost = Number(line.unitCost);
+    if (!line.productName.trim() || !line.newVariant.trim() || !line.newUnit.trim() || !line.newSku.trim() || !Number.isFinite(cost) || cost < 0) {
+      setError('Complete the new product name, variant, SKU, unit and purchase cost first.');
+      return;
+    }
+    setBusy(true); setError(null);
+    const { data, error: rpcError } = await supabase.rpc('invoice_scanner_create_product_variant', {
+      p_organization_id: organisationId,
+      p_scan_id: scan.id,
+      p_product_name: line.productName,
+      p_description: line.description || null,
+      p_variant_name: line.newVariant,
+      p_sku: line.newSku.trim(),
+      p_barcode: line.newBarcode || null,
+      p_unit_of_measure: line.newUnit,
+      p_cost_price: cost,
+      p_selling_price: Math.max(0, Number(line.newSellingPrice) || 0),
+      p_attributes: { brand: line.brand, size: line.size },
+    });
+    if (activeOrgIdRef.current === organisationId && (rpcError || !data)) {
+      setError(rpcError?.message || 'The new product could not be created.');
+    } else if (activeOrgIdRef.current === organisationId) {
+      updateLine(line.rowKey, { variantId: String(data), createdNewProduct: true });
+      const refreshed = await fetchPurchaseReferenceData(organisationId);
+      setReferenceData(refreshed);
+      if (scan) {
+        const { data: scanData } = await supabase.from('invoice_scans').select('extracted_data').eq('id', scan.id).single();
+        if (scanData && activeOrgIdRef.current === organisationId) setScan({ ...scan, extracted_data: scanData.extracted_data as ExtractedInvoice });
+      }
+    }
+    setBusy(false);
+  };
+
+  const applySellingPrice = async (line: InvoiceLine, price: number) => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !organisationId || !scan || !line.variantId || !Number.isFinite(price) || price < 0) return;
+    setBusy(true); setError(null); setPriceMessage(null);
+    const method = line.newSellingPrice.trim() ? 'custom' : pricingMethod;
+    const { error: updateError } = await supabase.rpc('invoice_scanner_apply_selling_price', {
+      p_organization_id: organisationId,
+      p_scan_id: scan.id,
+      p_variant_id: line.variantId,
+      p_selling_price: price,
+      p_pricing_method: method,
+      p_target_percent: method === 'custom' ? null : Number(pricingPercent),
+    });
+    if (activeOrgIdRef.current === organisationId) {
+      if (updateError) setError(updateError.message);
+      else {
+        setPriceMessage('Selling price updated by your explicit approval.');
+        const { data: scanData } = await supabase.from('invoice_scans').select('extracted_data').eq('id', scan.id).single();
+        if (scanData) setScan({ ...scan, extracted_data: scanData.extracted_data as ExtractedInvoice });
+      }
+    }
+    setBusy(false);
+  };
+
+  const checkDuplicate = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !organisationId || !supplierId) {
+      setDuplicate(null);
+      setDuplicateOverride(false);
+      return;
+    }
+    setDuplicateChecking(true);
+    try {
+      if (invoiceNumber.trim()) {
+        const { data: exactMatch, error: exactError } = await supabase.from('purchases')
+          .select('purchase_number,status')
+          .eq('organization_id', organisationId)
+          .eq('supplier_id', supplierId)
+          .eq('supplier_invoice_number', invoiceNumber.trim())
+          .neq('status', 'cancelled')
+          .limit(1).maybeSingle();
+        if (exactError) throw new Error(exactError.message);
+        if (exactMatch) {
+          setDuplicate({ purchase_number: String(exactMatch.purchase_number ?? 'Existing purchase'), status: String(exactMatch.status ?? 'unknown'), kind: 'exact' });
+          setDuplicateOverride(false);
+          return;
+        }
+      }
+      if (invoiceDate && grandTotal.trim() && Number.isFinite(Number(grandTotal))) {
+        const expectedPurchaseTotal = Math.max(0, Number(grandTotal) - Math.max(0, Number(delivery) || 0));
+        const { data: possibleMatch, error: possibleError } = await supabase.from('purchases')
+          .select('purchase_number,status')
+          .eq('organization_id', organisationId)
+          .eq('supplier_id', supplierId)
+          .or('supplier_invoice_date.eq.' + invoiceDate + ',and(supplier_invoice_date.is.null,order_date.eq.' + invoiceDate + ')')
+          .gte('total_amount', Math.max(0, expectedPurchaseTotal - 0.01))
+          .lte('total_amount', expectedPurchaseTotal + 0.01)
+          .neq('status', 'cancelled')
+          .limit(1).maybeSingle();
+        if (possibleError) throw new Error(possibleError.message);
+        setDuplicate(possibleMatch ? { purchase_number: String(possibleMatch.purchase_number ?? 'Existing purchase'), status: String(possibleMatch.status ?? 'unknown'), kind: 'possible' } : null);
+        setDuplicateOverride(false);
+      } else {
+        setDuplicate(null);
+        setDuplicateOverride(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Duplicate invoice check failed.');
+    } finally {
+      setDuplicateChecking(false);
+    }
+  };
+
+  const createPurchaseDraft = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !organisationId || !scan) return;
+    if (!supplierId) { setError('Select the supplier before creating a purchase draft.'); return; }
+    if (!invoiceCurrency.trim()) { setError('Invoice currency is missing. Confirm the currency before creating the purchase.'); return; }
+    if (currencyMismatch) { setError('The invoice currency differs from the organisation currency. Resolve this before creating the purchase.'); return; }
+    if (!discount.trim() || !tax.trim()) { setError('Confirm the invoice discount and tax values. Enter 0 when the invoice shows none.'); return; }
+    if (lines.length === 0 || lines.some((line) => !line.variantId || !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0 || !line.unitCost.trim() || !Number.isFinite(Number(line.unitCost)) || Number(line.unitCost) < 0)) {
+      setError('Match or create every product and enter a valid quantity and purchase cost before continuing.');
+      return;
+    }
+    if (duplicate?.kind === 'exact') { setError('This supplier invoice number already exists. Review the existing purchase instead of creating another.'); return; }
+    if (duplicate?.kind === 'possible' && !duplicateOverride) { setError('Review the possible duplicate and explicitly confirm if this is a different invoice.'); return; }
+    setBusy(true); setError(null); setStage('saving');
+    const selectedSupplierName = suppliers.find((supplier) => supplier.id === supplierId)?.name ?? null;
+    const reviewedData: Record<string, unknown> = {
+      ...scan.extracted_data,
+      ai_extraction: scan.extracted_data.ai_extraction ?? scan.extracted_data,
+      reviewed_invoice: {
+        supplier_id: supplierId,
+        supplier_name: selectedSupplierName,
+        supplier_invoice_details: { name: supplierName || null, contact_person: supplierContactPerson || null, email: supplierEmail || null, phone: supplierPhone || null, address: supplierAddress || null },
+        invoice_number: invoiceNumber.trim() || null,
+        invoice_date: invoiceDate || null,
+        due_date: dueDate || null,
+        currency: invoiceCurrency.trim().toUpperCase(),
+        subtotal: subtotal.trim() ? Number(subtotal) : null,
+        discount_amount: Number(discount),
+        tax_amount: Number(tax),
+        delivery_charges: delivery.trim() ? Number(delivery) : null,
+        grand_total: grandTotal.trim() ? Number(grandTotal) : null,
+        edited_fields: editedFields,
+        possible_duplicate_review: duplicate ? { purchase_number: duplicate.purchase_number, status: duplicate.status, kind: duplicate.kind, explicitly_confirmed_different: duplicate.kind === 'possible' && duplicateOverride } : null,
+      },
+      reviewed_line_items: lines.map((line) => ({
+        product_name: line.productName,
+        description: line.description,
+        sku: line.sku || line.newSku || null,
+        barcode: line.barcode || line.newBarcode || null,
+        brand: line.brand || null,
+        size: line.size || null,
+        variant: line.variant || line.newVariant || null,
+        quantity: Number(line.quantity),
+        unit_of_measure: line.unit || (variants.find((variant) => variant.variantId === line.variantId)?.unitOfMeasure ?? null),
+        unit_cost: Number(line.unitCost),
+        discount: line.discount,
+        tax: line.tax,
+        line_total: line.lineTotal,
+        matched_variant_id: line.variantId,
+        created_new_product: line.createdNewProduct,
+        edited_by_user: line.edited,
+      })),
+      pricing_settings: { method: pricingMethod, target_percent: Number(pricingPercent) },
+    };
+    const notes = [
+      'Created from reviewed AI invoice scan.',
+      scan.extracted_data.purchase_order_reference ? `Supplier PO reference: ${scan.extracted_data.purchase_order_reference}` : '',
+      Number(delivery) > 0 ? `Invoice delivery/additional charges: ${invoiceCurrency} ${delivery} (retained from invoice; not added to stock cost).` : '',
+      'The original supplier invoice is attached in the Invoice Scanner record.',
+      lines.some((line) => line.discount !== null || line.tax !== null) ? 'Line-level discounts and taxes are preserved in the invoice scan details; purchase items use the Veyora purchase workflow unit-cost fields.' : '',
+      scan.extracted_data.warnings?.length ? `Invoice review warnings: ${scan.extracted_data.warnings.join('; ')}` : '',
+    ].filter(Boolean).join('\n');
+    const { data, error: rpcError } = await supabase.rpc('invoice_scanner_create_purchase_draft', {
+      p_organization_id: organisationId,
+      p_scan_id: scan.id,
+      p_reviewed_data: reviewedData,
+      p_supplier_id: supplierId,
+      p_items: lines.map((line) => ({ variant_id: line.variantId, quantity: Number(line.quantity), unit_cost: Number(line.unitCost) })),
+      p_discount_amount: Math.max(0, Number(discount) || 0),
+      p_tax_amount: Math.max(0, Number(tax) || 0),
+      p_supplier_invoice_number: invoiceNumber.trim() || null,
+      p_expected_delivery_date: null,
+      p_due_date: dueDate || null,
+      p_invoice_date: invoiceDate || null,
+      p_grand_total: grandTotal.trim() ? Number(grandTotal) : null,
+      p_delivery_charges: delivery.trim() ? Number(delivery) : null,
+      p_allow_possible_duplicate: duplicate?.kind === 'possible' && duplicateOverride,
+      p_currency: invoiceCurrency.trim().toUpperCase(),
+      p_notes: notes,
+    });
+    if (activeOrgIdRef.current === organisationId) {
+      if (rpcError || !data) setError(rpcError?.message || 'The purchase draft could not be created.');
+      else {
+        setCreatedPurchaseId(String(data));
+        setScan({ ...scan, status: 'linked', extracted_data: reviewedData as ExtractedInvoice });
+      }
+    }
+    setBusy(false); setStage('idle');
+  };
+
+  const addManualLine = () => setLines((current) => [...current, {
+    rowKey: `manual-${Date.now()}`, productName: '', description: '', sku: '', barcode: '', brand: '', size: '', variant: '',
+    quantity: '1', unit: 'piece', unitCost: '', discount: null, tax: null, lineTotal: null,
+    confidence: 'manual', variantId: '', newSku: '', newBarcode: '', newVariant: 'Default', newUnit: '', newSellingPrice: '', edited: true, createdNewProduct: false,
+  }]);
+
+  if (!canManage) return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">Invoice scanning is available to Owners, Admins and Managers.</div>;
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><ScanLine className="h-4 w-4 text-blue-700" /> AI Invoice Scanner</div>
+            <p className="mt-1 text-xs text-slate-500 max-w-2xl">Upload or photograph a supplier invoice. Veyora extracts the details and prepares a purchase draft for your review. Scanning never adds stock or records a payment.</p>
+          </div>
+          {scan && !createdPurchaseId && <button type="button" disabled={busy} onClick={resetScan} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"><X className="h-3.5 w-3.5" /> Cancel scan</button>}
+        </div>
+        {!referenceData && <p className="text-[11px] text-slate-500">Loading this workspace’s suppliers and product catalogue…</p>}
+        {referenceData?.suppliersError && <p className="text-[11px] text-amber-700">Supplier list could not be loaded: {referenceData.suppliersError}</p>}
+        {referenceData?.catalogError && <p className="text-[11px] text-amber-700">Product catalogue could not be loaded: {referenceData.catalogError}</p>}
+        {!scan && (
+          <div className="rounded-md border-2 border-dashed border-slate-200 bg-slate-50/70 p-5 text-center">
+            <Upload className="mx-auto h-6 w-6 text-slate-400" />
+            <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-md bg-blue-700 px-4 py-2 text-xs font-medium text-white hover:bg-blue-800">
+              <FileImage className="h-4 w-4" /> Choose invoice / use camera
+              <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+            </label>
+            <p className="mt-2 text-[11px] text-slate-500">JPG, PNG, WebP or multi-page PDF · Up to 10 MB</p>
+            {referenceData?.activeSuppliers.length === 0 && <p className="mt-2 text-[11px] text-amber-700">Add an active supplier in the Suppliers section before creating a purchase draft.</p>}
+            {file && <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-700"><FileText className="h-4 w-4" />{file.name}<span className="text-slate-400">({(file.size / 1024 / 1024).toFixed(2)} MB)</span></div>}
+            <button type="button" disabled={!file || busy || !organisationId || !referenceData} onClick={() => void handleUploadAndScan()} className="mt-4 inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-xs font-medium text-white disabled:opacity-40">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />} Scan invoice
+            </button>
+          </div>
+        )}
+        {busy && <div className="rounded-md border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{stage === 'uploading' ? 'Uploading securely…' : stage === 'extracting' ? 'Reading invoice pages and extracting details…' : 'Preparing the purchase draft…'}</div>}
+        {priceMessage && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">{priceMessage}</div>}
+        {error && <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 flex items-start gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</div>}
+        {scan && scan.status !== 'ready' && scan.status !== 'linked' && scan.status !== 'cancelled' && <button type="button" disabled={busy} onClick={() => void retryScan()} className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-xs text-slate-700"><RefreshCw className="h-3.5 w-3.5" /> Retry extraction</button>}
+      </section>
+
+      {scan && (
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-5">
+          <section className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+            <div className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-800">Original invoice</div>
+            {previewUrl ? (file?.type === 'application/pdf' || scan.file_path.toLowerCase().endsWith('.pdf') ? <iframe title="Original supplier invoice" src={previewUrl} className="h-[520px] w-full" /> : <img src={previewUrl} alt="Original supplier invoice" className="max-h-[520px] w-full object-contain bg-slate-50" />) : <div className="p-6 text-xs text-slate-500">Secure preview is not available.</div>}
+          </section>
+          <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-slate-900">Review invoice details</h2><span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] text-blue-700">AI extracted · editable</span><span className="text-[10px] text-slate-500">Fields marked “Edited by you” were changed manually.</span></div>
+            {scan.extracted_data.warnings?.length ? <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Review needed</strong><ul className="mt-1 list-disc pl-4">{scan.extracted_data.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></div> : null}
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-slate-700">Supplier details extracted from invoice · correct if needed</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <label className="space-y-1"><span className="text-slate-500">Invoice supplier name</span><input value={supplierName} onChange={(e) => { setSupplierName(e.target.value); markEdited('supplier name'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Supplier contact person</span><input value={supplierContactPerson} onChange={(e) => { setSupplierContactPerson(e.target.value); markEdited('supplier contact person'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Supplier email</span><input type="email" value={supplierEmail} onChange={(e) => { setSupplierEmail(e.target.value); markEdited('supplier email'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Supplier phone</span><input value={supplierPhone} onChange={(e) => { setSupplierPhone(e.target.value); markEdited('supplier phone'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+                <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Supplier address</span><input value={supplierAddress} onChange={(e) => { setSupplierAddress(e.target.value); markEdited('supplier address'); }} className="w-full rounded-md border border-slate-200 bg-white p-2" /></label>
+              </div>
+              <p className="text-[10px] text-slate-500">These corrections are saved with this invoice review; they do not silently change the supplier’s saved contact record.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <label className="space-y-1"><span className="text-slate-500">Supplier <span className="text-rose-600">*</span> {editedFields.includes('supplier') ? '· Edited by you' : '· AI match / review'}</span><select value={supplierId} onChange={(e) => { setSupplierId(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('supplier'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2"><option value="">Select existing supplier</option>{suppliers.map((supplier: SupplierRecord) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
+              <label className="space-y-1"><span className="text-slate-500">Supplier invoice number (if present)</span><input value={invoiceNumber} onChange={(e) => { setInvoiceNumber(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('invoice number'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Invoice date</span><input type="date" value={invoiceDate} onChange={(e) => { setInvoiceDate(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('invoice date'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Due date</span><input type="date" value={dueDate} onChange={(e) => { setDueDate(e.target.value); markEdited('due date'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Invoice currency</span><input value={invoiceCurrency} onChange={(e) => { setInvoiceCurrency(e.target.value.toUpperCase()); markEdited('currency'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Invoice subtotal</span><input type="number" min="0" value={subtotal} onChange={(e) => { setSubtotal(e.target.value); markEdited('subtotal'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Discount</span><input type="number" min="0" value={discount} onChange={(e) => { setDiscount(e.target.value); markEdited('discount'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Tax</span><input type="number" min="0" value={tax} onChange={(e) => { setTax(e.target.value); markEdited('tax'); }} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Delivery / extra charges</span><input type="number" min="0" value={delivery} onChange={(e) => { setDelivery(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('delivery'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              <label className="space-y-1"><span className="text-slate-500">Invoice grand total</span><input type="number" min="0" value={grandTotal} onChange={(e) => { setGrandTotal(e.target.value); setDuplicate(null); setDuplicateOverride(false); markEdited('grand total'); }} onBlur={() => void checkDuplicate()} className="w-full rounded-md border border-slate-200 p-2" /></label>
+            </div>
+            {editedFields.length > 0 && <p className="text-[11px] text-slate-500">Edited by you: {editedFields.join(', ')}</p>}{duplicateChecking && <p className="text-[11px] text-slate-500">Checking for duplicate invoice…</p>}{!invoiceNumber.trim() && <p className="text-[11px] text-amber-700">No invoice number is recorded. Duplicate detection will be less reliable; do not invent a reference.</p>}
+            {duplicate?.kind === 'exact' && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"><strong>Duplicate invoice number:</strong> {duplicate.purchase_number} ({duplicate.status}). The same supplier invoice number cannot be posted twice.</div>}{duplicate?.kind === 'possible' && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Possible duplicate:</strong> {duplicate.purchase_number} ({duplicate.status}) has the same supplier, invoice date and total. Review it before continuing. <label className="mt-2 flex items-start gap-2"><input type="checkbox" checked={duplicateOverride} onChange={(e) => setDuplicateOverride(e.target.checked)} className="mt-0.5" /><span>I reviewed the existing purchase and confirm this is a different supplier invoice.</span></label></div>}
+            {!invoiceCurrency.trim() && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice currency was not readable. Confirm it from the original document; it is not assumed.</div>}{currencyMismatch && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice currency differs from this workspace ({currencyCode}). The purchase cannot be created until the currency issue is resolved.</div>}
+            {subtotal.trim() && subtotalDifference > 0.01 && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice subtotal differs from the product line calculation by {formatPurchaseMoney(subtotalDifference, invoiceCurrency)}.</div>}{grandTotal.trim() && totalDifference > 0.01 && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Invoice total differs from the current line calculation by {formatPurchaseMoney(totalDifference, invoiceCurrency)}. Veyora will not silently adjust the values.</div>}
+          </section>
+        </div>
+      )}
+
+      {scan && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-slate-900">Invoice line items</h2><p className="mt-1 text-xs text-slate-500">Choose the exact variant for each line. Similar names are not treated as confirmed matches.</p></div><button type="button" onClick={addManualLine} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-700"><Plus className="h-3.5 w-3.5" /> Add missing item</button></div>
+          {lines.map((line) => {
+            const match = variants.find((variant) => variant.variantId === line.variantId);
+            const possibleMatches = !match ? variants.filter((variant) => normalize(variant.productName).includes(normalize(line.productName)) || normalize(line.productName).includes(normalize(variant.productName))).slice(0, 3) : [];
+            const ambiguousIdentifier = !match && ((line.sku && variants.filter((variant) => variant.sku.trim().toLowerCase() === line.sku.toLowerCase()).length > 1) || (line.barcode && variants.filter((variant) => variant.barcode === line.barcode).length > 1));
+            const cost = Number(line.unitCost);
+            const suggested = suggestedPrice(cost, pricingMethod, Number(pricingPercent));
+            const lineCalc = Number(line.quantity) * cost;
+            const lineDifference = line.lineTotal === null ? 0 : Math.abs(line.lineTotal - lineCalc);
+            const existingPrice = match?.defaultSellingPrice ?? 0;
+            return <div key={line.rowKey} className="rounded-md border border-slate-200 p-3 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-semibold text-slate-900">{line.productName || 'New line item'}</div><div className="mt-1 text-[10px] text-slate-500">{line.sku ? `SKU ${line.sku} · ` : ''}{line.barcode ? `Barcode ${line.barcode} · ` : ''}{line.edited ? 'Edited by you' : line.confidence === 'high' ? 'AI extracted · high confidence' : line.confidence === 'medium' ? 'AI extracted · review details' : 'AI extracted · needs manual review'}</div>{match ? <div className="mt-1 text-[10px] text-emerald-700">Existing product match selected · confirm the variant</div> : ambiguousIdentifier ? <div className="mt-1 text-[10px] text-amber-700">Multiple records share this SKU/barcode · choose the correct variant below</div> : possibleMatches.length > 0 ? <div className="mt-1 text-[10px] text-amber-700">Possible match · choose the correct product/variant below</div> : <div className="mt-1 text-[10px] text-slate-500">No existing match found · create a new product if required</div>}</div><button type="button" onClick={() => setLines((current) => current.filter((item) => item.rowKey !== line.rowKey))} aria-label="Remove invoice line" className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+                <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Match existing product / variant</span><select value={line.variantId} onChange={(e) => updateLine(line.rowKey, { variantId: e.target.value })} className="w-full rounded-md border border-slate-200 p-2"><option value="">No match — create new product below</option>{variants.map((variant) => <option key={variant.variantId} value={variant.variantId}>{variant.productName} · {variant.variantName}{variant.sku ? ` · ${variant.sku}` : ''}</option>)}</select></label>
+                <label className="space-y-1"><span className="text-slate-500">Quantity</span><input type="number" min="0.0001" step="0.0001" value={line.quantity} onChange={(e) => updateLine(line.rowKey, { quantity: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Unit purchase cost</span><input type="number" min="0" step="0.0001" value={line.unitCost} onChange={(e) => updateLine(line.rowKey, { unitCost: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+                <label className="space-y-1 sm:col-span-2"><span className="text-slate-500">Product description</span><input value={line.description} onChange={(e) => updateLine(line.rowKey, { description: e.target.value })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Line discount</span><input type="number" min="0" step="0.01" value={line.discount ?? ''} onChange={(e) => updateLine(line.rowKey, { discount: e.target.value === '' ? null : Number(e.target.value) })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Line tax</span><input type="number" min="0" step="0.01" value={line.tax ?? ''} onChange={(e) => updateLine(line.rowKey, { tax: e.target.value === '' ? null : Number(e.target.value) })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+                <label className="space-y-1"><span className="text-slate-500">Invoice line total</span><input type="number" min="0" step="0.01" value={line.lineTotal ?? ''} onChange={(e) => updateLine(line.rowKey, { lineTotal: e.target.value === '' ? null : Number(e.target.value) })} className="w-full rounded-md border border-slate-200 p-2" /></label>
+              </div>
+              {line.lineTotal !== null && lineDifference > 0.01 && <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">Extracted line total differs from quantity × unit cost by {formatPurchaseMoney(lineDifference, invoiceCurrency)}. Check the invoice discount/tax fields.</div>}
+              {match && cost > 0 && match.defaultCostPrice > 0 && Math.abs(cost - match.defaultCostPrice) / match.defaultCostPrice >= 0.3 && <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">This invoice unit cost differs from the current product cost by {(((cost - match.defaultCostPrice) / match.defaultCostPrice) * 100).toFixed(1)}%. Review the price before confirming.</div>}
+              {!line.variantId && <div className="rounded-md bg-slate-50 p-3 space-y-2"><div className="text-xs font-medium text-slate-800">Create new product after review</div>{suggested !== null && <div className="text-[11px] text-slate-600">Suggested selling price ({pricingMethod === 'markup' ? 'markup' : 'gross margin'}): <strong>{formatPurchaseMoney(suggested, invoiceCurrency)}</strong> · You must enter or approve a price separately.</div>}<div className="grid grid-cols-1 sm:grid-cols-3 gap-2"><label className="text-[11px] text-slate-500">Product name<input value={line.productName} onChange={(e) => updateLine(line.rowKey, { productName: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Variant name<input value={line.newVariant} onChange={(e) => updateLine(line.rowKey, { newVariant: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">SKU *<input value={line.newSku} onChange={(e) => updateLine(line.rowKey, { newSku: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Barcode<input value={line.newBarcode} onChange={(e) => updateLine(line.rowKey, { newBarcode: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Unit of measure<input value={line.newUnit} onChange={(e) => updateLine(line.rowKey, { newUnit: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" /></label><label className="text-[11px] text-slate-500">Selling price (optional)<input type="number" min="0" step="0.01" value={line.newSellingPrice} onChange={(e) => updateLine(line.rowKey, { newSellingPrice: e.target.value })} className="mt-1 w-full rounded border border-slate-200 bg-white p-2 text-xs" />{suggested !== null && <button type="button" onClick={() => updateLine(line.rowKey, { newSellingPrice: suggested.toFixed(2) })} className="mt-1 text-blue-700 underline">Use suggested price</button>}</label></div><button type="button" disabled={busy || !line.newSku.trim()} onClick={() => void createNewProduct(line)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-40">Approve and create product</button><p className="text-[10px] text-slate-500">This saves the new product and variant now; it does not add stock.</p></div>}
+              {line.variantId && <div className="rounded-md bg-slate-50 p-3 space-y-2"><div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]"><span className="text-slate-600">Purchase cost: <strong className="text-slate-900">{formatPurchaseMoney(Number.isFinite(cost) ? cost : 0, invoiceCurrency)}</strong></span><span className="text-slate-600">Existing selling price: <strong className="text-slate-900">{formatPurchaseMoney(existingPrice, invoiceCurrency)}</strong></span><span className="text-slate-600">Suggested price: <strong className="text-slate-900">{suggested === null ? 'Not available' : formatPurchaseMoney(suggested, invoiceCurrency)}</strong></span>{suggested !== null && <span className="text-slate-600">Expected profit: <strong className="text-slate-900">{formatPurchaseMoney(suggested - cost, invoiceCurrency)}</strong> · {cost > 0 ? (((suggested - cost) / cost) * 100).toFixed(1) : '0.0'}% markup · {suggested > 0 ? (((suggested - cost) / suggested) * 100).toFixed(1) : '0.0'}% gross margin</span>}</div><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] text-slate-500">Custom selling price<input type="number" min="0" step="0.01" value={line.newSellingPrice || (suggested === null ? '' : suggested.toFixed(2))} onChange={(e) => updateLine(line.rowKey, { newSellingPrice: e.target.value })} className="mt-1 block w-36 rounded border border-slate-200 bg-white p-2 text-xs" /></label><button type="button" disabled={busy || (!line.newSellingPrice.trim() && suggested === null)} onClick={() => void applySellingPrice(line, Number(line.newSellingPrice || suggested))} className="rounded-md bg-white border border-slate-300 px-3 py-2 text-[11px] font-medium text-slate-700 disabled:opacity-40" >{line.newSellingPrice.trim() ? 'Apply custom price' : 'Apply suggested price'} (explicit)</button></div><p className="text-[10px] text-slate-500">No selling price changes unless you press Apply price. Leaving it untouched preserves the current price.</p></div>}
+            </div>;
+          })}
+          <div className="flex flex-wrap items-center gap-3 text-xs"><label className="space-y-1"><span className="text-slate-500">Pricing method</span><select value={pricingMethod} onChange={(e) => setPricingMethod(e.target.value as 'markup' | 'margin')} className="block rounded-md border border-slate-200 p-2"><option value="markup">Markup on cost</option><option value="margin">Gross margin</option></select></label><label className="space-y-1"><span className="text-slate-500">{pricingMethod === 'markup' ? 'Markup %' : 'Gross margin %'}</span><input type="number" min="0" max={pricingMethod === 'margin' ? 99.99 : 1000} step="0.5" value={pricingPercent} onChange={(e) => setPricingPercent(e.target.value)} className="block w-28 rounded-md border border-slate-200 p-2" /></label><span className="text-[11px] text-slate-500 self-end pb-2">{pricingMethod === 'markup' ? 'Cost × (1 + markup)' : 'Cost ÷ (1 − margin)'}</span></div>
+          <div className="flex flex-wrap justify-between gap-3 border-t border-slate-200 pt-4 text-xs"><div className="space-y-1 text-slate-600"><div>Calculated line subtotal: <strong>{formatPurchaseMoney(lineSubtotal, invoiceCurrency)}</strong></div><div>Purchase total before delivery: <strong>{formatPurchaseMoney(calculatedTotal, invoiceCurrency)}</strong></div>{Number(delivery) > 0 && <div className="text-amber-700">Delivery charges are retained in invoice notes; the current purchase model does not store them as a separate cost field.</div>}</div><button type="button" disabled={busy || !scan || scan.status !== 'ready' || duplicate?.kind === 'exact' || (duplicate?.kind === 'possible' && !duplicateOverride) || currencyMismatch || lines.length === 0} onClick={() => void createPurchaseDraft()} className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-4 py-2.5 font-medium text-white hover:bg-blue-800 disabled:opacity-40"><CheckCircle2 className="h-4 w-4" /> Create purchase draft</button></div>
+          {createdPurchaseId && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900"><strong>Purchase draft created.</strong> The invoice is attached. No stock or payment was recorded. Open Purchases to confirm the order, then use Receive Goods to record only the quantities actually accepted. <span className="font-mono">{createdPurchaseId}</span><button type="button" onClick={() => { window.location.hash = '#/purchases'; }} className="ml-2 underline font-semibold">Open Purchases</button></div>}
+        </section>
+      )}
+    </div>
+  );
+}
