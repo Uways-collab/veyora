@@ -135,6 +135,13 @@ function ProtectedWorkspaceRouter() {
   }, []);
 
   const handleSelectModule = (moduleId: ModuleId, settingsTab?: SettingsTab) => {
+    if (!subscriptionAccess.allowed && moduleId !== 'billing' && moduleId !== 'dashboard') {
+      if (activeRole === 'owner') {
+        setActiveModule('billing');
+        window.location.hash = '#/billing';
+      }
+      return;
+    }
     if (settingsTab) {
       setRequestedSettingsTab(settingsTab);
     }
@@ -250,17 +257,12 @@ function ProtectedWorkspaceRouter() {
   const featureKey = activeModule === 'industry' ? 'industry' : activeModule;
   const moduleAllowed = subscriptionAccess.features[featureKey] !== false;
 
-  if (!subscriptionAccess.allowed && !(activeModule === 'billing' && activeRole === 'owner')) {
-    return <AppShell activeModule={activeModule} onSelectModule={handleSelectModule}>
-      <section className="mx-auto max-w-xl rounded-2xl border border-amber-200 bg-white p-6 sm:p-8">
-        <div className="text-xs font-semibold uppercase tracking-wider text-amber-700">Subscription access paused</div>
-        <h1 className="mt-2 text-xl font-semibold text-slate-900">This business workspace is locked</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-600">The 14-day trial has ended, the card payment is overdue, or this business has no active subscription. Business records and operations stay protected until payment is confirmed.</p>
-        {activeRole === 'owner'
-          ? <button type="button" onClick={() => handleSelectModule('billing')} className="mt-5 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white">Open billing to restore access</button>
-          : <p className="mt-5 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Ask the business Owner to update the payment method and restore this workspace. Staff and managers cannot pay for or unlock another business.</p>}
-      </section>
-    </AppShell>;
+  if (!subscriptionAccess.allowed && activeModule !== 'billing') {
+    return (
+      <AppShell activeModule="dashboard" onSelectModule={handleSelectModule}>
+        <DashboardView onSelectModule={handleSelectModule} subscriptionLocked />
+      </AppShell>
+    );
   }
 
   if (subscriptionAccess.allowed && !moduleAllowed && activeModule !== 'billing') {
@@ -278,7 +280,9 @@ function ProtectedWorkspaceRouter() {
   const renderModule = () => {
     switch (activeModule) {
       case 'dashboard':
-        return <DashboardView onSelectModule={handleSelectModule} />;
+        return activeOrganisation && ['car_dealership', 'hotel', 'restaurant', 'real_estate', 'logistics', 'manufacturing'].includes(activeOrganisation.business_type ?? '')
+          ? <IndustryWorkspacesView />
+          : <DashboardView onSelectModule={handleSelectModule} />;
       case 'inventory':
         return <InventoryView onSelectModule={handleSelectModule} />;
       case 'sales':
