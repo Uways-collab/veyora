@@ -173,7 +173,7 @@ begin
   join public.organization_business_types b on b.organization_id=m.organization_id
     and b.business_type='restaurant' and b.is_primary
   where m.organization_id=p_organization_id and m.user_id=auth.uid();
-  if v_role not in ('owner','admin','manager','staff') then
+  if v_role is null or v_role not in ('owner','admin','manager','staff') then
     raise exception 'You do not have restaurant order access.' using errcode='42501';
   end if;
   if p_order_type not in ('dine_in','takeaway','delivery') then
@@ -389,7 +389,7 @@ begin
   join public.organization_business_types b on b.organization_id=m.organization_id
     and b.business_type='car_dealership' and b.is_primary
   where m.organization_id=p_organization_id and m.user_id=v_user;
-  if v_role not in ('owner','admin','manager') or not private.organization_has_access(p_organization_id,'industry') then
+  if v_role is null or v_role not in ('owner','admin','manager') or not private.organization_has_access(p_organization_id,'industry') then
     raise exception 'Only an authorised dealership manager can record payments for this business.' using errcode='42501';
   end if;
   if p_amount is null or p_amount<=0 or p_idempotency_key is null then
