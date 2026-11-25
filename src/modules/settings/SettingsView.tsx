@@ -484,19 +484,10 @@ export function SettingsView({ requestedTab }: SettingsViewProps) {
                       <label htmlFor="edit-org-type" className="block text-xs font-medium text-slate-700">
                         Business Type
                       </label>
-                      <select
-                        id="edit-org-type"
-                        disabled={!canEditOrg}
-                        value={editOrgType}
-                        onChange={(e) => setEditOrgType(e.target.value as BusinessType)}
-                        className="w-full h-9 px-2.5 rounded-md border border-slate-300 text-xs text-slate-900 bg-white disabled:bg-slate-50"
-                      >
-                        {BUSINESS_TYPE_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
+                      <div id="edit-org-type" className="flex min-h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-700">
+                        {BUSINESS_TYPE_OPTIONS.find((opt) => opt.value === editOrgType)?.label ?? editOrgType.replaceAll('_', ' ')}
+                      </div>
+                      <p className="text-[11px] leading-4 text-slate-500">This business type is fixed when the workspace is created. Create a separate business workspace to operate another type of business.</p>
                     </div>
 
                     <div className="space-y-1">
