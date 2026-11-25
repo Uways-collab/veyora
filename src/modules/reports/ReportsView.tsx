@@ -2,13 +2,13 @@ import { useState } from 'react';
 import {
   BarChart3,
   Boxes,
-  Clock,
   Landmark,
   ShoppingBag,
   ShoppingCart,
 } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { InventoryReportsPanel } from './InventoryReportsPanel';
+import { BusinessReportsPanel } from './BusinessReportsPanel';
 
 type ReportDomainId = 'inventory' | 'sales' | 'purchases' | 'finance';
 
@@ -30,23 +30,23 @@ const REPORT_DOMAINS: ReportDomainDefinition[] = [
   {
     id: 'sales',
     label: 'Sales Reports',
-    status: 'upcoming',
+    status: 'active',
     description:
-      'Sales reporting is planned. The Sales workspace remains available for day-to-day sales operations; this status applies only to reports.',
+      'Live sales totals, returns, collections, customer balances, product performance and transaction detail.',
   },
   {
     id: 'purchases',
     label: 'Purchases Reports',
     status: 'upcoming',
     description:
-      'Purchases reporting is planned. The Purchases workspace remains available for purchasing operations; this status applies only to reports.',
+      'Purchase commitments, goods received, supplier spend, order status and purchase-order detail.',
   },
   {
     id: 'finance',
     label: 'Finance Reports',
     status: 'upcoming',
     description:
-      'Finance reporting is planned. This does not indicate that the Finance workspace itself is unavailable.',
+      'Posted-ledger profit and loss, balance sheet, trial balance and general-ledger activity.',
   },
 ];
 
@@ -102,7 +102,7 @@ export function ReportsView({ canExport = false }: { canExport?: boolean }) {
 
         <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-3 py-1.5 shrink-0 self-start sm:self-auto">
           <BarChart3 className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
-          <span>Inventory reporting active · Sales, Purchases &amp; Finance reporting planned</span>
+          <span>Inventory, Sales, Purchases &amp; Finance reports active</span>
         </div>
       </section>
 
@@ -157,47 +157,7 @@ export function ReportsView({ canExport = false }: { canExport?: boolean }) {
       {selectedDomain === 'inventory' ? (
         <InventoryReportsPanel canExport={canExport} />
       ) : (
-        <section
-          aria-labelledby="upcoming-report-domain-heading"
-          className="bg-white border border-slate-200 rounded-lg p-6 sm:p-8"
-        >
-          <div className="max-w-xl space-y-4">
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-medium">
-              <Clock className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-              <span>
-                Planned Report Domain
-              </span>
-            </div>
-
-            <div className="space-y-1.5">
-              <h2
-                id="upcoming-report-domain-heading"
-                className="font-display text-lg font-semibold text-slate-900"
-              >
-                {activeDomainDef.label}
-              </h2>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                {activeDomainDef.description}
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-600">
-              To avoid displaying estimated or unverified figures, no metrics are shown until
-              the underlying Supabase tables and transactions for this module are live.
-            </div>
-
-            <div>
-              <button
-                type="button"
-                onClick={() => setSelectedDomain('inventory')}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 transition-colors"
-              >
-                <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Open Active Inventory Reports</span>
-              </button>
-            </div>
-          </div>
-        </section>
+        <BusinessReportsPanel domain={selectedDomain} canExport={canExport} />
       )}
     </div>
   );
