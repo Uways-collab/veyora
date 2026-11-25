@@ -23,6 +23,7 @@ import { SettingsView, type SettingsTab } from './modules/settings/SettingsView'
 import { PlannedModuleView } from './modules/shared/PlannedModuleView';
 import { getSupabaseClient } from './core/supabase/client';
 import { SuppliersView } from './modules/suppliers/SuppliersView';
+import { PWAInstallPrompt } from './components/shared/PWAInstallPrompt';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
 
@@ -330,6 +331,7 @@ export default function App() {
       <AppErrorBoundary>
         <ProtectedWorkspaceRouter />
       </AppErrorBoundary>
+      <PWAInstallPrompt />
     </AuthProvider>
   );
 }
