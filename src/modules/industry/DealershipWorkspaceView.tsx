@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { AlertCircle, CalendarClock, CarFront, CheckCircle2, ClipboardList, Gauge, Loader2, Plus, RefreshCw, Users, Wrench } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { getSupabaseClient } from '../../core/supabase/client';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 type Tab = 'stock' | 'leads' | 'test_drives' | 'deals' | 'workshop';
 type Vehicle = { id: string; stock_number: string; vin: string | null; make: string; model: string; model_year: number; mileage: number; purchase_price: number; asking_price: number; status: string; condition: string; body_type: string | null; fuel_type: string | null; transmission: string | null; exterior_color: string | null; location_label: string | null; warranty_until: string | null; notes: string | null };
@@ -23,7 +24,7 @@ const localDateTime = (v: string | null) => v ? new Date(v).toLocaleString() : '
 
 export function DealershipWorkspaceView() {
   const { activeOrganisation, activeRole } = useAuth();
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseClient() as unknown as SupabaseClient<any> | null;
   const canManage = activeRole === 'owner' || activeRole === 'admin' || activeRole === 'manager';
   const [tab, setTab] = useState<Tab>('stock');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
