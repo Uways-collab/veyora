@@ -37,7 +37,7 @@ const REPORT_DOMAINS: ReportDomainDefinition[] = [
   {
     id: 'purchases',
     label: 'Purchases Reports',
-    status: 'upcoming',
+    status: 'active',
     description:
       'Purchase commitments, goods received, supplier spend, order status and purchase-order detail.',
   },
@@ -66,9 +66,6 @@ function getDomainIcon(id: ReportDomainId) {
 export function ReportsView({ canExport = false }: { canExport?: boolean }) {
   const { activeOrganisation, activeRole } = useAuth();
   const [selectedDomain, setSelectedDomain] = useState<ReportDomainId>('inventory');
-
-  const activeDomainDef =
-    REPORT_DOMAINS.find((domain) => domain.id === selectedDomain) ?? REPORT_DOMAINS[0];
 
   return (
     <div className="space-y-6">
