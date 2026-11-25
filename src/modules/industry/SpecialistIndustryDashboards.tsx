@@ -44,7 +44,7 @@ function useBoard(table: string, sort: string, fields: Field[], defaults: RowRec
       else if (f.type === 'datetime-local') payload[f.name] = raw ? new Date(raw).toISOString() : null;
       else payload[f.name] = raw || defaults[f.name] || null;
     }
-    if (fd.has('table_id')) payload.table_id = String(fd.get('table_id') ?? '') || null;\n    if (fd.has('covers')) payload.covers = Number(fd.get('covers') ?? 1);\n    const { error: insertError } = await db.from(table).insert(payload);
+    if (fd.has('table_id')) payload.table_id = String(fd.get('table_id') ?? '') || null;\n    if (fd.has('covers')) payload.covers = Number(fd.get('covers') ?? 1);\n    if (fd.has('table_id')) payload.table_id = String(fd.get('table_id') ?? '') || null;\n    if (fd.has('covers')) payload.covers = Number(fd.get('covers') ?? 1);\n    const { error: insertError } = await db.from(table).insert(payload);
     if (insertError) setError(insertError.code === '23505' ? 'That reference already exists in this organisation.' : insertError.message);
     else { setNotice('Record created successfully.'); setForm(false); await refresh(); }
     setSaving(false);
@@ -70,7 +70,7 @@ function useBoard(table: string, sort: string, fields: Field[], defaults: RowRec
   return { rows, loading, saving, error, notice, create, changeStatus, updateField, refresh, form, setForm, fields, currency, canManage };
 }
 
-function RecordForm({ ctx, onClose, submitLabel }: { ctx: BoardContext; onClose: () => void; submitLabel: string }) {
+function RecordForm({ ctx, onClose, submitLabel, extraFields = [] }: { ctx: BoardContext; onClose: () => void; submitLabel: string; extraFields?: Field[] }) {
   return <form onSubmit={ctx.create} className="grid gap-3 border-b border-blue-100 bg-blue-50/40 p-4 sm:grid-cols-2 xl:grid-cols-3">
     {[...ctx.fields, ...extraFields].map(f => <label key={f.name} className={label + (f.wide ? ' sm:col-span-2 xl:col-span-3' : '')}>
       {f.label}{f.required ? ' *' : ''}
@@ -98,7 +98,7 @@ const propertyFields: Field[] = [
 ];
 const restaurantFields: Field[] = [
  {name:'order_number',label:'Order number',required:true},{name:'order_type',label:'Service type',options:['dine_in','takeaway','delivery']},{name:'table_label',label:'Table / pickup reference'},{name:'customer_name',label:'Customer name'},
- {name:'items_summary',label:'Items and modifiers',type:'textarea',required:true,wide:true},{name:'total_amount',label:'Order total',type:'number',min:'0',step:'0.01'},{name:'status',label:'Kitchen status',options:['new','accepted','preparing','ready','served','completed','cancelled']},{name:'notes',label:'Allergies / service notes',type:'textarea',wide:true}
+ {name:'items_summary',label:'Items and modifiers',type:'textarea',required:true,wide:true},{name:'total_amount',label:'Order total',type:'number',min:'0',step:'0.01'},{name:'notes',label:'Allergies / service notes',type:'textarea',wide:true}
 ];
 const logisticsFields: Field[] = [
  {name:'tracking_number',label:'Tracking number',required:true},{name:'recipient_name',label:'Recipient name',required:true},{name:'recipient_phone',label:'Recipient phone',type:'tel'},{name:'origin',label:'Pickup location',required:true},{name:'destination',label:'Delivery destination',required:true},{name:'scheduled_at',label:'Dispatch time',type:'datetime-local'},{name:'status',label:'Delivery status',options:['pending','assigned','in_transit','delivered','failed','returned']},{name:'proof_of_delivery_url',label:'Proof of delivery URL'},{name:'notes',label:'Dispatch notes',type:'textarea',wide:true}
