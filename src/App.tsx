@@ -258,7 +258,7 @@ function ProtectedWorkspaceRouter() {
   const featureKey = activeModule === 'industry' ? 'industry' : activeModule;
   const moduleAllowed = subscriptionAccess.features[featureKey] !== false;
 
-  if (!subscriptionAccess.allowed && !(activeModule === 'billing' && activeRole === 'owner')) {
+  if (!subscriptionAccess.allowed) {
     if (activeRole === 'owner') return <BillingView />;
     return <div className="min-h-screen bg-slate-50 px-4 py-10"><section className="mx-auto max-w-xl rounded-2xl border border-amber-200 bg-white p-6 sm:p-8"><div className="text-xs font-semibold uppercase tracking-wider text-amber-700">Subscription required</div><h1 className="mt-2 text-xl font-semibold text-slate-900">This business workspace is locked</h1><p className="mt-3 text-sm leading-6 text-slate-600">The trial card has not been verified, the trial has ended, or payment is overdue. No business operations or records are available until the Owner completes subscription setup.</p><p className="mt-5 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Ask the business Owner to complete payment. Staff and managers cannot unlock this workspace.</p><button type="button" onClick={() => void signOut()} className="mt-5 rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700">Sign out</button></section></div>;
   }
