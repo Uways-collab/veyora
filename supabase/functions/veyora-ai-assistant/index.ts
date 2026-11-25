@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-3.8-flash';
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY_ITEMS = 8;
 
@@ -323,8 +323,18 @@ Deno.serve(async (req: Request) => {
     }),
   });
   if (!aiResponse.ok) {
-    const providerError = await aiResponse.text();
-    return json({ error: 'Veyora AI could not complete that request. Please try again later.', detail: providerError.slice(0, 300) }, 502);
+    const providerError = (await aiResponse.text()).slice(0, 1000);
+    console.error('Gemini API request failed', {
+      model: MODEL,
+      status: aiResponse.status,
+      statusText: aiResponse.statusText,
+      providerError,
+    });
+    return json({
+      error: 'Veyora AI could not complete that request. Please try again later.',
+      providerStatus: aiResponse.status,
+      model: MODEL,
+    }, 502);
   }
 
   const aiPayload = await aiResponse.json();
