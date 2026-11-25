@@ -92,8 +92,17 @@ export function HotelWorkspaceView() {
     if (e) setError(e.message);
     else {
       if (reservation.room_id && status === 'checked_in') await supabase.from('hotel_rooms').update({ status: 'occupied' }).eq('id', reservation.room_id).eq('organization_id', activeOrganisation.id);
-      if (reservation.room_id && ['checked_out', 'cancelled', 'no_show'].includes(status)) await supabase.from('hotel_rooms').update({ status: 'dirty' }).eq('id', reservation.room_id).eq('organization_id', activeOrganisation.id);
-      setNotice(status === 'checked_in' ? 'Guest checked in. Room marked occupied.' : status === 'checked_out' ? 'Guest checked out. Room sent to housekeeping.' : 'Reservation updated.');
+      if (reservation.room_id && ['checked_out', 'cancelled', 'no_show'].includes(status)) {
+        await supabase.from('hotel_rooms').update({ status: 'dirty' }).eq('id', reservation.room_id).eq('organization_id', activeOrganisation.id);
+        if (status === 'checked_out') {
+          await supabase.from('hotel_housekeeping_tasks').insert({
+            organization_id: activeOrganisation.id, room_id: reservation.room_id, room_label: reservation.room_label,
+            task_type: 'room_turnover', priority: 'high', status: 'pending',
+            notes: 'Guest checkout turnover for reservation ' + reservation.confirmation_code,
+          });
+        }
+      }
+      setNotice(status === 'checked_in' ? 'Guest checked in. Room marked occupied.' : status === 'checked_out' ? 'Guest checked out. Room marked dirty and a turnover task was created.' : 'Reservation updated.');
       await load();
     }
     setSaving(false);
@@ -154,7 +163,7 @@ export function HotelWorkspaceView() {
         {reservationForm && <form onSubmit={(e) => void submitReservation(e)} className="grid gap-3 border-b border-blue-100 bg-blue-50/40 p-4 sm:grid-cols-2 lg:grid-cols-3">
           <label className="space-y-1 text-xs font-medium">Confirmation code<input required value={booking.confirmation_code} onChange={(e) => setBooking({...booking,confirmation_code:e.target.value})} className={fieldClass}/></label>
           <label className="space-y-1 text-xs font-medium">Guest full name<input required value={booking.guest_name} onChange={(e) => setBooking({...booking,guest_name:e.target.value})} className={fieldClass}/></label>
-          <label className="space-y-1 text-xs font-medium">Room<select required value={booking.room_id} onChange={(e) => {const r=roomMap.get(e.target.value);setBooking({...booking,room_id:e.target.value,nightly_rate:r?String(r.nightly_rate):''});}} className={fieldClass}><option value="">Select room</option>{rooms.filter((r) => !['maintenance','out_of_service'].includes(r.status)).map((r) => <option key={r.id} value={r.id}>{r.room_number} · {r.room_type} ({money(Number(r.nightly_rate),currency)}/night)</option>)}</select></label>
+          <label className="space-y-1 text-xs font-medium">Room<select required value={booking.room_id} onChange={(e) => {const r=roomMap.get(e.target.value);setBooking({...booking,room_id:e.target.value,nightly_rate:r?String(r.nightly_rate):''});}} className={fieldClass}><option value="">Select room</option>{rooms.filter((r) => r.status === 'available').map((r) => <option key={r.id} value={r.id}>{r.room_number} · {r.room_type} ({money(Number(r.nightly_rate),currency)}/night)</option>)}</select></label>
           <label className="space-y-1 text-xs font-medium">Guest email<input type="email" value={booking.guest_email} onChange={(e) => setBooking({...booking,guest_email:e.target.value})} className={fieldClass}/></label>
           <label className="space-y-1 text-xs font-medium">Guest phone<input value={booking.guest_phone} onChange={(e) => setBooking({...booking,guest_phone:e.target.value})} className={fieldClass}/></label>
           <label className="space-y-1 text-xs font-medium">Booking source<select value={booking.booking_source} onChange={(e) => setBooking({...booking,booking_source:e.target.value})} className={fieldClass}><option value="direct">Direct</option><option value="phone">Phone</option><option value="walk_in">Walk-in</option><option value="online_travel_agency">Online travel agency</option><option value="corporate">Corporate</option></select></label>
