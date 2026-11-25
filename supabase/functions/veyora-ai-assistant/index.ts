@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const MODEL = 'gemini-3.8-flash';
+const PRIMARY_MODEL = 'gemini-3.8-flash';
+const FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY_ITEMS = 8;
 
@@ -313,42 +314,63 @@ Deno.serve(async (req: Request) => {
     { role: 'user', parts: [{ text: message }] },
   ];
 
-  const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent';
   const geminiBody = JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents,
     generationConfig: { temperature: 0.3, maxOutputTokens: 900 },
   });
-  let aiResponse: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    aiResponse = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
-      body: geminiBody,
+  const transientStatuses = [408, 429, 500, 503];
+  const requestModel = async (model: string, maxAttempts: number) => {
+    let response: Response | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      response = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+          body: geminiBody,
+        },
+      );
+      if (response.ok || !transientStatuses.includes(response.status) || attempt === maxAttempts - 1) break;
+      const retryAfter = Number(response.headers.get('Retry-After'));
+      const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 3000)
+        : 1000 * (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return response;
+  };
+
+  let activeModel = PRIMARY_MODEL;
+  let aiResponse = await requestModel(PRIMARY_MODEL, 3);
+  if (aiResponse && !aiResponse.ok && transientStatuses.includes(aiResponse.status)) {
+    const primaryStatus = aiResponse.status;
+    console.warn('Primary Gemini model unavailable; trying free-tier fallback', {
+      primaryModel: PRIMARY_MODEL,
+      fallbackModel: FALLBACK_MODEL,
+      status: primaryStatus,
     });
-    if (aiResponse.ok || ![408, 429, 500, 503].includes(aiResponse.status) || attempt === 2) break;
-    const retryAfter = Number(aiResponse.headers.get('Retry-After'));
-    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
-      ? Math.min(retryAfter * 1000, 3000)
-      : 1000 * (attempt + 1);
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    activeModel = FALLBACK_MODEL;
+    aiResponse = await requestModel(FALLBACK_MODEL, 2);
   }
+
   if (!aiResponse || !aiResponse.ok) {
     const providerStatus = aiResponse?.status ?? 502;
     const providerError = aiResponse ? (await aiResponse.text()).slice(0, 1000) : 'No response received';
-    console.error('Gemini API request failed after retries', {
-      model: MODEL,
+    console.error('Gemini API request failed after primary and fallback attempts', {
+      primaryModel: PRIMARY_MODEL,
+      activeModel,
       status: providerStatus,
       statusText: aiResponse?.statusText ?? 'No response',
       providerError,
     });
-    const temporarilyUnavailable = [408, 429, 500, 503].includes(providerStatus);
+    const temporarilyUnavailable = transientStatuses.includes(providerStatus);
     return json({
       error: temporarilyUnavailable
-        ? 'Gemini is temporarily busy or rate-limited. Please wait a moment and try again.'
+        ? 'Veyora AI is temporarily unavailable from both Google models. Please try again shortly.'
         : 'Veyora AI could not complete that request. Please check the AI provider configuration.',
       providerStatus,
-      model: MODEL,
+      model: activeModel,
     }, temporarilyUnavailable ? 503 : 502);
   }
 
@@ -361,7 +383,7 @@ Deno.serve(async (req: Request) => {
     organization_id: organizationId,
     user_id: authData.user.id,
     feature: 'business_assistant',
-    model: MODEL,
+    model: activeModel,
     input_tokens: Number(usage.promptTokenCount) || 0,
     output_tokens: Number(usage.candidatesTokenCount) || 0,
   });
