@@ -171,8 +171,7 @@ export function RestaurantWorkspaceView() {
   if(menuResult.error||categoryResult.error||tableResult.error){setRestaurantError(menuResult.error?.message||categoryResult.error?.message||tableResult.error?.message||'Could not load restaurant setup.');return;}
   setMenuItems(menuResult.data??[]);setMenuCategories(categoryResult.data??[]);setTables(tableResult.data??[]);
   const {data:accounts,error:accountsError}=await db.rpc('restaurant_get_payment_accounts',{p_organization_id:activeOrganisation.id});
-  if(accountsError){setPaymentAccounts([]);setRestaurantError(accountsError.message);}else setPaymentAccounts(accounts??[]);
-  setRestaurantError(null);
+  if(accountsError){setPaymentAccounts([]);setRestaurantError(accountsError.message);}else{setPaymentAccounts(accounts??[]);setRestaurantError(null);}
  },[db,activeOrganisation?.id]);
  useEffect(()=>{void refreshRestaurantSetup();},[refreshRestaurantSetup]);
  const addMenuItem=async(e:FormEvent<HTMLFormElement>)=>{
@@ -217,7 +216,7 @@ export function RestaurantWorkspaceView() {
  };
  const openOrderItems=async(order:RowRecord)=>{
   setSelectedOrder(order);setRestaurantError(null);setRestaurantNotice(null);setSelectedMenuItem('');setItemQuantity('1');setItemModifiers('');
-  const [{data,error},{data:payments,paymentsError}]=await Promise.all([
+  const [{data,error},{data:payments,error:paymentsError}]=await Promise.all([
    db.from('restaurant_order_items').select('*').eq('organization_id',activeOrganisation?.id).eq('order_id',order.id).order('created_at'),
    db.from('restaurant_order_payments').select('id,amount,reference,paid_at,financial_account_id,received_by').eq('organization_id',activeOrganisation?.id).eq('order_id',order.id).order('paid_at')
   ]);
