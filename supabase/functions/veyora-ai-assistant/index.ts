@@ -313,28 +313,43 @@ Deno.serve(async (req: Request) => {
     { role: 'user', parts: [{ text: message }] },
   ];
 
-  const aiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents,
-      generationConfig: { temperature: 0.3, maxOutputTokens: 900 },
-    }),
+  const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent';
+  const geminiBody = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents,
+    generationConfig: { temperature: 0.3, maxOutputTokens: 900 },
   });
-  if (!aiResponse.ok) {
-    const providerError = (await aiResponse.text()).slice(0, 1000);
-    console.error('Gemini API request failed', {
+  let aiResponse: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    aiResponse = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+      body: geminiBody,
+    });
+    if (aiResponse.ok || ![408, 429, 500, 503].includes(aiResponse.status) || attempt === 2) break;
+    const retryAfter = Number(aiResponse.headers.get('Retry-After'));
+    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(retryAfter * 1000, 3000)
+      : 1000 * (attempt + 1);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  if (!aiResponse || !aiResponse.ok) {
+    const providerStatus = aiResponse?.status ?? 502;
+    const providerError = aiResponse ? (await aiResponse.text()).slice(0, 1000) : 'No response received';
+    console.error('Gemini API request failed after retries', {
       model: MODEL,
-      status: aiResponse.status,
-      statusText: aiResponse.statusText,
+      status: providerStatus,
+      statusText: aiResponse?.statusText ?? 'No response',
       providerError,
     });
+    const temporarilyUnavailable = [408, 429, 500, 503].includes(providerStatus);
     return json({
-      error: 'Veyora AI could not complete that request. Please try again later.',
-      providerStatus: aiResponse.status,
+      error: temporarilyUnavailable
+        ? 'Gemini is temporarily busy or rate-limited. Please wait a moment and try again.'
+        : 'Veyora AI could not complete that request. Please check the AI provider configuration.',
+      providerStatus,
       model: MODEL,
-    }, 502);
+    }, temporarilyUnavailable ? 503 : 502);
   }
 
   const aiPayload = await aiResponse.json();
