@@ -20,7 +20,15 @@ export function PurchasesView() {
   const canManageVendorDirectory = canManageSuppliers(effectiveRole);
   const isAuthenticated = status === 'authenticated';
 
-  const [activeTab, setActiveTab] = useState<PurchasesTab>('orders');
+  const [activeTab, setActiveTab] = useState<PurchasesTab>(() => {
+    try {
+      const openInvoiceScanner = window.localStorage.getItem('veyora_open_invoice_scanner') === '1';
+      window.localStorage.removeItem('veyora_open_invoice_scanner');
+      return openInvoiceScanner ? 'invoice' : 'orders';
+    } catch {
+      return 'orders';
+    }
+  });
 
   const [createOrderSignal, setCreateOrderSignal] = useState(0);
   const [refreshOrdersSignal, setRefreshOrdersSignal] = useState(0);
