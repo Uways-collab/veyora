@@ -127,7 +127,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     group: 'financial',
     stage: 'foundation_active',
     summary:
-      'Central operational reporting workspace with live inventory, sales, purchases, and finance reporting.',
+      'Central reporting workspace with live inventory, sales, purchases and posted-ledger financial reports, date filters and plan-gated CSV exports.',
     primaryEntities: [
       'Inventory Reports (Active)',
       'Sales Reports (Active)',
@@ -140,9 +140,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       'stock_transfers',
       'products',
       'product_variants',
+      'sales',
+      'sale_items',
+      'sale_payments',
+      'sales_returns',
+      'purchases',
+      'purchase_items',
+      'finance_journal_entries',
+      'finance_journal_lines',
     ],
     connectedModules: ['inventory', 'sales', 'purchases', 'finance'],
-    targetPhase: 'Inventory, Sales, Purchases & Finance Reports Active',
+    targetPhase: 'Operational & Financial Reports Active',
   },
   {
     id: 'ai_assistant',
