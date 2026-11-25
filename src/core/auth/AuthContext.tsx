@@ -413,12 +413,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const switchOrganisation = useCallback(
     (organisationId: string) => {
+      // Only a membership returned by the authenticated, RLS-scoped membership query
+      // can become the active workspace. Never trust a caller-supplied organisation id.
+      if (!memberships.some((membership) => membership.organisation_id === organisationId)) return;
       setActiveOrgId(organisationId);
-      if (user) {
-        setStoredOrgId(user.id, organisationId);
-      }
+      if (user) setStoredOrgId(user.id, organisationId);
     },
-    [user]
+    [memberships, user]
   );
 
   const refreshMemberships = useCallback(async () => {
