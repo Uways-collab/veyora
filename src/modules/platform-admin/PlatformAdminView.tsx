@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, ShieldCheck, Users, Building2, UserCheck, CreditCard, Clock3, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, RefreshCw, ShieldCheck, Users, Building2, UserCheck, CreditCard, Clock3, AlertTriangle } from 'lucide-react';
 import { getSupabaseClient } from '../../core/supabase/client';
 
 type PlatformStats = {
@@ -55,7 +55,10 @@ export function PlatformAdminView() {
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Platform overview</h1>
           <p className="mt-1 text-sm text-slate-600">Platform-wide totals only. Customer business records remain private to their organisations.</p>
         </div>
-        <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh statistics</button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => { window.location.hash = ''; }} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"><ArrowLeft className="h-3.5 w-3.5" /> Business workspace</button>
+          <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh statistics</button>
+        </div>
       </header>
       {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
       {loading && !stats ? <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">Loading platform statistics…</div> : null}
