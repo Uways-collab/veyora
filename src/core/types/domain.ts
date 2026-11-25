@@ -11,7 +11,8 @@ export type ModuleId =
   | 'ai_assistant'
   | 'industry'
   | 'billing'
-  | 'settings';
+  | 'settings'
+  | 'platform_admin';
 
 export type ModuleGroup =
   | 'overview'
