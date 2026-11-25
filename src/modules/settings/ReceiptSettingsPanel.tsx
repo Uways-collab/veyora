@@ -417,6 +417,7 @@ export function ReceiptSettingsPanel({
                 </div>
 
                 {/* Logo Uploader */}
+                <p className="text-[11px] text-slate-500">Images are automatically compressed to 100 KB or less before upload.</p>
                 <div className="p-3.5 rounded-md border border-slate-200 bg-slate-50/50 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <label className="flex items-center gap-2.5 text-xs font-medium text-slate-900 cursor-pointer">
