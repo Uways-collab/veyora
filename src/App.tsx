@@ -24,6 +24,7 @@ import { PlannedModuleView } from './modules/shared/PlannedModuleView';
 import { getSupabaseClient } from './core/supabase/client';
 import { SuppliersView } from './modules/suppliers/SuppliersView';
 import { PWAInstallPrompt } from './components/shared/PWAInstallPrompt';
+import { PlatformAdminView } from './modules/platform-admin/PlatformAdminView';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
 
@@ -46,6 +47,7 @@ function ProtectedWorkspaceRouter() {
     workspaceLoadError,
     refreshMemberships,
     signOut,
+    user,
   } = useAuth();
 
   const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromHash());
@@ -136,7 +138,8 @@ function ProtectedWorkspaceRouter() {
   }, []);
 
   const handleSelectModule = (moduleId: ModuleId, settingsTab?: SettingsTab) => {
-    if (!subscriptionAccess.allowed && moduleId !== 'billing' && moduleId !== 'dashboard') {
+    if (moduleId === 'platform_admin' && user?.email?.toLowerCase() !== 'blundigold@gmail.com') return;
+    if (!subscriptionAccess.allowed && moduleId !== 'billing' && moduleId !== 'dashboard' && moduleId !== 'platform_admin') {
       if (activeRole === 'owner') {
         setActiveModule('billing');
         window.location.hash = '#/billing';
@@ -184,6 +187,10 @@ function ProtectedWorkspaceRouter() {
         </div>
       </div>
     );
+  }
+
+  if (status === 'authenticated' && user?.email?.toLowerCase() === 'blundigold@gmail.com' && activeModule === 'platform_admin') {
+    return <PlatformAdminView />;
   }
 
   // Gate 3: RLS / Expired Session / Missing Schema Diagnostic Screen (never bypasses security)
@@ -258,7 +265,7 @@ function ProtectedWorkspaceRouter() {
   const featureKey = activeModule === 'industry' ? 'industry' : activeModule;
   const moduleAllowed = subscriptionAccess.features[featureKey] !== false;
 
-  if (!subscriptionAccess.allowed && activeModule !== 'billing') {
+  if (!subscriptionAccess.allowed && activeModule !== 'billing' && activeModule !== 'platform_admin') {
     return (
       <AppShell activeModule="dashboard" onSelectModule={handleSelectModule}>
         <DashboardView onSelectModule={handleSelectModule} subscriptionLocked />
@@ -308,6 +315,8 @@ function ProtectedWorkspaceRouter() {
         return <BillingView />;
       case 'settings':
         return <SettingsView requestedTab={requestedSettingsTab} />;
+      case 'platform_admin':
+        return user?.email?.toLowerCase() === 'blundigold@gmail.com' ? <PlatformAdminView /> : <DashboardView onSelectModule={handleSelectModule} />;
       default:
         return (
           <PlannedModuleView
