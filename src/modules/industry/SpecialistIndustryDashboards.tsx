@@ -162,7 +162,7 @@ export function RestaurantWorkspaceView() {
  const [restaurantSaving,setRestaurantSaving]=useState(false);
  const [orderItems,setOrderItems]=useState<RowRecord[]>([]);
  const refreshRestaurantSetup=useCallback(async()=>{
-  if(!db||!activeOrganisation){setMenuItems([]);setTables([]);return;}
+  if(!db||!activeOrganisation){setMenuItems([]);setMenuCategories([]);setTables([]);setPaymentAccounts([]);return;}
   const [menuResult,categoryResult,tableResult]=await Promise.all([
    db.from('restaurant_menu_items').select('*').eq('organization_id',activeOrganisation.id).order('name'),
    db.from('restaurant_menu_categories').select('*').eq('organization_id',activeOrganisation.id).order('sort_order'),
@@ -171,7 +171,7 @@ export function RestaurantWorkspaceView() {
   if(menuResult.error||categoryResult.error||tableResult.error){setRestaurantError(menuResult.error?.message||categoryResult.error?.message||tableResult.error?.message||'Could not load restaurant setup.');return;}
   setMenuItems(menuResult.data??[]);setMenuCategories(categoryResult.data??[]);setTables(tableResult.data??[]);
   const {data:accounts,error:accountsError}=await db.rpc('restaurant_get_payment_accounts',{p_organization_id:activeOrganisation.id});
-  if(accountsError){setPaymentAccounts([]);setRestaurantError(accountsError.message);}else{setPaymentAccounts(accounts??[]);setRestaurantError(null);}
+  if(accountsError){setPaymentAccounts([]);setRestaurantError(accountsError.message);}else{setPaymentAccounts(accounts??[]);setPaymentAccountId(current=>current||accounts?.[0]?.id||'');setRestaurantError(null);}
  },[db,activeOrganisation?.id]);
  useEffect(()=>{void refreshRestaurantSetup();},[refreshRestaurantSetup]);
  const addMenuItem=async(e:FormEvent<HTMLFormElement>)=>{
@@ -227,8 +227,8 @@ export function RestaurantWorkspaceView() {
   e.preventDefault();if(!db||!activeOrganisation||!selectedOrder)return;
   if(['completed','cancelled'].includes(selectedOrder.status)){setRestaurantError('This ticket is closed and can no longer be changed.');return;}
   const item=menuItems.find(x=>x.id===selectedMenuItem);if(!item)return;
-  setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
   if(!item.is_available){setRestaurantError('That menu item is no longer available.');return;}
+  setRestaurantSaving(true);setRestaurantError(null);setRestaurantNotice(null);
   const {error}=await db.rpc('restaurant_add_order_item',{p_organization_id:activeOrganisation.id,p_order_id:selectedOrder.id,p_menu_item_id:item.id,p_quantity:Number(itemQuantity),p_modifiers:itemModifiers.trim()||null,p_notes:null});
   if(error)setRestaurantError(error.message);else{setRestaurantNotice('Order item added. Ticket total recalculated automatically.');await openOrderItems(selectedOrder);await ctx.refresh();}
   setRestaurantSaving(false);
