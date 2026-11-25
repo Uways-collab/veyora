@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { AlertCircle, ArrowRight, Building2, CalendarDays, CarFront, CheckCircle2, ClipboardList, Factory, Hotel, Loader2, MapPin, Plus, RefreshCw, Utensils, X } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { HotelWorkspaceView } from './HotelWorkspaceView';
+import { DealershipWorkspaceView } from './DealershipWorkspaceView';
 import { getSupabaseClient } from '../../core/supabase/client';
 import type { BusinessCategory } from '../../core/types/domain';
 
@@ -359,7 +360,7 @@ export function IndustryWorkspacesView() {
             {overviewMetrics.map((metric, index) => <div key={metric.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[0.02]"><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-slate-500">{metric.label}</p><span className={'h-2 w-2 rounded-full ' + (index === 0 ? 'bg-blue-500' : index === 1 ? 'bg-emerald-500' : index === 2 ? 'bg-violet-500' : 'bg-amber-500')} /></div><p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 tabular-nums">{metric.value}</p><p className="mt-1 text-[11px] text-slate-500">{metric.helper}</p></div>)}
           </div>
         </section>
-        {industry.category === 'hotel' ? <HotelWorkspaceView /> : <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {industry.category === 'hotel' ? <HotelWorkspaceView /> : industry.category === 'car_dealership' ? <DealershipWorkspaceView /> : <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h2 className="text-base font-semibold text-slate-900">{industry.label}</h2><p className="mt-1 text-xs text-slate-500">{industry.description}</p></div>
             <button type="button" onClick={startCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-800"><Plus className="h-4 w-4" /> New {industry.singular}</button>
