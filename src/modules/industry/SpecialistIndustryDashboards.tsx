@@ -178,7 +178,6 @@ export function RestaurantWorkspaceView() {
   setRestaurantSaving(false);
  };
  const count=(...s:string[])=>ctx.rows.filter(r=>s.includes(r.status)).length;
- const count=(...s:string[])=>ctx.rows.filter(r=>s.includes(r.status)).length;
  const queue=ctx.rows.filter(r=>['new','accepted','preparing'].includes(r.status));
  const lanes=[{name:'New tickets',states:['new'],next:'accepted'},{name:'Accepted',states:['accepted'],next:'preparing'},{name:'Kitchen',states:['preparing'],next:'ready'},{name:'Ready to serve',states:['ready'],next:'served'},{name:'Served',states:['served'],next:'completed'}];
  return <Shell eyebrow="Restaurant service" heading="Restaurant & café operations" description="Run the order counter, kitchen preparation queue, table service and takeaway dispatch." icon={<Utensils className="h-4 w-4"/>} ctx={ctx}>
