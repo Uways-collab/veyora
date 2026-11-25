@@ -318,7 +318,7 @@ before update on public.restaurant_orders
 for each row execute function private.restaurant_enforce_derived_totals();
 
 create or replace function public.restaurant_recalculate_order_totals()
-returns trigger language plpgsql security definer set search_path=pg_catalog,public,auth,private as $function$
+returns trigger language plpgsql security definer set search_path='' as $function$
 declare target_order uuid; target_org uuid;
 begin
   target_order:=coalesce(new.order_id,old.order_id);
@@ -561,7 +561,7 @@ begin
   end if;
   if not public.has_sales_role(p_organization_id,array['owner','admin','manager']::text[]) then
     v_restaurant_staff :=
-      p_source_type in ('restaurant_payment','restaurant_sale')
+      coalesce(p_source_type in ('restaurant_payment','restaurant_sale'),false)
       and coalesce(pg_catalog.current_setting('veyora.restaurant_finance_rpc',true),'')='allowed'
       and private.organization_has_access(p_organization_id,'industry')
       and exists(select 1 from public.organization_memberships m
@@ -598,7 +598,7 @@ begin
 
   insert into public.finance_journal_entries(organization_id,journal_number,entry_date,description,currency_code,status,source_type,source_id,idempotency_key,created_by)
   values(p_organization_id,'JE-'||pg_catalog.to_char(pg_catalog.nextval('public.finance_journal_number_seq'),'FM00000000'),
-    coalesce(p_entry_date,pg_catalog.current_date),pg_catalog.btrim(p_description),v_currency,'draft',
+    coalesce(p_entry_date,current_date),pg_catalog.btrim(p_description),v_currency,'draft',
     coalesce(nullif(pg_catalog.btrim(p_source_type),''),'manual'),p_source_id,p_idempotency_key,auth.uid())
   returning id into v_id;
 
@@ -673,7 +673,7 @@ begin
     end if;
     perform pg_catalog.set_config('veyora.restaurant_finance_rpc','allowed',true);
     perform public.finance_post_journal(
-      p_organization_id,pg_catalog.current_date,'Restaurant sale '||v_order.order_number,
+      p_organization_id,current_date,'Restaurant sale '||v_order.order_number,
       'restaurant_sale',p_order_id,p_order_id,
       pg_catalog.jsonb_build_array(
         pg_catalog.jsonb_build_object('ledger_account_id',v_deposit_account,'debit',v_order.total_amount,'credit',0),
