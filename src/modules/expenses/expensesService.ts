@@ -847,9 +847,21 @@ export async function uploadExpenseReceipt(
 
   const orgId = verified.organizationId;
   const isImage = file.type.startsWith('image/');
-  const compressedImage = isImage
-    ? await compressImageToWebp(file, { maxBytes: MAX_IMAGE_UPLOAD_BYTES, maxWidth: 1600, maxHeight: 1600 })
-    : null;
+  let compressedImage: Awaited<ReturnType<typeof compressImageToWebp>> | null = null;
+  try {
+    if (isImage) {
+      compressedImage = await compressImageToWebp(file, {
+        maxBytes: MAX_IMAGE_UPLOAD_BYTES,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      });
+    }
+  } catch (err) {
+    return {
+      storagePath: null,
+      error: err instanceof Error ? err.message : 'Unable to compress receipt image.',
+    };
+  }
   const uploadBlob: Blob = compressedImage?.blob ?? file;
   const uploadType = compressedImage?.contentType ?? file.type;
   const ext = compressedImage?.extension ?? getReceiptExtension(file);
