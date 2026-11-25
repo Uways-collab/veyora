@@ -191,23 +191,6 @@ export function IndustryWorkspacesView() {
   useEffect(() => { void loadCategories(); }, [loadCategories]);
   useEffect(() => { void loadRecords(); }, [loadRecords]);
 
-  const addCategory = async (category: BusinessCategory) => {
-    if (!industrySupabase || !activeOrganisation || !canManageCategories) return;
-    setSaving(true); setError(null); setNotice(null);
-    // Preserve the organisation's existing core operating model as primary.
-    const isPrimary = false;
-    const { error: insertError } = await industrySupabase.from('organization_business_types').upsert({
-      organization_id: activeOrganisation.id, business_type: category, is_primary: isPrimary, configuration: {},
-    }, { onConflict: 'organization_id,business_type' });
-    if (insertError) setError('Could not add this business category: ' + insertError.message);
-    else {
-      setNotice('Business category added. Its operational workspace is now available.');
-      await loadCategories();
-      setActiveCategory(category);
-    }
-    setSaving(false);
-  };
-
   const startCreate = () => {
     if (!industry) return;
     const defaults: Record<string, string> = {};
