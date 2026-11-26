@@ -17,6 +17,7 @@ type PlatformStats = {
   businessTypes: Record<string, number>;
   aiUsageLast30Days: number;
   aiUsageByFeature: Record<string, number>;
+  invoiceScannerConfigured: boolean;
   generatedAt: string;
 };
 type UserRow = {
@@ -192,6 +193,10 @@ export function PlatformAdminView() {
             </div>
           </div>
         </section>
+        <div className={stats.invoiceScannerConfigured ? 'flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4' : 'flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4'}>
+          <div><h2 className="text-sm font-semibold text-slate-900">Invoice AI provider configuration</h2><p className="mt-1 text-xs text-slate-600">Checks only whether the Gemini API secret is present; it does not submit an invoice or expose the secret.</p></div>
+          <span className={stats.invoiceScannerConfigured ? 'rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700' : 'rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800'}>{stats.invoiceScannerConfigured ? 'Gemini key configured' : 'Gemini key missing'}</span>
+        </div>
         <p className="text-[11px] text-slate-500">Last updated: {dateTime(stats.generatedAt)}. Aggregate metrics only; no customer documents or financial transactions are exposed.</p>
       </>}
 
