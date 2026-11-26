@@ -32,5 +32,24 @@ begin
      or position('102400' in v_upload)=0 then
     raise exception 'FAIL: invoice document uploads must enforce entitlement and 100 KB image limit'; end if;
 
+
+  if has_function_privilege('authenticated','private.invoice_scanner_create_product_variant(uuid,uuid,text,text,text,text,text,text,numeric,numeric,jsonb)','execute')
+     or has_function_privilege('authenticated','private.invoice_scanner_apply_selling_price(uuid,uuid,uuid,numeric,text,numeric)','execute')
+     or has_function_privilege('authenticated','private.invoice_scanner_create_purchase_draft(uuid,uuid,jsonb,uuid,jsonb,numeric,numeric,text,date,date,date,numeric,numeric,boolean,text,text)','execute') then
+    raise exception 'FAIL: private invoice scanner implementation functions must not be directly executable by clients'; end if;
+
+  if not has_function_privilege('authenticated','public.invoice_scanner_create_product_variant(uuid,uuid,text,text,text,text,text,text,numeric,numeric,jsonb)','execute')
+     or not has_function_privilege('authenticated','public.invoice_scanner_apply_selling_price(uuid,uuid,uuid,numeric,text,numeric)','execute')
+     or not has_function_privilege('authenticated','public.invoice_scanner_create_purchase_draft(uuid,uuid,jsonb,uuid,jsonb,numeric,numeric,text,date,date,date,numeric,numeric,boolean,text,text)','execute') then
+    raise exception 'FAIL: authenticated invoice scanner wrappers must remain executable'; end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname='public' and tablename='invoice_scan_audit_logs'
+      and policyname='invoice_scan_audit_select_managers'
+      and position('organization_has_access' in qual)>0
+      and position('invoice_scanner' in qual)>0
+  ) then raise exception 'FAIL: invoice scan audit reads must enforce invoice-scanner entitlement'; end if;
+
   raise notice 'PASS: platform-admin audit data is service-role-only; invoice object read/upload enforce invoice-scanner entitlement and image-size ceiling';
 end $$;
