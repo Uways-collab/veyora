@@ -51,5 +51,8 @@ begin
       and position('invoice_scanner' in qual)>0
   ) then raise exception 'FAIL: invoice scan audit reads must enforce invoice-scanner entitlement'; end if;
 
+  if position('banned_until' in pg_get_functiondef('private.organization_has_access(uuid,text)'::regprocedure)) = 0 then
+    raise exception 'FAIL: suspended Auth users must be denied by the central organisation entitlement helper'; end if;
+
   raise notice 'PASS: platform-admin audit data is service-role-only; invoice object read/upload enforce invoice-scanner entitlement and image-size ceiling';
 end $$;
