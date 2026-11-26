@@ -118,8 +118,8 @@ export function PlatformAdminView() {
     try {
       await invoke('set-user-access', { user_id: user.id, disabled: nextDisabled, reason: auditReason.trim() });
       setAuditReason('');
-      setNotice(`Account access ${nextDisabled ? 'disabled' : 'restored'} for ${user.email}. The change was recorded in the platform audit log.`);
       await load('users');
+      setNotice(`Account access ${nextDisabled ? 'disabled' : 'restored'} for ${user.email}. The change was recorded in the platform audit log.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Account access could not be changed.');
     } finally {
