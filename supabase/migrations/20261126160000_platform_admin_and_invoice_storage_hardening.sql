@@ -131,3 +131,56 @@ using (
   public.has_inventory_role(organization_id,array['owner','admin','manager']::text[])
   and private.organization_has_access(organization_id,'invoice_scanner')
 );
+
+
+-- Make Auth account suspension effective for existing JWT sessions as well:
+-- every organisation entitlement check rejects a currently banned Auth user.
+create or replace function private.organization_has_access(
+  p_organization_id uuid,
+  p_feature text default null
+) returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $function$
+  select
+    auth.uid() is not null
+    and not exists (
+      select 1
+      from auth.users u
+      where u.id = auth.uid()
+        and u.banned_until is not null
+        and u.banned_until > pg_catalog.now()
+    )
+    and exists (
+      select 1
+      from public.organization_memberships m
+      join public.organization_subscriptions s on s.organization_id=m.organization_id
+      join public.subscription_plans p on p.id=s.plan_id
+      where m.organization_id=p_organization_id
+        and m.user_id=auth.uid()
+        and (
+          (
+            s.status='trialing'
+            and s.card_verified_at is not null
+            and s.trial_ends_at is not null
+            and s.trial_ends_at > pg_catalog.now()
+          )
+          or (
+            s.status='active'
+            and (s.current_period_ends_at is null or s.current_period_ends_at > pg_catalog.now())
+          )
+          or (
+            s.status='cancelled'
+            and s.cancel_at_period_end=true
+            and s.current_period_ends_at is not null
+            and s.current_period_ends_at > pg_catalog.now()
+          )
+        )
+        and (
+          p_feature is null
+          or coalesce((p.features ->> p_feature)::boolean,false)
+        )
+    );
+$function$;
