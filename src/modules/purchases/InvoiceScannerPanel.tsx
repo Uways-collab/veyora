@@ -150,17 +150,22 @@ export function InvoiceScannerPanel({
   const [history, setHistory] = useState<ScanHistoryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequestRef = useRef(0);
+  activeOrgIdRef.current = organisationId;
   const loadHistory = useCallback(async () => {
-    if (!organisationId || !canManage) { setHistory([]); return; }
-    const supabase = getSupabaseClient();
-    if (!supabase) { setHistoryError('Veyora is not connected to the database.'); return; }
-    setHistoryLoading(true);
+    const requestId = ++historyRequestRef.current;
+    setHistory([]);
     setHistoryError(null);
+    if (!organisationId || !canManage) { setHistoryLoading(false); return; }
+    const supabase = getSupabaseClient();
+    if (!supabase) { setHistoryError('Veyora is not connected to the database.'); setHistoryLoading(false); return; }
+    setHistoryLoading(true);
     const { data, error: historyLoadError } = await supabase.from('invoice_scans')
       .select('id,file_path,file_name,mime_type,file_size,status,error_message,purchase_id,created_at,updated_at')
       .eq('organization_id', organisationId)
       .order('created_at', { ascending: false })
       .limit(30);
+    if (historyRequestRef.current !== requestId || activeOrgIdRef.current !== organisationId) return;
     if (historyLoadError) setHistoryError(historyLoadError.message);
     else setHistory(data as ScanHistoryRow[]);
     setHistoryLoading(false);
