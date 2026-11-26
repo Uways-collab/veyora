@@ -135,6 +135,7 @@ Deno.serve(async (req: Request) => {
         businessTypes,
         aiUsageLast30Days: usage.count ?? 0,
         aiUsageByFeature: usageSummary,
+        invoiceScannerConfigured: Boolean(Deno.env.get('GEMINI_API_KEY')),
         generatedAt: new Date().toISOString(),
       }, 200, origin);
     }
