@@ -38,7 +38,7 @@ type UsageRow = {
   organizationId: string; organizationName: string; feature: string; requests: number;
   inputTokens: number; outputTokens: number; estimatedCostMinorUnits: number;
 };
-type ActivityRow = { id: string; organizationName?: string; action: string; entityType?: string; createdAt: string; reason?: string; actor_user_id?: string; target_user_id?: string };
+type ActivityRow = { id: string; organizationName?: string; action: string; entityType?: string; createdAt?: string; created_at?: string; reason?: string; actor_user_id?: string; target_user_id?: string };
 
 const number = (value: number) => new Intl.NumberFormat('en-NG').format(value);
 const dateTime = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : '—';
