@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Veyora Business",
+  "short_name": "Veyora",
+  "description": "Your business operations workspace.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8fafc",
+  "theme_color": "#10223c",
+  "icons": [
+    {
+      "src": "/veyora-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/veyora-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
