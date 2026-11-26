@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileImage, FileText, Loader2, Plus, RefreshCw, ScanLine, Trash2, Upload, X } from 'lucide-react';
 import { getSupabaseClient } from '../../core/supabase/client';
 import { compressImageToWebp, MAX_IMAGE_UPLOAD_BYTES } from '../../core/images/compressImage';
@@ -49,7 +49,8 @@ type ExtractedInvoice = {
   [key: string]: unknown;
 };
 
-type ScanRow = { id: string; file_path: string; status: string; extracted_data: ExtractedInvoice; error_message: string | null; updated_at: string };
+type ScanRow = { id: string; file_path: string; status: string; extracted_data: ExtractedInvoice; error_message: string | null; updated_at: string; file_name?: string; mime_type?: string; file_size?: number; purchase_id?: string | null; created_at?: string };
+type ScanHistoryRow = { id: string; file_path: string; file_name: string; mime_type: string; file_size: number; status: string; error_message: string | null; purchase_id: string | null; created_at: string; updated_at: string };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 function normalizeCurrencyCode(value: string, fallback: string): string {
@@ -146,7 +147,32 @@ export function InvoiceScannerPanel({
   const [duplicateChecking, setDuplicateChecking] = useState(false);
   const [priceMessage, setPriceMessage] = useState<string | null>(null);
   const [editedFields, setEditedFields] = useState<string[]>([]);
+  const [history, setHistory] = useState<ScanHistoryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequestRef = useRef(0);
+  activeOrgIdRef.current = organisationId;
+  const loadHistory = useCallback(async () => {
+    const requestId = ++historyRequestRef.current;
+    setHistory([]);
+    setHistoryError(null);
+    if (!organisationId || !canManage) { setHistoryLoading(false); return; }
+    const supabase = getSupabaseClient();
+    if (!supabase) { setHistoryError('Veyora is not connected to the database.'); setHistoryLoading(false); return; }
+    setHistoryLoading(true);
+    const { data, error: historyLoadError } = await supabase.from('invoice_scans')
+      .select('id,file_path,file_name,mime_type,file_size,status,error_message,purchase_id,created_at,updated_at')
+      .eq('organization_id', organisationId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    if (historyRequestRef.current !== requestId || activeOrgIdRef.current !== organisationId) return;
+    if (historyLoadError) setHistoryError(historyLoadError.message);
+    else setHistory(data as ScanHistoryRow[]);
+    setHistoryLoading(false);
+  }, [organisationId, canManage]);
   const markEdited = (field: string) => setEditedFields((current) => current.includes(field) ? current : [...current, field]);
+
+  useEffect(() => { void loadHistory(); }, [loadHistory]);
 
   useEffect(() => {
     activeOrgIdRef.current = organisationId;
@@ -199,12 +225,12 @@ export function InvoiceScannerPanel({
   const currencyMismatch = Boolean(invoiceCurrency.trim()) &&
     invoiceCurrency.trim().toUpperCase() !== currencyCode.trim().toUpperCase();
 
-  const resetScan = () => {
+  const resetScan = async () => {
     if (scan && scan.status !== 'linked') {
       const supabase = getSupabaseClient();
       if (supabase) {
-        void supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scan.id);
-        void supabase.storage.from('invoice-documents').remove([scan.file_path]);
+        await supabase.from('invoice_scans').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', scan.id);
+        await supabase.storage.from('invoice-documents').remove([scan.file_path]);
       }
     }
     setFile(null); setScan(null); setPreviewUrl(''); setError(null); setStage('idle');
@@ -212,6 +238,7 @@ export function InvoiceScannerPanel({
     setInvoiceCurrency(currencyCode); setSubtotal(''); setDiscount('0'); setTax('0');
     setDelivery(''); setGrandTotal(''); setLines([]); setCreatedPurchaseId(null);
     setDuplicate(null); setDuplicateOverride(false); setEditedFields([]);
+    await loadHistory();
   };
 
   const applyExtraction = (data: ExtractedInvoice) => {
@@ -265,6 +292,29 @@ export function InvoiceScannerPanel({
     }));
   };
 
+  const openHistoryScan = async (row: ScanHistoryRow) => {
+    if (scan && scan.status === 'ready' && !window.confirm('Discard the current unsaved invoice review and open this saved scan?')) return;
+    const supabase = getSupabaseClient();
+    if (!supabase || !organisationId) return;
+    setBusy(true); setError(null); setCreatedPurchaseId(row.purchase_id);
+    try {
+      const { data, error: readError } = await supabase.from('invoice_scans')
+        .select('id,file_path,status,extracted_data,error_message,updated_at,file_name,mime_type,file_size,purchase_id,created_at')
+        .eq('id', row.id).eq('organization_id', organisationId).single();
+      if (readError || !data) throw new Error(readError?.message || 'Saved invoice scan could not be opened.');
+      if (activeOrgIdRef.current !== organisationId) return;
+      const saved = data as ScanRow;
+      setScan(saved);
+      setFile(null);
+      applyExtraction(saved.extracted_data ?? {});
+      const { data: signed, error: signedError } = await supabase.storage.from('invoice-documents').createSignedUrl(saved.file_path, 60 * 30);
+      setPreviewUrl(!signedError && signed?.signedUrl ? signed.signedUrl : '');
+      setStage('idle');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Saved invoice scan could not be opened.');
+    } finally { setBusy(false); }
+  };
+
   const processExistingScan = async (scanId: string) => {
     const supabase = getSupabaseClient();
     if (!supabase) throw new Error('Veyora is not connected to the database.');
@@ -290,6 +340,7 @@ export function InvoiceScannerPanel({
       .createSignedUrl(saved.file_path, 60 * 30);
     if (!signedError && signed?.signedUrl) setPreviewUrl(signed.signedUrl);
     setStage('idle');
+    await loadHistory();
   };
 
   const handleUploadAndScan = async () => {
@@ -354,6 +405,7 @@ export function InvoiceScannerPanel({
       if (row) setScan(row as ScanRow);
     } finally {
       setBusy(false); setStage('idle');
+      void loadHistory();
     }
   };
 
@@ -563,6 +615,7 @@ export function InvoiceScannerPanel({
       else {
         setCreatedPurchaseId(String(data));
         setScan({ ...scan, status: 'linked', extracted_data: reviewedData as ExtractedInvoice });
+        void loadHistory();
       }
     }
     setBusy(false); setStage('idle');
@@ -584,7 +637,7 @@ export function InvoiceScannerPanel({
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><ScanLine className="h-4 w-4 text-blue-700" /> AI Invoice Scanner</div>
             <p className="mt-1 text-xs text-slate-500 max-w-2xl">Upload or photograph a supplier invoice. Images are compressed to 100 KB or less before upload; PDFs are unchanged. Veyora extracts details for your review. Scanning never adds stock or records a payment.</p>
           </div>
-          {scan && !createdPurchaseId && <button type="button" disabled={busy} onClick={resetScan} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"><X className="h-3.5 w-3.5" /> Cancel scan</button>}
+          {scan && !createdPurchaseId && <button type="button" disabled={busy} onClick={() => void resetScan()} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"><X className="h-3.5 w-3.5" /> Cancel scan</button>}
         </div>
         {!referenceData && <p className="text-[11px] text-slate-500">Loading this workspace’s suppliers and product catalogue…</p>}
         {referenceData?.suppliersError && <p className="text-[11px] text-amber-700">Supplier list could not be loaded: {referenceData.suppliersError}</p>}
@@ -686,6 +739,26 @@ export function InvoiceScannerPanel({
           {createdPurchaseId && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900"><strong>Purchase draft created.</strong> The invoice is attached. No stock or payment was recorded. Open Purchases to confirm the order, then use Receive Goods to record only the quantities actually accepted. <span className="font-mono">{createdPurchaseId}</span><button type="button" onClick={() => { window.location.hash = '#/purchases'; }} className="ml-2 underline font-semibold">Open Purchases</button></div>}
         </section>
       )}
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div><h2 className="text-sm font-semibold text-slate-900">Invoice scan history</h2><p className="mt-1 text-xs text-slate-500">Recent scans for this workspace only. Failed scans can be retried; ready scans can be reopened for review.</p></div>
+          <button type="button" onClick={() => void loadHistory()} disabled={historyLoading} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-700 disabled:opacity-40"><RefreshCw className={`h-3.5 w-3.5 ${historyLoading ? 'animate-spin' : ''}`} /> Refresh history</button>
+        </div>
+        {historyError && <p role="alert" className="text-xs text-rose-700">{historyError}</p>}
+        {historyLoading && <p className="text-xs text-slate-500">Loading invoice history…</p>}
+        {!historyLoading && history.length === 0 && <p className="rounded-md bg-slate-50 p-4 text-xs text-slate-500">No supplier invoices have been scanned in this workspace yet.</p>}
+        {history.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-xs">
+          <thead className="border-b border-slate-200 text-slate-500"><tr><th className="py-2 pr-3 font-medium">Invoice file</th><th className="py-2 pr-3 font-medium">Uploaded</th><th className="py-2 pr-3 font-medium">Status</th><th className="py-2 pr-3 font-medium">File size</th><th className="py-2 text-right font-medium">Action</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">{history.map((row) => <tr key={row.id}>
+            <td className="py-3 pr-3"><div className="font-medium text-slate-800">{row.file_name}</div>{row.error_message && <p className="mt-1 max-w-sm text-[10px] text-rose-700">{row.error_message}</p>}{row.purchase_id && <p className="mt-1 text-[10px] text-slate-500">Purchase linked: {row.purchase_id}</p>}</td>
+            <td className="py-3 pr-3 text-slate-600">{new Date(row.created_at).toLocaleString()}</td>
+            <td className="py-3 pr-3"><span className={row.status === 'ready' ? 'rounded-full bg-emerald-50 px-2 py-1 text-emerald-700' : row.status === 'failed' ? 'rounded-full bg-rose-50 px-2 py-1 text-rose-700' : row.status === 'linked' ? 'rounded-full bg-blue-50 px-2 py-1 text-blue-700' : 'rounded-full bg-slate-100 px-2 py-1 text-slate-600'}>{row.status.replaceAll('_',' ')}</span></td>
+            <td className="py-3 pr-3 tabular-nums text-slate-600">{(row.file_size / 1024).toFixed(1)} KB</td>
+            <td className="py-3 text-right">{row.status === 'ready' ? <button type="button" disabled={busy} onClick={() => void openHistoryScan(row)} className="rounded-md border border-slate-200 px-2.5 py-1.5 font-medium text-slate-700 disabled:opacity-40">Review</button> : row.status === 'failed' ? <button type="button" disabled={busy} onClick={() => void processExistingScan(row.id)} className="rounded-md border border-slate-200 px-2.5 py-1.5 font-medium text-slate-700 disabled:opacity-40">Retry scan</button> : <span className="text-[10px] text-slate-400">{row.status === 'linked' ? 'Already linked' : '—'}</span>}</td>
+          </tr>)}</tbody>
+        </table></div>}
+      </section>
     </div>
   );
 }

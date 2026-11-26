@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Receipt,
   Settings,
+  ShieldCheck,
   ShoppingBag,
   ShoppingCart,
   Sparkles,
@@ -48,5 +49,7 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <CreditCard className={className} aria-hidden="true" />;
     case 'settings':
       return <Settings className={className} aria-hidden="true" />;
+    case 'platform_admin':
+      return <ShieldCheck className={className} aria-hidden="true" />;
   }
 }

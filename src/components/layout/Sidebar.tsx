@@ -85,7 +85,7 @@ export function Sidebar({
       {/* Navigation Groups */}
       <nav aria-label="Main Navigation" className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {GROUP_ORDER.map((group) => {
-          const items = MODULE_REGISTRY.filter((m) => m.group === group && (m.id !== 'billing' || activeRole === 'owner'));
+          const items = MODULE_REGISTRY.filter((m) => m.group === group && (m.id !== 'billing' || activeRole === 'owner') && (m.id !== 'platform_admin' || user?.email?.toLowerCase() === 'blundigold@gmail.com'));
           return (
             <div key={group}>
               <div className="px-2.5 pb-1.5 text-xs font-medium text-slate-400">
@@ -131,6 +131,11 @@ export function Sidebar({
           );
         })}
       </nav>
+
+      <section className="mx-3 mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="Customer support">
+        <div className="text-xs font-semibold text-slate-800">Need help? Contact Veyora</div>
+        <a href="tel:08129595134" className="mt-2 block text-xs font-medium text-blue-700 hover:underline">Call 08129595134</a>
+      </section>
 
       {/* Workspace / Organisation Footer */}
       <div className="border-t border-slate-200 p-4 shrink-0 space-y-3">

@@ -8,6 +8,7 @@ import {
   Settings,
   Users,
   X,
+  LockKeyhole,
 } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { formatCurrencyDisplay } from '../../core/constants/businessOptions';
@@ -22,6 +23,7 @@ import { getSupabaseClient } from '../../core/supabase/client';
 
 interface DashboardViewProps {
   onSelectModule: (moduleId: ModuleId, settingsTab?: SettingsTab) => void;
+  subscriptionLocked?: boolean;
 }
 
 type ChartWindow = '7D' | '30D' | '90D' | '12M';
@@ -123,7 +125,7 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-export function DashboardView({ onSelectModule }: DashboardViewProps) {
+export function DashboardView({ onSelectModule, subscriptionLocked = false }: DashboardViewProps) {
   const {
     status,
     activeOrganisation,
@@ -165,7 +167,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
   const canViewWorkspaceActivity = activeRole === 'owner' || activeRole === 'admin';
 
   useEffect(() => {
-    if (status === 'authenticated' && activeOrganisation && canViewWorkspaceActivity) {
+    if (!subscriptionLocked && status === 'authenticated' && activeOrganisation && canViewWorkspaceActivity) {
       void loadLogs(activeOrganisation.id);
     } else {
       setAuditLogs([]);
@@ -173,7 +175,7 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
       setAuditErrorKind(null);
       setAuditLoading(false);
     }
-  }, [status, activeOrganisation, canViewWorkspaceActivity]);
+  }, [status, activeOrganisation, canViewWorkspaceActivity, subscriptionLocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -238,6 +240,14 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
       }
     };
 
+    if (subscriptionLocked) {
+      setMetrics(EMPTY_METRICS);
+      setRecentSales([]);
+      setMetricsLoading(false);
+      setMetricsError(null);
+      return () => { cancelled = true; };
+    }
+
     if (status === 'authenticated' && activeOrganisation) {
       setMetrics(EMPTY_METRICS);
       setRecentSales([]);
@@ -248,9 +258,72 @@ export function DashboardView({ onSelectModule }: DashboardViewProps) {
       setMetricsError(null);
     }
     return () => { cancelled = true; };
-  }, [status, activeOrganisation]);
+  }, [status, activeOrganisation, subscriptionLocked]);
 
   const welcomeName = profile?.full_name?.trim() || user?.email || 'there';
+  const businessType = activeOrganisation?.business_type ?? 'business';
+  const industryLabel: Record<string, string> = {
+    car_dealership: 'Car Dealership',
+    hotel: 'Hotel & Hospitality',
+    restaurant: 'Restaurant & Café',
+    real_estate: 'Real Estate',
+    logistics: 'Logistics & Fleet',
+    manufacturing: 'Manufacturing',
+  };
+  const previewModules: Record<string, string[]> = {
+    car_dealership: ['Vehicle inventory', 'Customer leads & test drives', 'Deals, payments & delivery', 'Workshop & service jobs', 'Dealership reports'],
+    hotel: ['Front desk & reservations', 'Room availability', 'Housekeeping & turnover', 'Guest operations', 'Hotel reports'],
+    restaurant: ['Point of sale & orders', 'Kitchen workflow', 'Menu & recipes', 'Tables & payments', 'Restaurant reports'],
+    real_estate: ['Properties & units', 'Tenant and lease register', 'Rent follow-ups', 'Maintenance workflow', 'Property reports'],
+    logistics: ['Dispatch & delivery jobs', 'Fleet operations', 'Driver assignments', 'Proof of delivery', 'Logistics reports'],
+    manufacturing: ['Production work orders', 'Materials & output', 'Quality checks', 'Production status', 'Manufacturing reports'],
+  };
+
+  if (subscriptionLocked) {
+    const ownerCanPay = activeRole === 'owner';
+    return (
+      <div className="mx-auto max-w-6xl space-y-6">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 bg-slate-50 px-5 py-5 sm:px-7">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Veyora workspace preview</p>
+                <h1 className="mt-2 font-display text-2xl font-semibold tracking-tight text-slate-950">{activeOrganisation?.name ?? 'Your business'}</h1>
+                <p className="mt-1 text-sm text-slate-600">{industryLabel[businessType] ?? 'Business'} dashboard</p>
+              </div>
+              <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">
+                <LockKeyhole className="h-3.5 w-3.5" /> Subscription required
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[1.1fr_0.9fr]">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Your {industryLabel[businessType]?.toLowerCase() ?? 'business'} workspace is ready</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">You can preview the workspace structure, but business operations remain locked until a subscription payment succeeds or your card-backed 14-day trial is activated.</p>
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><LockKeyhole className="h-4 w-4 text-amber-600" /> What is included in this workspace</div>
+                <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {(previewModules[businessType] ?? ['Dashboard overview', 'Sales & purchases', 'Inventory management', 'Finance & reporting']).map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-xs text-slate-600"><span className="h-1.5 w-1.5 rounded-full bg-slate-400" />{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <aside className="rounded-xl border border-blue-100 bg-blue-50/60 p-5">
+              <h3 className="text-sm font-semibold text-slate-900">Activate your subscription</h3>
+              <p className="mt-2 text-xs leading-5 text-slate-600">Choose a Veyora plan, complete payment, or verify a card to activate the 14-day trial. A failed or incomplete payment never unlocks business actions.</p>
+              {ownerCanPay ? (
+                <button type="button" onClick={() => onSelectModule('billing')} className="mt-5 w-full rounded-lg bg-blue-700 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-800">View plans & payment</button>
+              ) : (
+                <p className="mt-5 rounded-lg border border-blue-100 bg-white p-3 text-xs leading-5 text-slate-600">Ask your business Owner to choose a plan and complete payment. Staff access remains locked until the Owner activates the subscription.</p>
+              )}
+              <p className="mt-3 text-[11px] leading-5 text-slate-500">Your workspace and business type are preserved. Sign-out, sign-in or refreshing the browser does not remove this restriction.</p>
+            </aside>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

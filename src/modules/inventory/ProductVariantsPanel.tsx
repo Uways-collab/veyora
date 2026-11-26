@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { BarcodeCameraScanner } from './BarcodeCameraScanner';
 import {
   Archive,
   ArrowLeft,
@@ -525,6 +526,7 @@ export function ProductVariantsPanel({
                 className="w-full sm:w-64 h-9 pl-8 pr-3 rounded-md border border-slate-300 text-xs text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
               />
             </div>
+            <BarcodeCameraScanner onDetected={(value) => setSearchQuery(value)} />
 
             <div>
               <label htmlFor="variants-status-filter" className="sr-only">

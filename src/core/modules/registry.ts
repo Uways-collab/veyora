@@ -178,6 +178,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     targetPhase: 'Commercial Billing Foundation',
   },
   {
+    id: 'platform_admin',
+    label: 'Platform Admin',
+    group: 'administration',
+    stage: 'foundation_active',
+    summary: 'Owner-only platform control centre for account access, workspace and subscription oversight, AI usage and platform audit activity.',
+    primaryEntities: ['Account Access', 'Business Workspaces', 'Subscription Oversight', 'AI Usage', 'Platform Audit Trail'],
+    plannedTables: ['auth.users', 'organizations', 'organization_memberships', 'organization_subscriptions', 'ai_usage_records', 'platform_admin_audit_logs'],
+    connectedModules: ['billing', 'settings'],
+    targetPhase: 'Platform Administration',
+  },
+  {
     id: 'settings',
     label: 'Settings',
     group: 'administration',
