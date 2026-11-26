@@ -110,7 +110,7 @@ Deno.serve(async (req: Request) => {
         admin.from('organization_subscriptions').select('id', { count: 'exact', head: true }).eq('status', 'trialing'),
         admin.from('organization_subscriptions').select('id', { count: 'exact', head: true }).eq('status', 'past_due'),
         admin.from('organizations').select('business_type'),
-        admin.from('ai_usage_records').select('feature,estimated_cost_minor_units').gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString()).limit(10000),
+        admin.from('ai_usage_records').select('feature', { count: 'exact' }).gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString()).limit(10000),
       ]);
       const failure = businesses.error ?? memberships.error ?? active.error ?? trialing.error ?? pastDue.error ?? types.error ?? usage.error;
       if (failure) return json({ error: 'Could not load platform totals. Please retry.' }, 500, origin);
@@ -133,7 +133,7 @@ Deno.serve(async (req: Request) => {
         trialingSubscriptions: trialing.count ?? 0,
         pastDueSubscriptions: pastDue.count ?? 0,
         businessTypes,
-        aiUsageLast30Days: usage.data?.length ?? 0,
+        aiUsageLast30Days: usage.count ?? 0,
         aiUsageByFeature: usageSummary,
         generatedAt: new Date().toISOString(),
       }, 200, origin);
@@ -295,6 +295,9 @@ Deno.serve(async (req: Request) => {
         return json({ error: 'The designated platform-owner account cannot be disabled from this console.' }, 403, origin);
       }
       const wasDisabled = isBanned(target.user);
+      const previousBanDuration = wasDisabled
+        ? `${Math.max(1, Math.ceil((Date.parse(target.user.banned_until ?? '') - Date.now()) / 3600000))}h`
+        : 'none';
       if (wasDisabled === disabled) return json({ error: disabled ? 'This account is already disabled.' : 'This account is already active.' }, 409, origin);
 
       const { error: updateError } = await admin.auth.admin.updateUserById(targetUserId, {
@@ -310,7 +313,7 @@ Deno.serve(async (req: Request) => {
         metadata: { target_email: target.user.email ?? null },
       });
       if (auditError) {
-        const rollback = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: wasDisabled ? '876000h' : 'none' });
+        const rollback = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: previousBanDuration });
         return json({
           error: rollback.error
             ? 'Account access changed, but the audit write and automatic rollback both failed. Treat this as an incident and inspect Auth immediately.'
