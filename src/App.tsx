@@ -122,11 +122,17 @@ function ProtectedWorkspaceRouter() {
 
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).has('reference')) {
+    if (!new URLSearchParams(window.location.search).has('reference') || subscriptionLoading || !activeOrganisation) {
+      return;
+    }
+    if (activeRole === 'owner') {
       setActiveModule('billing');
       window.location.hash = '#/billing';
+    } else {
+      setActiveModule('dashboard');
+      window.location.hash = '';
     }
-  }, []);
+  }, [activeRole, activeOrganisation?.id, subscriptionLoading]);
 
   useEffect(() => {
     const onHashChange = () => {
@@ -137,7 +143,7 @@ function ProtectedWorkspaceRouter() {
   }, []);
 
   const handleSelectModule = (moduleId: ModuleId, settingsTab?: SettingsTab) => {
-    if (!subscriptionAccess.allowed && moduleId !== 'billing' && moduleId !== 'dashboard') {
+    if (!subscriptionAccess.allowed && moduleId !== 'dashboard' && !(moduleId === 'billing' && activeRole === 'owner')) {
       if (activeRole === 'owner') {
         setActiveModule('billing');
         window.location.hash = '#/billing';
@@ -259,7 +265,7 @@ function ProtectedWorkspaceRouter() {
   const featureKey = activeModule === 'industry' ? 'industry' : activeModule;
   const moduleAllowed = subscriptionAccess.features[featureKey] !== false;
 
-  if (!subscriptionAccess.allowed && activeModule !== 'billing') {
+  if (!subscriptionAccess.allowed && (activeModule !== 'billing' || activeRole !== 'owner')) {
     return (
       <AppShell activeModule="dashboard" onSelectModule={handleSelectModule}>
         {activeOrganisation && ['car_dealership', 'hotel', 'restaurant', 'real_estate', 'logistics', 'manufacturing'].includes(activeOrganisation.business_type ?? '')
