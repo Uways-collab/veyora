@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bot, FileUp, Loader2, MessageCircle, Send, Sparkles, UserRound } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { getSupabaseClient } from '../../core/supabase/client';
@@ -29,9 +29,14 @@ export function AssistantView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const historyKey = user && activeOrganisation ? `veyora_ai_chat:${user.id}:${activeOrganisation.id}` : null;
+  const activeHistoryKeyRef = useRef(historyKey);
+  activeHistoryKeyRef.current = historyKey;
+  const requestSequenceRef = useRef(0);
   const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null);
 
   useEffect(() => {
+    requestSequenceRef.current += 1;
+    setBusy(false);
     if (!historyKey) {
       setMessages([]);
       setLoadedHistoryKey(null);
@@ -63,6 +68,8 @@ export function AssistantView() {
     event?.preventDefault();
     const message = (prompt ?? draft).trim();
     if (!message || busy || !activeOrganisation || !user) return;
+    const requestHistoryKey = historyKey;
+    const requestSequence = ++requestSequenceRef.current;
     const previous = messages.slice(-8);
     const nextMessages: Message[] = [...messages, { role: 'user', content: message }];
     setMessages(nextMessages);
@@ -83,12 +90,16 @@ export function AssistantView() {
       if (!data || typeof data.answer !== 'string' || !data.answer.trim()) {
         throw new Error(data?.error ?? 'Veyora AI did not return an answer. Please try again.');
       }
-      setMessages((current) => [...current, { role: 'assistant', content: data.answer }]);
+      if (activeHistoryKeyRef.current === requestHistoryKey && requestSequenceRef.current === requestSequence) {
+        setMessages((current) => [...current, { role: 'assistant', content: data.answer }]);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Veyora AI is temporarily unavailable.');
-      setMessages(nextMessages);
+      if (activeHistoryKeyRef.current === requestHistoryKey && requestSequenceRef.current === requestSequence) {
+        setError(err instanceof Error ? err.message : 'Veyora AI is temporarily unavailable.');
+        setMessages(nextMessages);
+      }
     } finally {
-      setBusy(false);
+      if (activeHistoryKeyRef.current === requestHistoryKey && requestSequenceRef.current === requestSequence) setBusy(false);
     }
   };
 
