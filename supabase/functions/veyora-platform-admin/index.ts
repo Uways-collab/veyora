@@ -262,7 +262,7 @@ Deno.serve(async (req: Request) => {
       const [workspaceEvents, adminEvents] = await Promise.all([
         admin.from('organization_audit_log').select('id,organization_id,action,entity_type,created_at')
           .order('created_at', { ascending: false }).limit(perPage),
-        admin.from('platform_admin_audit_logs').select('id,actor_user_id,target_user_id,action,reason,created_at')
+        admin.from('platform_admin_audit_logs').select('id,actor_user_id,target_user_id,action,reason,metadata,created_at')
           .order('created_at', { ascending: false }).limit(perPage),
       ]);
       if (workspaceEvents.error || adminEvents.error) return json({ error: 'Could not load platform activity.' }, 500, origin);
@@ -277,7 +277,15 @@ Deno.serve(async (req: Request) => {
           entityType: row.entity_type,
           createdAt: row.created_at,
         })),
-        adminEvents: adminEvents.data ?? [],
+        adminEvents: (adminEvents.data ?? []).map((row) => ({
+          id: row.id,
+          actor_user_id: row.actor_user_id,
+          target_user_id: row.target_user_id,
+          target_email: row.metadata?.target_email ?? null,
+          action: row.action,
+          reason: row.reason,
+          created_at: row.created_at,
+        })),
       }, 200, origin);
     }
 
