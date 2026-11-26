@@ -14,6 +14,7 @@ import { ExpensesView } from './modules/expenses/ExpensesView';
 import { FinanceView } from './modules/finance/FinanceView';
 import { InventoryView } from './modules/inventory/InventoryView';
 import { IndustryWorkspacesView } from './modules/industry/IndustryWorkspacesView';
+import { LockedIndustryWorkspaceView } from './modules/industry/LockedIndustryWorkspaceView';
 import { BusinessOnboardingScreen } from './modules/onboarding/BusinessOnboardingScreen';
 import { BillingView } from './modules/billing/BillingView';
 import { PurchasesView } from './modules/purchases/PurchasesView';
@@ -268,7 +269,9 @@ function ProtectedWorkspaceRouter() {
   if (!subscriptionAccess.allowed && activeModule !== 'billing' && activeModule !== 'platform_admin') {
     return (
       <AppShell activeModule="dashboard" onSelectModule={handleSelectModule}>
-        <DashboardView onSelectModule={handleSelectModule} subscriptionLocked />
+        {activeOrganisation && ['car_dealership', 'hotel', 'restaurant', 'real_estate', 'logistics', 'manufacturing'].includes(activeOrganisation.business_type ?? '')
+          ? <LockedIndustryWorkspaceView onSelectModule={handleSelectModule} />
+          : <DashboardView onSelectModule={handleSelectModule} subscriptionLocked />}
       </AppShell>
     );
   }
