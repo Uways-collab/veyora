@@ -81,7 +81,7 @@ Deno.serve(async (req: Request) => {
   const caller = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data: authData, error: authError } = await caller.auth.getUser(token);
   const email = authData.user?.email?.trim().toLowerCase();
-  if (authError || !authData.user || email !== OWNER_EMAIL) {
+  if (authError || !authData.user || email !== OWNER_EMAIL || isBanned(authData.user)) {
     return json({ error: 'You are not authorised to view Veyora platform administration.' }, 403, origin);
   }
 
