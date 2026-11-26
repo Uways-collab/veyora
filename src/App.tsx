@@ -262,9 +262,6 @@ function ProtectedWorkspaceRouter() {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4"><div className="rounded-xl border border-slate-200 bg-white p-6 text-center"><p className="text-sm font-semibold text-slate-900">Checking subscription access…</p><p className="mt-1 text-xs text-slate-500">Verifying this business workspace before loading its records.</p></div></div>;
   }
 
-  const featureKey = activeModule === 'industry' ? 'industry' : activeModule;
-  const moduleAllowed = subscriptionAccess.features[featureKey] !== false;
-
   if (!subscriptionAccess.allowed && (activeModule !== 'billing' || activeRole !== 'owner')) {
     return (
       <AppShell activeModule="dashboard" onSelectModule={handleSelectModule}>
@@ -273,17 +270,6 @@ function ProtectedWorkspaceRouter() {
           : <DashboardView onSelectModule={handleSelectModule} subscriptionLocked />}
       </AppShell>
     );
-  }
-
-  if (subscriptionAccess.allowed && !moduleAllowed && activeModule !== 'billing') {
-    return <AppShell activeModule={activeModule} onSelectModule={handleSelectModule}>
-      <section className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-        <div className="text-xs font-semibold uppercase tracking-wider text-blue-700">Plan feature not included</div>
-        <h1 className="mt-2 text-xl font-semibold text-slate-900">{MODULE_REGISTRY.find(m => m.id === activeModule)?.label ?? 'This feature'} is not included in the {subscriptionAccess.planName ?? 'current'} plan</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-600">This organisation cannot open this feature on its current plan. The Owner can review the plan and upgrade from Subscription & Billing.</p>
-        {activeRole === 'owner' && <button type="button" onClick={() => handleSelectModule('billing')} className="mt-5 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white">Review plans</button>}
-      </section>
-    </AppShell>;
   }
 
   // Gate 5: Authenticated & Organisation Member -> Protected Workspace Routes
@@ -308,7 +294,7 @@ function ProtectedWorkspaceRouter() {
       case 'finance':
         return <FinanceView />;
       case 'reports':
-        return <ReportsView canExport={subscriptionAccess.features.api_exports === true} />;
+        return <ReportsView canExport={true} />;
       case 'ai_assistant':
         return <AssistantView />;
       case 'industry':
