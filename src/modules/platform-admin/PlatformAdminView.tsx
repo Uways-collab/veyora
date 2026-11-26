@@ -198,7 +198,7 @@ export function PlatformAdminView() {
       {!loading && tab === 'users' && <>
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><h2 className="text-sm font-semibold text-slate-900">Registered accounts</h2><p className="mt-1 text-xs text-slate-500">Only email and account-status metadata are shown. Platform owner cannot disable their own account.</p></div>
+            <div><h2 className="text-sm font-semibold text-slate-900">Registered accounts</h2><p className="mt-1 text-xs text-slate-500">Only email and account-status metadata are shown. Suspending an account blocks sign-in and centrally denies workspace access; the platform-owner account cannot be suspended here.</p></div>
             <div className="relative"><Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" /><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search this page by email" className="w-64 rounded-md border border-slate-200 py-2 pl-8 pr-3 text-xs outline-none focus:border-blue-400" /></div>
           </div>
           <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50 p-3">
