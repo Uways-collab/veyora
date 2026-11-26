@@ -24,6 +24,7 @@ import { PlannedModuleView } from './modules/shared/PlannedModuleView';
 import { getSupabaseClient } from './core/supabase/client';
 import { SuppliersView } from './modules/suppliers/SuppliersView';
 import { PWAInstallPrompt } from './components/shared/PWAInstallPrompt';
+import { LockedIndustryWorkspaceView } from './modules/industry/LockedIndustryWorkspaceView';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
 
@@ -261,7 +262,9 @@ function ProtectedWorkspaceRouter() {
   if (!subscriptionAccess.allowed && activeModule !== 'billing') {
     return (
       <AppShell activeModule="dashboard" onSelectModule={handleSelectModule}>
-        <DashboardView onSelectModule={handleSelectModule} subscriptionLocked />
+        {activeOrganisation && ['car_dealership', 'hotel', 'restaurant', 'real_estate', 'logistics', 'manufacturing'].includes(activeOrganisation.business_type ?? '')
+          ? <LockedIndustryWorkspaceView onSelectModule={handleSelectModule} />
+          : <DashboardView onSelectModule={handleSelectModule} subscriptionLocked />}
       </AppShell>
     );
   }
