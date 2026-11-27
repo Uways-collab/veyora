@@ -254,6 +254,73 @@ Deno.serve(async (req: Request) => {
           }
         }
       }
+        } else if (transaction?.purpose === 'subscription_payment' && transaction.status !== 'succeeded') {
+          const verified = await paystackRequest('/transaction/verify/' + encodeURIComponent(reference), secret);
+          const metadata = verified.metadata ?? {};
+          if (verified.status !== 'success' ||
+              Number(verified.amount) !== Number(transaction.amount_minor_units) ||
+              verified.currency !== transaction.currency ||
+              String(metadata.organization_id ?? '') !== transaction.organization_id ||
+              String(metadata.plan_id ?? '') !== transaction.plan_id) {
+            throw new Error('Verified Paystack payment does not match the expected Veyora subscription payment.');
+          }
+
+          const { data: plan } = await serviceClient.from('subscription_plans')
+            .select('billing_interval,provider_plan_code').eq('id', transaction.plan_id).maybeSingle();
+          if (!plan) throw new Error('The paid Veyora subscription plan could not be found.');
+
+          const periodStart = new Date();
+          const periodEnd = new Date(periodStart);
+          if (plan.billing_interval === 'yearly') periodEnd.setUTCFullYear(periodEnd.getUTCFullYear() + 1);
+          else periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1);
+
+          const customerCode = String(verified.customer?.customer_code ?? '');
+          const authorizationCode = String(verified.authorization?.authorization_code ?? '');
+          const reusable = verified.authorization?.reusable === true;
+          let providerSubscriptionCode: string | null = null;
+
+          // When Paystack returned a reusable authorization and a synced plan exists,
+          // schedule renewals for the end of the paid period. The current paid term
+          // remains valid even if recurring setup is unavailable.
+          if (customerCode && authorizationCode && reusable && plan.provider_plan_code) {
+            try {
+              const created = await paystackRequest('/subscription', secret, 'POST', {
+                customer: customerCode,
+                plan: plan.provider_plan_code,
+                authorization: authorizationCode,
+                start_date: periodEnd.toISOString(),
+              });
+              providerSubscriptionCode = String(created.subscription_code ?? '') || null;
+            } catch {
+              providerSubscriptionCode = null;
+            }
+          }
+
+          const { error: subscriptionSaveError } = await serviceClient.from('organization_subscriptions').upsert({
+            organization_id: transaction.organization_id,
+            plan_id: transaction.plan_id,
+            status: 'active',
+            provider: 'paystack',
+            provider_customer_code: customerCode || null,
+            provider_subscription_code: providerSubscriptionCode,
+            provider_plan_code: plan.provider_plan_code ?? null,
+            trial_starts_at: null,
+            trial_ends_at: null,
+            card_verified_at: null,
+            current_period_starts_at: periodStart.toISOString(),
+            current_period_ends_at: periodEnd.toISOString(),
+            cancel_at_period_end: false,
+            latest_payment_reference: reference,
+          }, { onConflict: 'organization_id' });
+          if (subscriptionSaveError) throw new Error('Payment succeeded but the workspace subscription could not be activated.');
+
+          const { error: transactionSaveError } = await serviceClient.from('billing_transactions').update({
+            status: 'succeeded',
+            provider_transaction_id: Number(verified.id),
+            provider_customer_code: customerCode || null,
+            provider_subscription_code: providerSubscriptionCode,
+          }).eq('id', transaction.id);
+          if (transactionSaveError) throw new Error('Could not save the successful subscription payment record.');
       const recurringSubscriptionCode = subscriptionCode(data);
       if (recurringSubscriptionCode) {
         const { error: recurringChargeError } = await serviceClient.from('organization_subscriptions').update({
