@@ -28,10 +28,7 @@ export const BUSINESS_TYPE_OPTIONS: { value: BusinessType; label: string; descri
   },
   { value: 'hotel', label: 'Hotels & Hospitality', description: 'Rooms, reservations, guests and housekeeping' },
   { value: 'car_dealership', label: 'Car Dealerships', description: 'Vehicle stock, sales, payments and workshop operations' },
-  { value: 'real_estate', label: 'Real Estate', description: 'Properties, tenants, leases and rent' },
   { value: 'restaurant', label: 'Restaurants & Food Service', description: 'Menus, tables, POS tickets and kitchen workflow' },
-  { value: 'logistics', label: 'Logistics & Fleet', description: 'Fleet, dispatch, delivery and proof of delivery' },
-  { value: 'manufacturing', label: 'Manufacturing', description: 'Production orders, materials and quality control' },
 ];
 
 
@@ -43,10 +40,7 @@ export const BUSINESS_CATEGORY_OPTIONS: { value: BusinessCategory; label: string
   { value: 'hybrid', label: 'Multi-activity Business', description: 'A combination of products, trade and services' },
   { value: 'hotel', label: 'Hotels & Hospitality', description: 'Rooms, reservations, guests and housekeeping' },
   { value: 'car_dealership', label: 'Car Dealerships', description: 'Vehicle inventory, deals, deposits and margins' },
-  { value: 'real_estate', label: 'Real Estate', description: 'Properties, units, tenants, leases and rent' },
   { value: 'restaurant', label: 'Restaurants & Food Service', description: 'Menus, tables, orders and kitchen operations' },
-  { value: 'logistics', label: 'Logistics & Fleet', description: 'Vehicles, dispatch, deliveries and routes' },
-  { value: 'manufacturing', label: 'Manufacturing', description: 'Raw materials, production and finished goods' },
 ];
 
 export const COUNTRY_OPTIONS: { name: string; defaultCurrency: string; defaultTimezone: string }[] = [
