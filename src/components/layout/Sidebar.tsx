@@ -4,6 +4,7 @@ import {
   MODULE_REGISTRY,
 } from '../../core/modules/registry';
 import type { ModuleGroup, ModuleId } from '../../core/types/domain';
+import { useAuth } from '../../core/auth/AuthContext';
 import { ModuleIcon } from '../shared/ModuleIcon';
 
 interface SidebarProps {
@@ -26,6 +27,8 @@ export function Sidebar({
   mobileOpen,
   onCloseMobile,
 }: SidebarProps) {
+  const { activeRole } = useAuth();
+
   const handleSelect = (moduleId: ModuleId) => {
     onSelectModule(moduleId);
     onCloseMobile();
