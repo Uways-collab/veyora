@@ -4,7 +4,7 @@ import { useAuth } from '../../core/auth/AuthContext';
 import { getSupabaseClient } from '../../core/supabase/client';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-type Tab = 'stock' | 'leads' | 'test_drives' | 'deals' | 'workshop' | 'reports';
+type Tab = 'dashboard' | 'stock' | 'leads' | 'test_drives' | 'deals' | 'workshop' | 'reports';
 type Vehicle = { id: string; stock_number: string; vin: string | null; make: string; model: string; model_year: number; mileage: number; purchase_price: number; asking_price: number; status: string; condition: string; body_type: string | null; fuel_type: string | null; transmission: string | null; exterior_color: string | null; location_label: string | null; warranty_until: string | null; notes: string | null };
 type Lead = { id: string; full_name: string; phone: string | null; email: string | null; source: string; interest_make: string | null; interest_model: string | null; budget: number; status: string; next_follow_up_at: string | null; assigned_to: string | null; notes: string | null };
 type Drive = { id: string; vehicle_id: string; customer_name: string; customer_phone: string | null; scheduled_at: string; duration_minutes: number; status: string; staff_name: string | null; licence_verified: boolean; notes: string | null };
@@ -24,11 +24,11 @@ const money = (n: number, currency: string) => { try { return new Intl.NumberFor
 const pretty = (s: string) => s.replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
 const localDateTime = (v: string | null) => v ? new Date(v).toLocaleString() : '—';
 
-export function DealershipWorkspaceView() {
+export function DealershipWorkspaceView({ activeModule = 'dashboard' }: { activeModule?: string }) {
   const { activeOrganisation, activeRole } = useAuth();
   const supabase = getSupabaseClient() as unknown as SupabaseClient<any> | null;
   const canManage = activeRole === 'owner' || activeRole === 'admin' || activeRole === 'manager';
-  const [tab, setTab] = useState<Tab>('stock');
+  const tab: Tab = activeModule === 'dealer_stock' ? 'stock' : activeModule === 'dealer_leads' ? 'leads' : activeModule === 'dealer_test_drives' ? 'test_drives' : activeModule === 'dealer_deals' ? 'deals' : activeModule === 'dealer_workshop' ? 'workshop' : activeModule === 'dealer_reports' ? 'reports' : 'dashboard';
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [drives, setDrives] = useState<Drive[]>([]);
@@ -149,8 +149,7 @@ export function DealershipWorkspaceView() {
     {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"><AlertCircle className="h-4 w-4 shrink-0"/>{error}</div>}
     {notice && <div role="status" className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"><CheckCircle2 className="h-4 w-4 shrink-0"/>{notice}</div>}
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{metrics.map(m => <div key={m.label} className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">{m.label}</p><p className="mt-2 text-2xl font-semibold text-slate-950">{m.value}</p><p className="mt-1 text-[11px] text-slate-500">{m.hint}</p></div>)}</div>
-    <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-2">{tabs.map(t => { const Icon=t.icon; return <button key={t.id} onClick={() => {setTab(t.id);setFormOpen(false);setError(null);setNotice(null);}} className={'inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold '+(tab===t.id?'bg-blue-700 text-white':'bg-slate-100 text-slate-600 hover:bg-slate-200')}><Icon className="h-4 w-4"/>{t.label}</button>; })}</nav>
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+    {tab !== 'dashboard' && <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4"><div><h3 className="text-sm font-semibold text-slate-900">{tabs.find(t=>t.id===tab)?.label}</h3><p className="mt-1 text-xs text-slate-500">Organisation-scoped records with role-controlled updates.</p></div>{tab !== 'reports' && (canManage || ['leads','test_drives','workshop'].includes(tab)) && <button onClick={openForm} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white"><Plus className="h-4 w-4"/> Add {tab==='stock'?'vehicle':tab==='leads'?'lead':tab==='test_drives'?'test drive':tab==='deals'?'deal':'workshop job'}</button>}</div>
       {formOpen && <form onSubmit={submit} className="grid gap-3 border-b border-blue-100 bg-blue-50/40 p-4 sm:grid-cols-2 lg:grid-cols-3">
         {tab==='stock' && <>
@@ -184,7 +183,7 @@ export function DealershipWorkspaceView() {
         {tab==='workshop' && <table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Job','Vehicle','Customer','Type / work','Technician','Due','Estimate','Status'].map(x=><th key={x} className="whitespace-nowrap px-4 py-3">{x}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{jobs.map(j=><tr key={j.id}><td className="px-4 py-3 font-semibold">{j.job_number}</td><td className="px-4 py-3">{vehicleLabel(j.vehicle_id)}</td><td className="px-4 py-3">{j.customer_name||'—'}</td><td className="px-4 py-3">{pretty(j.job_type)}<div className="text-[10px] text-slate-400">{j.description}</div></td><td className="px-4 py-3">{j.assigned_to||'—'}</td><td className="px-4 py-3">{localDateTime(j.due_at)}</td><td className="px-4 py-3">{money(j.estimated_cost,currency)}</td><td className="px-4 py-3"><select disabled={!canManage} value={j.status} onChange={e=>void changeStatus('dealer_service_jobs',j.id,e.target.value)} className="rounded-md border border-slate-200 px-2 py-1">{['booked','in_progress','waiting_parts','quality_check','completed','cancelled'].map(s=><option key={s} value={s}>{pretty(s)}</option>)}</select></td></tr>)}</tbody></table>}
         {((tab==='stock'&&!vehicles.length)||(tab==='leads'&&!leads.length)||(tab==='test_drives'&&!drives.length)||(tab==='deals'&&!deals.length)||(tab==='workshop'&&!jobs.length))&&<p className="p-10 text-center text-xs text-slate-500">No records here yet. Use Add to create the first record.</p>}
       </div>}
-    </section>
+    </section>}
     <p className="text-[11px] leading-5 text-slate-500">Vehicle deals here are a sales pipeline and deal tracker. They do not collect customer payments, issue statutory invoices or post to the general ledger; use Veyora's approved sales and finance workflows for actual payment and accounting until a dedicated vehicle-sale integration is enabled.</p>
   </div>;
 }

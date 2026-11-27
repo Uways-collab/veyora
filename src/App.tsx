@@ -28,6 +28,7 @@ import { PlatformAdminView } from './modules/admin/PlatformAdminView';
 import { DealershipWorkspaceView } from './modules/industry/DealershipWorkspaceView';
 import { HotelWorkspaceView } from './modules/industry/HotelWorkspaceView';
 import { RealEstateWorkspaceView, RestaurantWorkspaceView, LogisticsWorkspaceView, ManufacturingWorkspaceView } from './modules/industry/SpecialistIndustryDashboards';
+import { RestaurantPOSView } from './modules/industry/RestaurantPOSView';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
 
@@ -331,14 +332,26 @@ function ProtectedWorkspaceRouter() {
     switch (activeModule) {
       case 'dashboard':
         switch (activeOrganisation?.business_type) {
-          case 'car_dealership': return <DealershipWorkspaceView />;
-          case 'hotel': return <HotelWorkspaceView />;
+          case 'car_dealership': return <DealershipWorkspaceView activeModule="dashboard" />;
+          case 'hotel': return <HotelWorkspaceView activeModule="dashboard" />;
           case 'real_estate': return <RealEstateWorkspaceView />;
           case 'restaurant': return <RestaurantWorkspaceView />;
           case 'logistics': return <LogisticsWorkspaceView />;
           case 'manufacturing': return <ManufacturingWorkspaceView />;
           default: return <DashboardView onSelectModule={handleSelectModule} />;
         }
+      case 'dealer_stock': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_leads': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_test_drives': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_deals': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_workshop': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_reports': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'hotel_reservations': return <HotelWorkspaceView activeModule={activeModule} />;
+      case 'hotel_rooms': return <HotelWorkspaceView activeModule={activeModule} />;
+      case 'hotel_housekeeping': return <HotelWorkspaceView activeModule={activeModule} />;
+      case 'hotel_reports': return <HotelWorkspaceView activeModule={activeModule} />;
+      case 'restaurant_operations': return <RestaurantWorkspaceView activeModule={activeModule} />;
+      case 'restaurant_pos': return <RestaurantPOSView />;
       case 'inventory':
         return <InventoryView onSelectModule={handleSelectModule} />;
       case 'sales':

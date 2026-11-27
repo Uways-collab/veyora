@@ -125,7 +125,7 @@ export function RealEstateWorkspaceView() {
  </Shell>;
 }
 
-export function RestaurantWorkspaceView() {
+export function RestaurantWorkspaceView({ activeModule: _activeModule = 'restaurant_operations' }: { activeModule?: string }) {
  const ctx=useBoard('restaurant_orders','ordered_at',restaurantFields,{order_type:'dine_in',items_summary:'Itemised order',total_amount:0,status:'new'});
  const { activeOrganisation, activeRole } = useAuth();
  const db = getSupabaseClient() as any;

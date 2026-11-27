@@ -27,6 +27,8 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <Boxes className={className} aria-hidden="true" />;
     case 'sales':
       return <ShoppingBag className={className} aria-hidden="true" />;
+    case 'restaurant_pos':
+      return <ShoppingCart className={className} aria-hidden="true" />;
     case 'customers':
       return <Users className={className} aria-hidden="true" />;
     case 'purchases':
@@ -45,5 +47,7 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <CreditCard className={className} aria-hidden="true" />;
     case 'settings':
       return <Settings className={className} aria-hidden="true" />;
+    default:
+      return <LayoutDashboard className={className} aria-hidden="true" />;
   }
 }
