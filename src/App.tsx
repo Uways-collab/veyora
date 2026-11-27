@@ -24,6 +24,7 @@ import { getSupabaseClient } from './core/supabase/client';
 import { SuppliersView } from './modules/suppliers/SuppliersView';
 import { PWAInstallPrompt } from './components/shared/PWAInstallPrompt';
 import { LockedIndustryWorkspaceView } from './modules/industry/LockedIndustryWorkspaceView';
+import { PlatformAdminView } from './modules/admin/PlatformAdminView';
 import { DealershipWorkspaceView } from './modules/industry/DealershipWorkspaceView';
 import { HotelWorkspaceView } from './modules/industry/HotelWorkspaceView';
 import { RealEstateWorkspaceView, RestaurantWorkspaceView, LogisticsWorkspaceView, ManufacturingWorkspaceView } from './modules/industry/SpecialistIndustryDashboards';
@@ -42,6 +43,7 @@ function readModuleFromHash(): ModuleId {
 function ProtectedWorkspaceRouter() {
   const {
     status,
+    user,
     hasLoadedOrgs,
     memberships,
     activeOrganisation,
@@ -52,7 +54,42 @@ function ProtectedWorkspaceRouter() {
   } = useAuth();
 
   const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromHash());
+  const [platformAdminAccess, setPlatformAdminAccess] = useState<'checking' | 'granted' | 'denied'>('checking');
+  const [platformAdminMode, setPlatformAdminMode] = useState(true);
   const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab>('auth_orgs');
+
+  useEffect(() => {
+    if (status === 'signed_out' || status === 'unconfigured') {
+      setPlatformAdminAccess('denied');
+      setPlatformAdminMode(true);
+      return;
+    }
+    if (status !== 'authenticated' || !hasLoadedOrgs || !user) {
+      setPlatformAdminAccess('checking');
+      return;
+    }
+
+    let cancelled = false;
+    setPlatformAdminAccess('checking');
+    const db = getSupabaseClient() as any;
+    if (!db) {
+      setPlatformAdminAccess('denied');
+      return;
+    }
+    void db.rpc('is_platform_admin').then(({ data, error }: { data: unknown; error: unknown }) => {
+      if (cancelled) return;
+      const authorised = !error && data === true;
+      setPlatformAdminAccess(authorised ? 'granted' : 'denied');
+      setPlatformAdminMode(authorised);
+    }).catch(() => {
+      if (!cancelled) {
+        setPlatformAdminAccess('denied');
+        setPlatformAdminMode(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [status, hasLoadedOrgs, user?.id]);
+
 
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [subscriptionAccess, setSubscriptionAccess] = useState<{
@@ -202,6 +239,14 @@ function ProtectedWorkspaceRouter() {
     );
   }
 
+  if (status === 'authenticated' && hasLoadedOrgs && platformAdminAccess === 'checking') {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4"><div className="rounded-xl border border-slate-200 bg-white p-6 text-center"><p className="text-sm font-semibold text-slate-900">Verifying Platform Admin access…</p><p className="mt-1 text-xs text-slate-500">Checking the authorised Veyora platform-owner account.</p></div></div>;
+  }
+
+  if (status === 'authenticated' && platformAdminAccess === 'granted' && platformAdminMode) {
+    return <PlatformAdminView onOpenBusiness={() => setPlatformAdminMode(false)} />;
+  }
+
   // Gate 3: RLS / Expired Session / Missing Schema Diagnostic Screen (never bypasses security)
   if (workspaceLoadError) {
     return (
@@ -328,6 +373,13 @@ function ProtectedWorkspaceRouter() {
 
   return (
     <AppShell activeModule={activeModule} onSelectModule={handleSelectModule}>
+      {platformAdminAccess === 'granted' && (
+        <div className="mb-4 flex justify-end">
+          <button type="button" onClick={() => setPlatformAdminMode(true)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+            Open Platform Admin
+          </button>
+        </div>
+      )}
       {renderModule()}
     </AppShell>
   );
