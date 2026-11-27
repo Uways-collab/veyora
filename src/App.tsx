@@ -331,14 +331,25 @@ function ProtectedWorkspaceRouter() {
     switch (activeModule) {
       case 'dashboard':
         switch (activeOrganisation?.business_type) {
-          case 'car_dealership': return <DealershipWorkspaceView />;
-          case 'hotel': return <HotelWorkspaceView />;
+          case 'car_dealership': return <DealershipWorkspaceView activeModule="dashboard" />;
+          case 'hotel': return <HotelWorkspaceView activeModule="dashboard" />;
           case 'real_estate': return <RealEstateWorkspaceView />;
           case 'restaurant': return <RestaurantWorkspaceView />;
           case 'logistics': return <LogisticsWorkspaceView />;
           case 'manufacturing': return <ManufacturingWorkspaceView />;
           default: return <DashboardView onSelectModule={handleSelectModule} />;
         }
+      case 'dealer_stock': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_leads': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_test_drives': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_deals': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_workshop': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'dealer_reports': return <DealershipWorkspaceView activeModule={activeModule} />;
+      case 'hotel_reservations': return <HotelWorkspaceView activeModule={activeModule} />;
+      case 'hotel_rooms': return <HotelWorkspaceView activeModule={activeModule} />;
+      case 'hotel_housekeeping': return <HotelWorkspaceView activeModule={activeModule} />;
+      case 'hotel_reports': return <HotelWorkspaceView activeModule={activeModule} />;
+      case 'restaurant_operations': return <RestaurantWorkspaceView activeModule={activeModule} />;
       case 'inventory':
         return <InventoryView onSelectModule={handleSelectModule} />;
       case 'sales':
