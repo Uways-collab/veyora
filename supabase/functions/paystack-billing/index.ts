@@ -118,8 +118,8 @@ Deno.serve(async (req: Request) => {
 
     const startsAt = new Date();
     const endsAt = new Date(startsAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const { error: insertError } = await serviceClient.from('organization_subscriptions').insert({
-      organization_id: organizationId,
+    const trialRows = accountOrganizationIds.map((accountOrganizationId) => ({
+      organization_id: accountOrganizationId,
       plan_id: plan.id,
       status: 'trialing',
       provider: 'paystack',
@@ -127,7 +127,8 @@ Deno.serve(async (req: Request) => {
       trial_starts_at: startsAt.toISOString(),
       trial_ends_at: endsAt.toISOString(),
       card_verified_at: null,
-    });
+    }));
+    const { error: insertError } = await serviceClient.from('organization_subscriptions').insert(trialRows);
     if (insertError) {
       if (insertError.code === '23505') return json({ error: 'A trial or subscription has already been created for this workspace.' }, 409);
       return json({ error: 'Could not activate the seven-day free trial.' }, 500);
