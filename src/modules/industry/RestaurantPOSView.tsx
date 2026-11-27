@@ -62,10 +62,6 @@ export function RestaurantPOSView() {
   }, [db, org?.id]);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => {
-    if (receipt) window.print();
-  }, [receipt]);
-
   const cartTotal = useMemo(() => cart.reduce((sum, line) => {
     const item = menuItems.find(row => row.id === line.menu_item_id);
     return sum + Number(item?.price ?? 0) * line.quantity;
@@ -166,7 +162,7 @@ export function RestaurantPOSView() {
         #veyora-pos-receipt { display: block !important; position: absolute; inset: 0 auto auto 0; width: 72mm; color: #000 !important; background: #fff !important; font: 11px/1.35 monospace; }
         .no-print { display: none !important; }
       }
-      #veyora-pos-receipt { display: none; }
+      #veyora-pos-receipt { display: block; max-width: 360px; margin: 0 auto; padding: 18px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; color: #111; font: 12px/1.4 ui-monospace, monospace; }
     `}</style>
     <header className="flex flex-col gap-3 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between no-print">
       <div><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-700"><ShoppingCart className="h-4 w-4"/> Restaurant checkout</div><h1 className="text-2xl font-semibold tracking-tight text-slate-950">Point of Sale</h1><p className="mt-1 text-sm text-slate-600">Build an order, send it to the kitchen, collect payment and print a customer receipt.</p></div>
@@ -217,7 +213,7 @@ export function RestaurantPOSView() {
         <div className="divide-y divide-slate-100">{history.map(order => <div key={order.id} className="flex flex-wrap items-center justify-between gap-3 p-3"><div><b className="text-xs">#{order.order_number}</b><p className="mt-1 text-[11px] text-slate-500">{order.customer_name || order.table_label || order.order_type} · {new Date(order.ordered_at).toLocaleString()}</p></div><div className="flex items-center gap-3"><b className="text-xs">{formatMoney(Number(order.total_amount), currency)}</b><button type="button" onClick={() => void openExistingReceipt(order)} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold">Reprint receipt</button></div></div>)}{!history.length && <p className="p-8 text-center text-xs text-slate-500">No restaurant orders yet.</p>}</div>
       </section>
     </>}
-    {receipt && <div id="veyora-pos-receipt">
+    {receipt && <section className="space-y-3 no-print"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Receipt preview · #{receipt.order.order_number}</h2><button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white"><Printer className="h-4 w-4"/> Print receipt</button></div><div id="veyora-pos-receipt">
       <div style={{ textAlign: 'center', marginBottom: 10 }}>
         <strong style={{ fontSize: 16 }}>{org?.name ?? 'Restaurant'}</strong>
         {org?.business_phone && <div>{org.business_phone}</div>}
@@ -243,6 +239,6 @@ export function RestaurantPOSView() {
       {receipt.payments.map((payment, index) => <div key={index} style={{ marginTop: 4 }}>Payment: {formatMoney(Number(payment.amount), currency)} · {payment.reference || 'No reference'}</div>)}
       {typeof receiptSettings?.footer === 'string' && <div style={{ textAlign: 'center', marginTop: 10 }}>{receiptSettings.footer}</div>}
       <div style={{ textAlign: 'center', marginTop: 10 }}>Thank you. Please visit again.</div>
-    </div>}
+    </div></section>}
   </div>;
 }
