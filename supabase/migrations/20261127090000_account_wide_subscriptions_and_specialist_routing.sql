@@ -93,15 +93,17 @@ as $function$
         where account_business.user_id = target_owner.user_id
           and account_business.role = 'owner'
         order by
-          case s.status
-            when 'active' then 1
-            when 'cancelled' then 2
-            when 'past_due' then 3
-            when 'trial_pending' then 4
-            when 'trialing' then 5
-            when 'expired' then 6
-            else 7
-          end,
+          case
+          when s.status = 'active' and (s.current_period_ends_at is null or s.current_period_ends_at > pg_catalog.now()) then 1
+          when s.status = 'cancelled' and s.cancel_at_period_end = true and s.current_period_ends_at > pg_catalog.now() then 2
+          when s.status = 'active' then 3
+          when s.status = 'cancelled' then 4
+          when s.status = 'past_due' then 5
+          when s.status = 'trial_pending' then 6
+          when s.status = 'trialing' then 7
+          when s.status = 'expired' then 8
+          else 9
+        end,
           coalesce(s.current_period_ends_at, s.trial_ends_at, s.updated_at) desc
         limit 1
       ) account_subscription on true
@@ -268,15 +270,17 @@ begin
     join public.organization_subscriptions s on s.organization_id = m.organization_id
     where m.user_id = v_user_id and m.role = 'owner'
     order by
-      case s.status
-        when 'active' then 1
-        when 'cancelled' then 2
-        when 'past_due' then 3
-        when 'trial_pending' then 4
-        when 'trialing' then 5
-        when 'expired' then 6
-        else 7
-      end,
+      case
+          when s.status = 'active' and (s.current_period_ends_at is null or s.current_period_ends_at > pg_catalog.now()) then 1
+          when s.status = 'cancelled' and s.cancel_at_period_end = true and s.current_period_ends_at > pg_catalog.now() then 2
+          when s.status = 'active' then 3
+          when s.status = 'cancelled' then 4
+          when s.status = 'past_due' then 5
+          when s.status = 'trial_pending' then 6
+          when s.status = 'trialing' then 7
+          when s.status = 'expired' then 8
+          else 9
+        end,
       coalesce(s.current_period_ends_at, s.trial_ends_at, s.updated_at) desc
     limit 1;
 
