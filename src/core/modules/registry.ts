@@ -156,17 +156,6 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     targetPhase: 'AI Assistant (Initial Release)',
   },
   {
-    id: 'industry',
-    label: 'Industry Workspaces',
-    group: 'operations',
-    stage: 'foundation_active',
-    summary: 'Specialist operational workflows for hotels, dealerships, real estate, restaurants, logistics and manufacturing.',
-    primaryEntities: ['Reservations', 'Vehicle Stock', 'Leases', 'Restaurant Orders', 'Delivery Jobs', 'Production Orders'],
-    plannedTables: ['hotel_reservations', 'dealer_vehicles', 'real_estate_leases', 'restaurant_orders', 'delivery_jobs', 'manufacturing_orders'],
-    connectedModules: ['inventory', 'sales', 'customers', 'purchases', 'finance', 'reports'],
-    targetPhase: 'Specialist Workspaces · Initial Release',
-  },
-  {
     id: 'billing',
     label: 'Subscription & Billing',
     group: 'administration',
