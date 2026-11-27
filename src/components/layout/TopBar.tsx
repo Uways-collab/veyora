@@ -107,9 +107,11 @@ export function TopBar({
           <button
             type="button"
             onClick={() => onSelectModule('dashboard')}
-            className="shrink min-w-0 truncate whitespace-nowrap font-display text-sm font-semibold text-slate-900 transition-colors hover:text-blue-700 focus-visible:outline-none focus-visible:underline sm:text-base"
+            aria-label="Veyora Business home"
+            className="flex min-w-0 shrink items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
           >
-            Veyora Business
+            <img src="https://res.cloudinary.com/mmhrp33c/image/upload/v1795765615/2a0b9d10-ea30-11f1-9c24-171f5719750a.png" alt="" className="h-7 w-7 shrink-0 object-contain" />
+            <span className="min-w-0 truncate whitespace-nowrap font-display text-sm font-semibold text-slate-900 transition-colors hover:text-blue-700 sm:text-base">Veyora Business</span>
           </button>
           <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block" aria-hidden="true" />
           <span className="hidden max-w-32 truncate whitespace-nowrap font-medium text-slate-600 md:inline">
