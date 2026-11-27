@@ -298,8 +298,23 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          const { error: subscriptionSaveError } = await serviceClient.from('organization_subscriptions').upsert({
-            organization_id: transaction.organization_id,
+          const { data: accountOwnerRows, error: accountOwnerError } = await serviceClient
+            .from('organization_memberships').select('user_id')
+            .eq('organization_id', transaction.organization_id).eq('role', 'owner')
+            .order('created_at', { ascending: true }).limit(1);
+          if (accountOwnerError || !accountOwnerRows?.[0]?.user_id) {
+            throw new Error('Could not resolve the Owner account for the successful subscription payment.');
+          }
+          const { data: accountBusinessRows, error: accountBusinessError } = await serviceClient
+            .from('organization_memberships').select('organization_id')
+            .eq('user_id', accountOwnerRows[0].user_id).eq('role', 'owner');
+          if (accountBusinessError) throw new Error('Could not load all businesses on the paying Veyora account.');
+          const accountOrganizationIds = Array.from(new Set([
+            transaction.organization_id,
+            ...(accountBusinessRows ?? []).map((row: { organization_id: string }) => row.organization_id),
+          ]));
+          const accountSubscriptionRows = accountOrganizationIds.map((organizationId) => ({
+            organization_id: organizationId,
             plan_id: transaction.plan_id,
             status: 'active',
             provider: 'paystack',
@@ -313,8 +328,10 @@ Deno.serve(async (req: Request) => {
             current_period_ends_at: periodEnd.toISOString(),
             cancel_at_period_end: false,
             latest_payment_reference: reference,
-          }, { onConflict: 'organization_id' });
-          if (subscriptionSaveError) throw new Error('Payment succeeded but the workspace subscription could not be activated.');
+          }));
+          const { error: subscriptionSaveError } = await serviceClient.from('organization_subscriptions')
+            .upsert(accountSubscriptionRows, { onConflict: 'organization_id' });
+          if (subscriptionSaveError) throw new Error('Payment succeeded but the account subscription could not be activated for every business.');
 
           const { error: transactionSaveError } = await serviceClient.from('billing_transactions').update({
             status: 'succeeded',
