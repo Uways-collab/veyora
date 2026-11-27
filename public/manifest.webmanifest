@@ -11,15 +11,15 @@
   "theme_color": "#10223c",
   "icons": [
     {
-      "src": "/veyora-app-icon.svg",
+      "src": "https://res.cloudinary.com/mmhrp33c/image/upload/v1795765615/2a0b9d10-ea30-11f1-9c24-171f5719750a.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/veyora-app-icon.svg",
+      "src": "https://res.cloudinary.com/mmhrp33c/image/upload/v1795765615/2a0b9d10-ea30-11f1-9c24-171f5719750a.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]
