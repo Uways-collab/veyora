@@ -44,10 +44,22 @@ export function BillingView() {
     if (s.error) setError('Could not load account subscription: ' + s.error.message);
     else {
       const rows = (s.data ?? []) as Subscription[];
-      const statusPriority: Record<string, number> = { active: 0, cancelled: 1, past_due: 2, trial_pending: 3, trialing: 4, expired: 5 };
+      const now = Date.now();
+      const priority = (row: Subscription) => {
+        const periodEnd = row.current_period_ends_at ? new Date(row.current_period_ends_at).getTime() : null;
+        if (row.status === 'active' && (periodEnd === null || periodEnd > now)) return 0;
+        if (row.status === 'cancelled' && row.cancel_at_period_end && periodEnd !== null && periodEnd > now) return 1;
+        if (row.status === 'active') return 2;
+        if (row.status === 'cancelled') return 3;
+        if (row.status === 'past_due') return 4;
+        if (row.status === 'trial_pending') return 5;
+        if (row.status === 'trialing') return 6;
+        if (row.status === 'expired') return 7;
+        return 8;
+      };
       rows.sort((a, b) => {
-        const priority = (statusPriority[a.status] ?? 6) - (statusPriority[b.status] ?? 6);
-        if (priority !== 0) return priority;
+        const statusOrder = priority(a) - priority(b);
+        if (statusOrder !== 0) return statusOrder;
         const aEnd = a.current_period_ends_at ?? a.trial_ends_at ?? '';
         const bEnd = b.current_period_ends_at ?? b.trial_ends_at ?? '';
         return bEnd.localeCompare(aEnd) || String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? ''));
@@ -117,7 +129,7 @@ export function BillingView() {
   const currentPlan = plans.find((p) => p.id === subscription?.plan_id);
   const trialExpired = Boolean(subscription?.status === 'trialing' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() <= Date.now());
   const trialActive = Boolean(subscription?.status === 'trialing' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() > Date.now());
-  const paidActive = Boolean(subscription?.status === 'active' && (!subscription.current_period_ends_at || new Date(subscription.current_period_ends_at).getTime() > Date.now()));
+  const paidActive = Boolean((subscription?.status === 'active' && (!subscription.current_period_ends_at || new Date(subscription.current_period_ends_at).getTime() > Date.now())) || (subscription?.status === 'cancelled' && subscription.cancel_at_period_end && subscription.current_period_ends_at && new Date(subscription.current_period_ends_at).getTime() > Date.now()));
   const paidExpired = Boolean(subscription?.status === 'active' && subscription.current_period_ends_at && new Date(subscription.current_period_ends_at).getTime() <= Date.now());
   const paymentNeedsAttention = trialExpired || paidExpired || subscription?.status === 'past_due' || subscription?.status === 'expired' || (subscription?.status === 'cancelled' && !paidActive);
   const planFeatureLabels = [
