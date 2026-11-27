@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Activity, ArrowUpRight, Building2, CalendarClock, CreditCard,
   LogOut, RefreshCw, ShieldCheck, Users,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { getSupabaseClient } from '../../core/supabase/client';
@@ -40,7 +41,7 @@ const dateFormat = (value: string | null) => value
   : 'Never';
 
 function Metric({ label, value, detail, icon: Icon }: {
-  label: string; value: number | string; detail: string; icon: typeof Users;
+  label: string; value: number | string; detail: string; icon: LucideIcon;
 }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
