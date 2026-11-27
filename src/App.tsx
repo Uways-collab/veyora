@@ -28,6 +28,7 @@ import { PlatformAdminView } from './modules/admin/PlatformAdminView';
 import { DealershipWorkspaceView } from './modules/industry/DealershipWorkspaceView';
 import { HotelWorkspaceView } from './modules/industry/HotelWorkspaceView';
 import { RealEstateWorkspaceView, RestaurantWorkspaceView, LogisticsWorkspaceView, ManufacturingWorkspaceView } from './modules/industry/SpecialistIndustryDashboards';
+import { RestaurantPOSView } from './modules/industry/RestaurantPOSView';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
 
@@ -350,6 +351,7 @@ function ProtectedWorkspaceRouter() {
       case 'hotel_housekeeping': return <HotelWorkspaceView activeModule={activeModule} />;
       case 'hotel_reports': return <HotelWorkspaceView activeModule={activeModule} />;
       case 'restaurant_operations': return <RestaurantWorkspaceView activeModule={activeModule} />;
+      case 'restaurant_pos': return <RestaurantPOSView />;
       case 'inventory':
         return <InventoryView onSelectModule={handleSelectModule} />;
       case 'sales':
