@@ -11,10 +11,10 @@ const money = (value: number, currency: string) => { try { return new Intl.Numbe
 const dateLabel = (value: string) => value ? new Date(value + (value.length === 10 ? 'T12:00:00' : '')).toLocaleDateString() : '—';
 const today = () => new Date().toISOString().slice(0, 10);
 
-export function HotelWorkspaceView() {
+export function HotelWorkspaceView({ activeModule = 'dashboard' }: { activeModule?: string }) {
   const { activeOrganisation, activeRole } = useAuth();
   const supabase = getSupabaseClient() as any;
-  const [tab, setTab] = useState<Tab>('front_desk');
+  const tab: Tab = activeModule === 'hotel_reservations' ? 'reservations' : activeModule === 'hotel_rooms' ? 'rooms' : activeModule === 'hotel_housekeeping' ? 'housekeeping' : activeModule === 'hotel_reports' ? 'reports' : 'front_desk';
   const [rooms, setRooms] = useState<Room[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -145,7 +145,6 @@ export function HotelWorkspaceView() {
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {[['Occupancy', occupancy + '%', rooms.length + ' rooms configured'],['Guests in house', String(inHouse.length), 'Currently checked in'],['Arrivals today', String(arrivals.length), 'Expected check-ins'],['Departures today', String(departures.length), 'Expected check-outs'],['Housekeeping queue', String(openTasks.length), 'Tasks not yet inspected']].map(([label,value,helper]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/[.02]"><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 tabular-nums">{value}</p><p className="mt-1 text-[11px] text-slate-500">{helper}</p></div>)}
     </div>
-    <nav className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100/70 p-1">{tabs.map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={'inline-flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-semibold transition ' + (tab === item.id ? 'bg-white text-blue-800 shadow-sm' : 'text-slate-600 hover:text-slate-900')}><Icon className="h-4 w-4" />{item.label}</button>; })}</nav>
     {loading ? <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-14 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading hotel operations…</div> : <>
       {tab === 'front_desk' && <div className="grid gap-4 xl:grid-cols-2">
         <section className="rounded-xl border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-100 p-4"><div><h2 className="text-sm font-semibold text-slate-900">Today's arrivals</h2><p className="mt-1 text-xs text-slate-500">Guests expected to check in today</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{arrivals.length}</span></div>{arrivals.length ? arrivals.map((r) => <div key={r.id} className="flex items-center justify-between gap-3 border-b border-slate-100 p-4 last:border-0"><div><p className="text-sm font-semibold text-slate-900">{r.guest_name}</p><p className="mt-1 text-xs text-slate-500">Room {r.room_label} · {r.confirmation_code}</p></div><button disabled={!canManage || saving} onClick={() => void changeReservationStatus(r,'checked_in')} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Check in</button></div>) : <p className="p-6 text-center text-xs text-slate-500">No arrivals scheduled for today.</p>}</section>
