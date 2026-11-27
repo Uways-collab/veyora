@@ -64,6 +64,7 @@ function ProtectedWorkspaceRouter() {
 
   useEffect(() => {
     let cancelled = false;
+    let trialExpiryTimer: number | undefined;
     const loadSubscription = async () => {
       if (!activeOrganisation) {
         setSubscriptionAccess({ allowed: false, status: null, features: {}, planName: null, trialEndsAt: null, periodEndsAt: null });
@@ -93,6 +94,11 @@ function ProtectedWorkspaceRouter() {
         (!sub.current_period_ends_at || new Date(sub.current_period_ends_at).getTime() > now);
       const cancellationValid = sub?.status === 'cancelled' && sub.cancel_at_period_end === true &&
         Boolean(sub.current_period_ends_at) && new Date(sub.current_period_ends_at).getTime() > now;
+      if (trialExpiryTimer !== undefined) window.clearTimeout(trialExpiryTimer);
+      if (trialValid && sub?.trial_ends_at) {
+        const remainingMs = new Date(sub.trial_ends_at).getTime() - now;
+        trialExpiryTimer = window.setTimeout(() => { void loadSubscription(); }, Math.max(0, remainingMs) + 1000);
+      }
       if (!cancelled) {
         setSubscriptionAccess({
           allowed: !subError && Boolean(plan) && (trialValid || paidValid || cancellationValid),
@@ -114,6 +120,7 @@ function ProtectedWorkspaceRouter() {
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       cancelled = true;
+      if (trialExpiryTimer !== undefined) window.clearTimeout(trialExpiryTimer);
       window.removeEventListener('focus', refreshOnReturn);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
