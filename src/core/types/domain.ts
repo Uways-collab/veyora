@@ -9,7 +9,6 @@ export type ModuleId =
   | 'finance'
   | 'reports'
   | 'ai_assistant'
-  | 'industry'
   | 'billing'
   | 'settings';
 
