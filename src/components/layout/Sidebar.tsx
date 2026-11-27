@@ -45,12 +45,7 @@ export function Sidebar({ activeModule, onSelectModule, mobileOpen, onCloseMobil
     <div className="flex h-full flex-col border-r border-slate-200 bg-white">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-5">
         <button type="button" onClick={() => handleSelect('dashboard')} className="flex items-center gap-2.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white">
-            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
-              <path d="M5 6.5L12 18.5L19 6.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M9.5 6.5L12 11L14.5 6.5" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
+          <img src="https://res.cloudinary.com/mmhrp33c/image/upload/v1795765615/2a0b9d10-ea30-11f1-9c24-171f5719750a.png" alt="Veyora logo" className="h-8 w-8 shrink-0 rounded-md object-contain" />
           <span className="whitespace-nowrap font-display text-sm font-semibold tracking-tight text-slate-900">Veyora Business</span>
         </button>
         <button type="button" onClick={onCloseMobile} aria-label="Close navigation menu" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 lg:hidden">
