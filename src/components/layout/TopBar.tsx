@@ -91,9 +91,9 @@ export function TopBar({
   const initials = getUserInitials(profile?.full_name, user?.email);
 
   return (
-    <header className="sticky top-0 z-30 h-14 bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-30 flex h-14 w-full min-w-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-2 sm:gap-3 sm:px-6 lg:px-8">
       {/* Zone 1: Mobile Menu + Veyora Business Branding + Active Page Breadcrumb */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-initial sm:gap-3">
         <button
           type="button"
           onClick={onOpenMobileMenu}
@@ -103,23 +103,23 @@ export function TopBar({
           <Menu className="h-5 w-5" />
         </button>
 
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm min-w-0">
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-sm">
           <button
             type="button"
             onClick={() => onSelectModule('dashboard')}
-            className="font-display font-semibold text-slate-900 hover:text-blue-700 transition-colors whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:underline"
+            className="shrink min-w-0 truncate whitespace-nowrap font-display text-sm font-semibold text-slate-900 transition-colors hover:text-blue-700 focus-visible:outline-none focus-visible:underline sm:text-base"
           >
             Veyora Business
           </button>
-          <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
-          <span className="text-slate-600 font-medium truncate whitespace-nowrap">
+          <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 sm:block" aria-hidden="true" />
+          <span className="hidden max-w-32 truncate whitespace-nowrap font-medium text-slate-600 md:inline">
             {currentModule.label}
           </span>
         </nav>
       </div>
 
       {/* Zone 2 & 3: Active Business Switcher, Notifications, User Profile Menu */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
         {/* Active Business Workspace Switcher */}
         {activeOrganisation && (
           <div className="relative" ref={switcherRef}>
@@ -133,7 +133,7 @@ export function TopBar({
               aria-expanded={switcherOpen}
               aria-haspopup="menu"
               aria-label="Business workspace switcher"
-              className="inline-flex items-center gap-2 h-8 px-2.5 rounded-md border border-slate-200 bg-slate-50/80 text-xs font-medium text-slate-900 hover:bg-slate-100 hover:border-slate-300 transition-colors max-w-[150px] sm:max-w-[240px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              className="inline-flex items-center gap-2 h-8 px-2.5 rounded-md border border-slate-200 bg-slate-50/80 text-xs font-medium text-slate-900 hover:bg-slate-100 hover:border-slate-300 transition-colors max-w-[clamp(5.75rem,30vw,15rem)] sm:max-w-[240px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
             >
               <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden="true" />
               <span className="truncate whitespace-nowrap">{activeOrganisation.name}</span>
@@ -272,9 +272,9 @@ export function TopBar({
             aria-expanded={profileOpen}
             aria-haspopup="menu"
             aria-label="User profile and account menu"
-            className="flex items-center gap-2 h-8 pl-1.5 pr-2.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            className="flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-1.5 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 sm:gap-2 sm:pl-1.5 sm:pr-2.5"
           >
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-slate-900 text-[10px] font-semibold text-white shrink-0">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-slate-900 text-[10px] font-semibold text-white">
               {initials}
             </span>
             <span className="hidden md:inline text-xs font-medium text-slate-800 max-w-[130px] truncate whitespace-nowrap">
