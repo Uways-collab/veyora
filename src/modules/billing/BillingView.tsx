@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CreditCard, ExternalLink, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
 import { getSupabaseClient } from '../../core/supabase/client';
@@ -10,8 +10,7 @@ type BillingConfig = { trialDays: number; currency: string; paystackConfigured: 
 
 export function BillingView() {
   const { activeOrganisation, activeRole, memberships } = useAuth();
-  const ownerOrganizationIds = memberships.filter((membership) => membership.role === 'owner').map((membership) => membership.organisation_id);
-  const ownerOrganizationKey = ownerOrganizationIds.slice().sort().join(',');
+  const ownerOrganizationIds = useMemo(() => memberships.filter((membership) => membership.role === 'owner').map((membership) => membership.organisation_id), [memberships]);
   const supabase = getSupabaseClient();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
@@ -45,17 +44,20 @@ export function BillingView() {
     if (s.error) setError('Could not load account subscription: ' + s.error.message);
     else {
       const rows = (s.data ?? []) as Subscription[];
-      const now = Date.now();
-      const accountSubscription = rows.find((row) => row.status === 'active' && (!row.current_period_ends_at || new Date(row.current_period_ends_at).getTime() > now))
-        ?? rows.find((row) => row.status === 'trialing' && Boolean(row.trial_ends_at) && new Date(row.trial_ends_at!).getTime() > now)
-        ?? rows[0]
-        ?? null;
-      setSubscription(accountSubscription);
+      const statusPriority: Record<string, number> = { active: 0, cancelled: 1, past_due: 2, trial_pending: 3, trialing: 4, expired: 5 };
+      rows.sort((a, b) => {
+        const priority = (statusPriority[a.status] ?? 6) - (statusPriority[b.status] ?? 6);
+        if (priority !== 0) return priority;
+        const aEnd = a.current_period_ends_at ?? a.trial_ends_at ?? '';
+        const bEnd = b.current_period_ends_at ?? b.trial_ends_at ?? '';
+        return bEnd.localeCompare(aEnd) || String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? ''));
+      });
+      setSubscription(rows[0] ?? null);
     }
     if (t.error) setError('Could not load account billing history: ' + t.error.message); else setTransactions((t.data ?? []) as Transaction[]);
     if (c.error) setError('Could not check billing configuration: ' + c.error.message); else if (c.data && !c.data.error) setConfig(c.data as BillingConfig);
     setLoading(false);
-  }, [supabase, activeOrganisation?.id, isOwner, ownerOrganizationKey]);
+  }, [supabase, activeOrganisation?.id, isOwner, ownerOrganizationIds]);
 
   useEffect(() => { void load(); }, [load]);
 
