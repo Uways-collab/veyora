@@ -5,6 +5,9 @@
 drop trigger if exists a_start_workspace_free_trial on public.organizations;
 drop function if exists private.start_workspace_free_trial();
 
+-- Pick one authoritative subscription for an Owner account. Paid subscriptions
+-- take precedence over legacy trials, so an old trial cannot unlock an account
+-- after its paid subscription has expired.
 create or replace function private.organization_subscription_is_active(p_organization_id uuid)
 returns boolean
 language sql
@@ -23,16 +26,30 @@ as $function$
       order by owner_membership.created_at asc
       limit 1
     ) target_owner on true
-    join public.organization_memberships account_business
-      on account_business.user_id = target_owner.user_id
-     and account_business.role = 'owner'
-    join public.organization_subscriptions s
-      on s.organization_id = account_business.organization_id
+    join lateral (
+      select s.status, s.trial_ends_at, s.current_period_ends_at, s.cancel_at_period_end
+      from public.organization_memberships account_business
+      join public.organization_subscriptions s on s.organization_id = account_business.organization_id
+      where account_business.user_id = target_owner.user_id
+        and account_business.role = 'owner'
+      order by
+        case s.status
+          when 'active' then 1
+          when 'cancelled' then 2
+          when 'past_due' then 3
+          when 'trial_pending' then 4
+          when 'trialing' then 5
+          when 'expired' then 6
+          else 7
+        end,
+        coalesce(s.current_period_ends_at, s.trial_ends_at, s.updated_at) desc
+      limit 1
+    ) account_subscription on true
     where target_membership.organization_id = p_organization_id
       and (
-        (s.status = 'trialing' and s.trial_ends_at is not null and s.trial_ends_at > pg_catalog.now())
-        or (s.status = 'active' and (s.current_period_ends_at is null or s.current_period_ends_at > pg_catalog.now()))
-        or (s.status = 'cancelled' and s.cancel_at_period_end = true and s.current_period_ends_at is not null and s.current_period_ends_at > pg_catalog.now())
+        (account_subscription.status = 'trialing' and account_subscription.trial_ends_at is not null and account_subscription.trial_ends_at > pg_catalog.now())
+        or (account_subscription.status = 'active' and (account_subscription.current_period_ends_at is null or account_subscription.current_period_ends_at > pg_catalog.now()))
+        or (account_subscription.status = 'cancelled' and account_subscription.cancel_at_period_end = true and account_subscription.current_period_ends_at is not null and account_subscription.current_period_ends_at > pg_catalog.now())
       )
   );
 $function$;
@@ -67,19 +84,32 @@ as $function$
         order by owner_membership.created_at asc
         limit 1
       ) target_owner on true
-      join public.organization_memberships account_business
-        on account_business.user_id = target_owner.user_id
-       and account_business.role = 'owner'
-      join public.organization_subscriptions s
-        on s.organization_id = account_business.organization_id
-      join public.subscription_plans p
-        on p.id = s.plan_id
+      join lateral (
+        select s.status, s.trial_ends_at, s.current_period_ends_at, s.cancel_at_period_end, s.plan_id
+        from public.organization_memberships account_business
+        join public.organization_subscriptions s on s.organization_id = account_business.organization_id
+        where account_business.user_id = target_owner.user_id
+          and account_business.role = 'owner'
+        order by
+          case s.status
+            when 'active' then 1
+            when 'cancelled' then 2
+            when 'past_due' then 3
+            when 'trial_pending' then 4
+            when 'trialing' then 5
+            when 'expired' then 6
+            else 7
+          end,
+          coalesce(s.current_period_ends_at, s.trial_ends_at, s.updated_at) desc
+        limit 1
+      ) account_subscription on true
+      join public.subscription_plans p on p.id = account_subscription.plan_id
       where target_membership.organization_id = p_organization_id
         and target_membership.user_id = auth.uid()
         and (
-          (s.status = 'trialing' and s.trial_ends_at is not null and s.trial_ends_at > pg_catalog.now())
-          or (s.status = 'active' and (s.current_period_ends_at is null or s.current_period_ends_at > pg_catalog.now()))
-          or (s.status = 'cancelled' and s.cancel_at_period_end = true and s.current_period_ends_at is not null and s.current_period_ends_at > pg_catalog.now())
+          (account_subscription.status = 'trialing' and account_subscription.trial_ends_at is not null and account_subscription.trial_ends_at > pg_catalog.now())
+          or (account_subscription.status = 'active' and (account_subscription.current_period_ends_at is null or account_subscription.current_period_ends_at > pg_catalog.now()))
+          or (account_subscription.status = 'cancelled' and account_subscription.cancel_at_period_end = true and account_subscription.current_period_ends_at is not null and account_subscription.current_period_ends_at > pg_catalog.now())
         )
         and (p_feature is null or coalesce((p.features ->> p_feature)::boolean, false))
     );
