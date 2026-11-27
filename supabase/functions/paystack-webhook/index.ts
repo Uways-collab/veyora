@@ -252,8 +252,6 @@ Deno.serve(async (req: Request) => {
               refund_expected_at: refund.expected_at ?? null,
             }).eq('id', transaction.id);
           }
-        }
-      }
         } else if (transaction?.purpose === 'subscription_payment' && transaction.status !== 'succeeded') {
           const verified = await paystackRequest('/transaction/verify/' + encodeURIComponent(reference), secret);
           const metadata = verified.metadata ?? {};
@@ -321,6 +319,8 @@ Deno.serve(async (req: Request) => {
             provider_subscription_code: providerSubscriptionCode,
           }).eq('id', transaction.id);
           if (transactionSaveError) throw new Error('Could not save the successful subscription payment record.');
+        }
+      }
       const recurringSubscriptionCode = subscriptionCode(data);
       if (recurringSubscriptionCode) {
         const { error: recurringChargeError } = await serviceClient.from('organization_subscriptions').update({
