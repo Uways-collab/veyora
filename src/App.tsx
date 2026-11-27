@@ -13,7 +13,6 @@ import { DashboardView } from './modules/dashboard/DashboardView';
 import { ExpensesView } from './modules/expenses/ExpensesView';
 import { FinanceView } from './modules/finance/FinanceView';
 import { InventoryView } from './modules/inventory/InventoryView';
-import { IndustryWorkspacesView } from './modules/industry/IndustryWorkspacesView';
 import { BusinessOnboardingScreen } from './modules/onboarding/BusinessOnboardingScreen';
 import { BillingView } from './modules/billing/BillingView';
 import { PurchasesView } from './modules/purchases/PurchasesView';
@@ -25,6 +24,10 @@ import { getSupabaseClient } from './core/supabase/client';
 import { SuppliersView } from './modules/suppliers/SuppliersView';
 import { PWAInstallPrompt } from './components/shared/PWAInstallPrompt';
 import { LockedIndustryWorkspaceView } from './modules/industry/LockedIndustryWorkspaceView';
+import { PlatformAdminView } from './modules/admin/PlatformAdminView';
+import { DealershipWorkspaceView } from './modules/industry/DealershipWorkspaceView';
+import { HotelWorkspaceView } from './modules/industry/HotelWorkspaceView';
+import { RealEstateWorkspaceView, RestaurantWorkspaceView, LogisticsWorkspaceView, ManufacturingWorkspaceView } from './modules/industry/SpecialistIndustryDashboards';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
 
@@ -40,6 +43,7 @@ function readModuleFromHash(): ModuleId {
 function ProtectedWorkspaceRouter() {
   const {
     status,
+    user,
     hasLoadedOrgs,
     memberships,
     activeOrganisation,
@@ -50,7 +54,42 @@ function ProtectedWorkspaceRouter() {
   } = useAuth();
 
   const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromHash());
+  const [platformAdminAccess, setPlatformAdminAccess] = useState<'checking' | 'granted' | 'denied'>('checking');
+  const [platformAdminMode, setPlatformAdminMode] = useState(true);
   const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab>('auth_orgs');
+
+  useEffect(() => {
+    if (status === 'signed_out' || status === 'unconfigured') {
+      setPlatformAdminAccess('denied');
+      setPlatformAdminMode(true);
+      return;
+    }
+    if (status !== 'authenticated' || !hasLoadedOrgs || !user) {
+      setPlatformAdminAccess('checking');
+      return;
+    }
+
+    let cancelled = false;
+    setPlatformAdminAccess('checking');
+    const db = getSupabaseClient() as any;
+    if (!db) {
+      setPlatformAdminAccess('denied');
+      return;
+    }
+    void db.rpc('is_platform_admin').then(({ data, error }: { data: unknown; error: unknown }) => {
+      if (cancelled) return;
+      const authorised = !error && data === true;
+      setPlatformAdminAccess(authorised ? 'granted' : 'denied');
+      setPlatformAdminMode(authorised);
+    }).catch(() => {
+      if (!cancelled) {
+        setPlatformAdminAccess('denied');
+        setPlatformAdminMode(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [status, hasLoadedOrgs, user?.id]);
+
 
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [subscriptionAccess, setSubscriptionAccess] = useState<{
@@ -64,6 +103,7 @@ function ProtectedWorkspaceRouter() {
 
   useEffect(() => {
     let cancelled = false;
+    let trialExpiryTimer: number | undefined;
     const loadSubscription = async () => {
       if (!activeOrganisation) {
         setSubscriptionAccess({ allowed: false, status: null, features: {}, planName: null, trialEndsAt: null, periodEndsAt: null });
@@ -78,7 +118,7 @@ function ProtectedWorkspaceRouter() {
       }
       setSubscriptionLoading(true);
       const { data: sub, error: subError } = await db.from('organization_subscriptions')
-        .select('status,trial_ends_at,current_period_ends_at,card_verified_at,cancel_at_period_end,plan_id')
+        .select('status,trial_ends_at,current_period_ends_at,cancel_at_period_end,plan_id')
         .eq('organization_id', activeOrganisation.id).maybeSingle();
       let plan: any = null;
       if (!subError && sub?.plan_id) {
@@ -87,12 +127,17 @@ function ProtectedWorkspaceRouter() {
         plan = data;
       }
       const now = Date.now();
-      const trialValid = sub?.status === 'trialing' && Boolean(sub.card_verified_at) &&
+      const trialValid = sub?.status === 'trialing' &&
         Boolean(sub.trial_ends_at) && new Date(sub.trial_ends_at).getTime() > now;
       const paidValid = sub?.status === 'active' &&
         (!sub.current_period_ends_at || new Date(sub.current_period_ends_at).getTime() > now);
       const cancellationValid = sub?.status === 'cancelled' && sub.cancel_at_period_end === true &&
         Boolean(sub.current_period_ends_at) && new Date(sub.current_period_ends_at).getTime() > now;
+      if (trialExpiryTimer !== undefined) window.clearTimeout(trialExpiryTimer);
+      if (trialValid && sub?.trial_ends_at) {
+        const remainingMs = new Date(sub.trial_ends_at).getTime() - now;
+        trialExpiryTimer = window.setTimeout(() => { void loadSubscription(); }, Math.max(0, remainingMs) + 1000);
+      }
       if (!cancelled) {
         setSubscriptionAccess({
           allowed: !subError && Boolean(plan) && (trialValid || paidValid || cancellationValid),
@@ -114,6 +159,7 @@ function ProtectedWorkspaceRouter() {
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       cancelled = true;
+      if (trialExpiryTimer !== undefined) window.clearTimeout(trialExpiryTimer);
       window.removeEventListener('focus', refreshOnReturn);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
@@ -191,6 +237,14 @@ function ProtectedWorkspaceRouter() {
         </div>
       </div>
     );
+  }
+
+  if (status === 'authenticated' && hasLoadedOrgs && platformAdminAccess === 'checking') {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4"><div className="rounded-xl border border-slate-200 bg-white p-6 text-center"><p className="text-sm font-semibold text-slate-900">Verifying Platform Admin access…</p><p className="mt-1 text-xs text-slate-500">Checking the authorised Veyora platform-owner account.</p></div></div>;
+  }
+
+  if (status === 'authenticated' && platformAdminAccess === 'granted' && platformAdminMode) {
+    return <PlatformAdminView onOpenBusiness={() => setPlatformAdminMode(false)} />;
   }
 
   // Gate 3: RLS / Expired Session / Missing Schema Diagnostic Screen (never bypasses security)
@@ -276,9 +330,15 @@ function ProtectedWorkspaceRouter() {
   const renderModule = () => {
     switch (activeModule) {
       case 'dashboard':
-        return activeOrganisation && ['car_dealership', 'hotel', 'restaurant', 'real_estate', 'logistics', 'manufacturing'].includes(activeOrganisation.business_type ?? '')
-          ? <IndustryWorkspacesView />
-          : <DashboardView onSelectModule={handleSelectModule} />;
+        switch (activeOrganisation?.business_type) {
+          case 'car_dealership': return <DealershipWorkspaceView />;
+          case 'hotel': return <HotelWorkspaceView />;
+          case 'real_estate': return <RealEstateWorkspaceView />;
+          case 'restaurant': return <RestaurantWorkspaceView />;
+          case 'logistics': return <LogisticsWorkspaceView />;
+          case 'manufacturing': return <ManufacturingWorkspaceView />;
+          default: return <DashboardView onSelectModule={handleSelectModule} />;
+        }
       case 'inventory':
         return <InventoryView onSelectModule={handleSelectModule} />;
       case 'sales':
@@ -297,8 +357,6 @@ function ProtectedWorkspaceRouter() {
         return <ReportsView canExport={true} />;
       case 'ai_assistant':
         return <AssistantView />;
-      case 'industry':
-        return <IndustryWorkspacesView />;
       case 'billing':
         return <BillingView />;
       case 'settings':
@@ -315,6 +373,13 @@ function ProtectedWorkspaceRouter() {
 
   return (
     <AppShell activeModule={activeModule} onSelectModule={handleSelectModule}>
+      {platformAdminAccess === 'granted' && (
+        <div className="mb-4 flex justify-end">
+          <button type="button" onClick={() => setPlatformAdminMode(true)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+            Open Platform Admin
+          </button>
+        </div>
+      )}
       {renderModule()}
     </AppShell>
   );

@@ -97,7 +97,7 @@ export function LockedIndustryWorkspaceView({ onSelectModule }: { onSelectModule
             <div className="flex items-center gap-3">
               <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10"><Icon className="h-6 w-6" /></span>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">Veyora specialist workspace</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">Veyora business workspace</p>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight">{activeOrganisation.name}</h1>
                 <p className="mt-1 text-sm text-slate-300">{workspace.label}</p>
               </div>
@@ -125,7 +125,7 @@ export function LockedIndustryWorkspaceView({ onSelectModule }: { onSelectModule
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <ClipboardList className="h-4 w-4 text-slate-500" />
-          <h2 className="text-sm font-semibold text-slate-900">Your specialist workspace</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Your business workspace</h2>
           <span className="text-xs text-slate-500">· Preview only</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

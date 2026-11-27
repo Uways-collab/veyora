@@ -252,6 +252,94 @@ Deno.serve(async (req: Request) => {
               refund_expected_at: refund.expected_at ?? null,
             }).eq('id', transaction.id);
           }
+        } else if (transaction?.purpose === 'subscription_payment' && transaction.status !== 'succeeded') {
+          const verified = await paystackRequest('/transaction/verify/' + encodeURIComponent(reference), secret);
+          const metadata = verified.metadata ?? {};
+          if (verified.status !== 'success' ||
+              Number(verified.amount) !== Number(transaction.amount_minor_units) ||
+              verified.currency !== transaction.currency ||
+              String(metadata.organization_id ?? '') !== transaction.organization_id ||
+              String(metadata.plan_id ?? '') !== transaction.plan_id) {
+            throw new Error('Verified Paystack payment does not match the expected Veyora subscription payment.');
+          }
+
+          const { data: plan } = await serviceClient.from('subscription_plans')
+            .select('billing_interval,provider_plan_code').eq('id', transaction.plan_id).maybeSingle();
+          if (!plan) throw new Error('The paid Veyora subscription plan could not be found.');
+
+          const periodStart = new Date();
+          const periodEnd = new Date(periodStart);
+          const startDay = periodEnd.getUTCDate();
+          periodEnd.setUTCDate(1);
+          if (plan.billing_interval === 'yearly') periodEnd.setUTCFullYear(periodEnd.getUTCFullYear() + 1);
+          else periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1);
+          const finalDay = new Date(Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth() + 1, 0)).getUTCDate();
+          periodEnd.setUTCDate(Math.min(startDay, finalDay));
+
+          const customerCode = String(verified.customer?.customer_code ?? '');
+          const authorizationCode = String(verified.authorization?.authorization_code ?? '');
+          const reusable = verified.authorization?.reusable === true;
+          let providerSubscriptionCode: string | null = null;
+
+          // When Paystack returned a reusable authorization and a synced plan exists,
+          // schedule renewals for the end of the paid period. The current paid term
+          // remains valid even if recurring setup is unavailable.
+          if (customerCode && authorizationCode && reusable && plan.provider_plan_code) {
+            try {
+              const created = await paystackRequest('/subscription', secret, 'POST', {
+                customer: customerCode,
+                plan: plan.provider_plan_code,
+                authorization: authorizationCode,
+                start_date: periodEnd.toISOString(),
+              });
+              providerSubscriptionCode = String(created.subscription_code ?? '') || null;
+            } catch {
+              providerSubscriptionCode = null;
+            }
+          }
+
+          const { data: accountOwnerRows, error: accountOwnerError } = await serviceClient
+            .from('organization_memberships').select('user_id')
+            .eq('organization_id', transaction.organization_id).eq('role', 'owner')
+            .order('created_at', { ascending: true }).limit(1);
+          if (accountOwnerError || !accountOwnerRows?.[0]?.user_id) {
+            throw new Error('Could not resolve the Owner account for the successful subscription payment.');
+          }
+          const { data: accountBusinessRows, error: accountBusinessError } = await serviceClient
+            .from('organization_memberships').select('organization_id')
+            .eq('user_id', accountOwnerRows[0].user_id).eq('role', 'owner');
+          if (accountBusinessError) throw new Error('Could not load all businesses on the paying Veyora account.');
+          const accountOrganizationIds = Array.from(new Set([
+            transaction.organization_id,
+            ...(accountBusinessRows ?? []).map((row: { organization_id: string }) => row.organization_id),
+          ]));
+          const accountSubscriptionRows = accountOrganizationIds.map((organizationId) => ({
+            organization_id: organizationId,
+            plan_id: transaction.plan_id,
+            status: 'active',
+            provider: 'paystack',
+            provider_customer_code: customerCode || null,
+            provider_subscription_code: providerSubscriptionCode,
+            provider_plan_code: plan.provider_plan_code ?? null,
+            trial_starts_at: null,
+            trial_ends_at: null,
+            card_verified_at: null,
+            current_period_starts_at: periodStart.toISOString(),
+            current_period_ends_at: periodEnd.toISOString(),
+            cancel_at_period_end: false,
+            latest_payment_reference: reference,
+          }));
+          const { error: subscriptionSaveError } = await serviceClient.from('organization_subscriptions')
+            .upsert(accountSubscriptionRows, { onConflict: 'organization_id' });
+          if (subscriptionSaveError) throw new Error('Payment succeeded but the account subscription could not be activated for every business.');
+
+          const { error: transactionSaveError } = await serviceClient.from('billing_transactions').update({
+            status: 'succeeded',
+            provider_transaction_id: Number(verified.id),
+            provider_customer_code: customerCode || null,
+            provider_subscription_code: providerSubscriptionCode,
+          }).eq('id', transaction.id);
+          if (transactionSaveError) throw new Error('Could not save the successful subscription payment record.');
         }
       }
       const recurringSubscriptionCode = subscriptionCode(data);
@@ -272,11 +360,11 @@ Deno.serve(async (req: Request) => {
       let transaction: Record<string, any> | null = null;
       if (reference) {
         const lookup = await serviceClient.from('billing_transactions')
-          .select('id,organization_id,provider_subscription_code').eq('reference', reference).maybeSingle();
+          .select('id,organization_id,provider_subscription_code,purpose').eq('reference', reference).maybeSingle();
         transaction = lookup.data;
       } else if (transactionId !== null) {
         const lookup = await serviceClient.from('billing_transactions')
-          .select('id,organization_id,provider_subscription_code').eq('provider_transaction_id', transactionId).maybeSingle();
+          .select('id,organization_id,provider_subscription_code,purpose').eq('provider_transaction_id', transactionId).maybeSingle();
         transaction = lookup.data;
       }
       if (transaction) {
@@ -285,7 +373,27 @@ Deno.serve(async (req: Request) => {
           refunded_at: eventType === 'refund.processed' ? new Date().toISOString() : null,
           provider_refund_id: data.id ? Number(data.id) : null,
         }).eq('id', transaction.id);
-        if (eventType === 'refund.processed') {
+        if (transaction.purpose === 'subscription_payment') {
+          const { data: accountOwnerRows } = await serviceClient.from('organization_memberships')
+            .select('user_id').eq('organization_id', transaction.organization_id)
+            .eq('role', 'owner').order('created_at', { ascending: true }).limit(1);
+          const accountOwnerId = accountOwnerRows?.[0]?.user_id;
+          if (accountOwnerId) {
+            const { data: accountBusinessRows } = await serviceClient.from('organization_memberships')
+              .select('organization_id').eq('user_id', accountOwnerId).eq('role', 'owner');
+            const accountOrganizationIds = Array.from(new Set([
+              transaction.organization_id,
+              ...(accountBusinessRows ?? []).map((row: { organization_id: string }) => row.organization_id),
+            ]));
+            if (eventType === 'refund.processed') {
+              await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
+                .in('organization_id', accountOrganizationIds);
+            } else if (!transaction.provider_subscription_code) {
+              await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
+                .in('organization_id', accountOrganizationIds);
+            }
+          }
+        } else if (eventType === 'refund.processed') {
           await serviceClient.from('organization_subscriptions').update({
             status: transaction.provider_subscription_code ? 'trialing' : 'expired',
           }).eq('organization_id', transaction.organization_id);

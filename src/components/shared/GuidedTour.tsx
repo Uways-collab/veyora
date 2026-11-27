@@ -8,13 +8,6 @@ import { getSupabaseClient } from '../../core/supabase/client';
 type TourStatus = 'not_started' | 'in_progress' | 'completed' | 'skipped';
 type TourStep = { title: string; description: string; module?: ModuleId; action: string };
 
-const INDUSTRY_STEP: TourStep = {
-  title: 'Your specialist industry workspaces',
-  description: 'If your organisation operates a hotel, dealership, real-estate portfolio, restaurant, logistics fleet or manufacturing operation, open Industry Workspaces to manage its specialist records. These workflows work alongside your shared inventory, sales and finance modules.',
-  module: 'industry',
-  action: 'Explore industry workspaces',
-};
-
 const CORE_STEPS: TourStep[] = [
   { title: 'Your business at a glance', description: 'The dashboard brings together key business activity, recent events and useful shortcuts. You can keep using the workspace while this guide stays out of your way.', module: 'dashboard', action: 'Explore dashboard' },
   { title: 'Find your way around', description: 'Use the left navigation to move between the parts of Veyora your role is allowed to access. Select a section to explore it, then return here to continue.', module: 'dashboard', action: 'Continue' },
@@ -38,7 +31,7 @@ export function GuidedTour({ onSelectModule }: { onSelectModule: (moduleId: Modu
     const roleStep: TourStep = activeRole === 'owner'
       ? { title: 'You are the workspace Owner', description: 'You can manage workspace-level settings, members and subscription decisions. Give each teammate only the access they need.', module: 'settings', action: 'Continue' }
       : { title: 'Your access is role-based', description: 'Veyora only shows actions available to your role. Ask an organisation Owner or Admin if you need additional access.', action: 'Continue' };
-    return [...CORE_STEPS.slice(0, 7), INDUSTRY_STEP, roleStep, CORE_STEPS[7]];
+    return [...CORE_STEPS.slice(0, 7), roleStep, CORE_STEPS[7]];
   }, [activeRole]);
 
   const persist = useCallback(async (nextStatus: TourStatus, nextStep: number) => {

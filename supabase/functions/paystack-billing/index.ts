@@ -54,7 +54,7 @@ Deno.serve(async (req: Request) => {
   const serviceKey = getSecretKey();
   if (!supabaseUrl || !anonKey || !serviceKey) return json({ error: 'Billing server configuration is incomplete.' }, 503);
 
-  let body: { action?: unknown; organization_id?: unknown; plan_id?: unknown; reference?: unknown; consent?: unknown };
+  let body: { action?: unknown; organization_id?: unknown; plan_id?: unknown };
   try { body = await req.json(); } catch { return json({ error: 'Request body must be valid JSON.' }, 400); }
 
   const action = typeof body.action === 'string' ? body.action : '';
@@ -80,26 +80,60 @@ Deno.serve(async (req: Request) => {
   const serviceClient = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  // Billing belongs to the signed-in Owner account, not an individual business.
+  const { data: ownerMemberships, error: ownerMembershipError } = await serviceClient
+    .from('organization_memberships').select('organization_id')
+    .eq('user_id', authData.user.id).eq('role', 'owner');
+  if (ownerMembershipError) return json({ error: 'Could not resolve the businesses on this Veyora account.' }, 500);
+  const accountOrganizationIds = Array.from(new Set([
+    organizationId,
+    ...(ownerMemberships ?? []).map((row: { organization_id: string }) => row.organization_id),
+  ]));
   const paystackSecret = Deno.env.get('PAYSTACK_SECRET_KEY');
   const liveBillingAllowed = Deno.env.get('PAYSTACK_ENABLE_LIVE_BILLING') === 'true';
   const paystackReady = Boolean(paystackSecret?.startsWith('sk_test_') || (paystackSecret?.startsWith('sk_live_') && liveBillingAllowed));
 
   if (action === 'billing-config') {
-    const amount = Number(Deno.env.get('PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS') ?? 0);
-    const disclosure = Deno.env.get('PAYSTACK_CARD_VERIFICATION_DISCLOSURE') ?? '';
-    let appBaseUrlReady = false;
-    try { const appBase = new URL(Deno.env.get('APP_BASE_URL') ?? ''); appBaseUrlReady = appBase.protocol === 'https:'; } catch { appBaseUrlReady = false; }
     return json({
-      trialDays: 14,
+      trialDays: 7,
       currency: 'NGN',
-      cardVerificationAmountMinorUnits: Number.isInteger(amount) && amount >= 5000 ? amount : null,
-      cardVerificationDisclosure: disclosure || null,
       paystackConfigured: paystackReady,
       paystackMode: paystackSecret?.startsWith('sk_test_') ? 'test' : paystackSecret?.startsWith('sk_live_') ? 'live' : 'not_configured',
       liveBillingEnabled: liveBillingAllowed,
       planSyncAvailable: paystackReady,
-      trialCardSetupReady: Boolean(paystackReady && appBaseUrlReady && Number.isInteger(amount) && amount >= 5000 && disclosure.trim()),
     });
+  }
+
+  if (action === 'start-free-trial') {
+    const { data: existing, error: existingError } = await serviceClient.from('organization_subscriptions')
+      .select('id,organization_id,status,trial_starts_at,trial_ends_at')
+      .in('organization_id', accountOrganizationIds);
+    if (existingError) return json({ error: 'Could not check this Veyora account trial status.' }, 500);
+    if (existing?.length) return json({ error: 'This Veyora account already has a trial or subscription. Adding another business does not create another trial.' }, 409);
+
+    const { data: plan, error: planError } = await serviceClient.from('subscription_plans')
+      .select('id,provider_plan_code').eq('code', 'premium_monthly').eq('is_active', true).maybeSingle();
+    if (planError || !plan) return json({ error: 'The Veyora trial plan is not configured. Contact support.' }, 503);
+
+    const startsAt = new Date();
+    const endsAt = new Date(startsAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const trialRows = accountOrganizationIds.map((accountOrganizationId) => ({
+      organization_id: accountOrganizationId,
+      plan_id: plan.id,
+      status: 'trialing',
+      provider: 'paystack',
+      provider_plan_code: plan.provider_plan_code,
+      trial_starts_at: startsAt.toISOString(),
+      trial_ends_at: endsAt.toISOString(),
+      card_verified_at: null,
+    }));
+    const { error: insertError } = await serviceClient.from('organization_subscriptions').insert(trialRows);
+    if (insertError) {
+      if (insertError.code === '23505') return json({ error: 'A trial or subscription has already been created for this workspace.' }, 409);
+      return json({ error: 'Could not activate the seven-day free trial.' }, 500);
+    }
+    return json({ success: true, trialDays: 7, trialEndsAt: endsAt.toISOString(), note: 'Your 7-day free trial has started. No card or payment is required.' });
   }
 
   if (!paystackSecret) return json({ error: 'PAYSTACK_SECRET_KEY is not configured in Supabase Edge Function secrets.' }, 503);
@@ -145,14 +179,34 @@ Deno.serve(async (req: Request) => {
     return json({ success: true, plans: synced });
   }
 
-  if (action === 'initialize-trial') {
-    if (body.consent !== true) return json({ error: 'Explicit consent to the disclosed card-verification charge is required. No charge was initiated.' }, 400);
-    const amount = Number(Deno.env.get('PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS') ?? 0);
-    const disclosure = Deno.env.get('PAYSTACK_CARD_VERIFICATION_DISCLOSURE') ?? '';
-    if (!Number.isInteger(amount) || amount < 5000 || !disclosure.trim()) {
-      return json({ error: 'Card verification is disabled until an explicit refundable verification amount and customer disclosure are configured. No charge has been initiated.' }, 503);
+  if (action === 'initialize-subscription-payment') {
+    if (!authData.user.email) return json({ error: 'Your Veyora account needs an email address before payment can start.' }, 400);
+    const planId = typeof body.plan_id === 'string' ? body.plan_id : '';
+    const { data: plan, error: planError } = await serviceClient.from('subscription_plans')
+      .select('id,code,name,billing_interval,currency,amount_minor_units,provider_plan_code,is_active')
+      .eq('id', planId).eq('is_active', true).maybeSingle();
+    if (planError || !plan) return json({ error: 'Choose an active Veyora subscription plan.' }, 400);
+    if (!Number.isSafeInteger(Number(plan.amount_minor_units)) || Number(plan.amount_minor_units) <= 0) {
+      return json({ error: 'The selected plan has an invalid payment amount.' }, 503);
     }
-    if (!authData.user.email) return json({ error: 'Your Veyora account needs a verified email address before billing can start.' }, 400);
+    if (!plan.provider_plan_code) return json({ error: 'Sync Veyora plans with Paystack before accepting subscription payments.' }, 409);
+
+    const { data: accountSubscriptions, error: currentSubscriptionError } = await serviceClient.from('organization_subscriptions')
+      .select('organization_id,status,current_period_ends_at,trial_ends_at,cancel_at_period_end,provider_subscription_code,updated_at')
+      .in('organization_id', accountOrganizationIds).order('updated_at', { ascending: false });
+    if (currentSubscriptionError) return json({ error: 'Could not verify the Veyora account subscription status.' }, 500);
+    const now = Date.now();
+    const managedSubscription = (accountSubscriptions ?? []).find((row: Record<string, unknown>) => Boolean(row.provider_subscription_code));
+    if (managedSubscription?.provider_subscription_code) {
+      return json({ error: 'This Veyora account already has a Paystack subscription. Use the payment-management link instead of starting another subscription.' }, 409);
+    }
+    const activePaidSubscription = (accountSubscriptions ?? []).find((row: Record<string, unknown>) =>
+      (row.status === 'active' && (!row.current_period_ends_at || new Date(String(row.current_period_ends_at)).getTime() > now)) ||
+      (row.status === 'cancelled' && row.cancel_at_period_end === true && Boolean(row.current_period_ends_at) && new Date(String(row.current_period_ends_at)).getTime() > now));
+    if (activePaidSubscription) {
+      return json({ error: 'Your Veyora account already has an active paid subscription. It covers all businesses you own.' }, 409);
+    }
+
     const appBaseUrl = Deno.env.get('APP_BASE_URL') ?? '';
     let callbackUrl = '';
     try {
@@ -162,100 +216,52 @@ Deno.serve(async (req: Request) => {
     } catch {
       return json({ error: 'APP_BASE_URL must be configured as the HTTPS Veyora application URL.' }, 503);
     }
-    const planId = typeof body.plan_id === 'string' ? body.plan_id : '';
-    const { data: plan, error: planError } = await serviceClient.from('subscription_plans')
-      .select('id,code,name,billing_interval,currency,amount_minor_units,provider_plan_code,is_active')
-      .eq('id', planId).eq('is_active', true).maybeSingle();
-    if (planError || !plan) return json({ error: 'Choose an active Veyora subscription plan.' }, 400);
-    if (!plan.provider_plan_code) return json({ error: 'Paystack plan codes have not been synchronised yet. Ask the Owner to sync plans first.' }, 409);
-
-    const { data: existingSubscription, error: existingError } = await serviceClient.from('organization_subscriptions')
-      .select('id,status,provider_subscription_code,trial_ends_at')
-      .eq('organization_id', organizationId).maybeSingle();
-    if (existingError) return json({ error: 'Could not check the current subscription.' }, 500);
-    if (existingSubscription && ['active','trialing','past_due','cancelled','expired'].includes(existingSubscription.status)) {
-      return json({ error: 'This workspace already has a subscription record. Contact the Owner support channel to change or restart a plan.' }, 409);
-    }
-    if (existingSubscription?.provider_subscription_code) return json({ error: 'A Paystack subscription is already linked to this workspace.' }, 409);
 
     const { data: pending } = await serviceClient.from('billing_transactions').select('id')
-      .eq('organization_id', organizationId).in('status', ['initializing','pending','succeeded','refund_pending']).limit(1);
-    if (pending?.length) return json({ error: 'A billing verification is already in progress for this workspace.' }, 409);
+      .in('organization_id', accountOrganizationIds).eq('purpose', 'subscription_payment')
+      .in('status', ['initializing','pending']).limit(1);
+    if (pending?.length) return json({ error: 'A subscription payment is already in progress for this Veyora account.' }, 409);
 
-    const reference = 'veyora-' + organizationId.slice(0, 8) + '-' + crypto.randomUUID();
+    const reference = 'veyora-pay-' + organizationId.slice(0, 8) + '-' + crypto.randomUUID();
+    const amount = Number(plan.amount_minor_units);
     const { error: transactionError } = await serviceClient.from('billing_transactions').insert({
       organization_id: organizationId,
       plan_id: plan.id,
       reference,
-      purpose: 'trial_card_verification',
+      purpose: 'subscription_payment',
       amount_minor_units: amount,
-      currency: 'NGN',
+      currency: plan.currency,
       status: 'initializing',
-      metadata: { organization_id: organizationId, plan_id: plan.id, purpose: 'trial_card_verification' },
+      metadata: { organization_id: organizationId, plan_id: plan.id, purpose: 'subscription_payment', billing_interval: plan.billing_interval },
     });
-    if (transactionError) return json({ error: 'Could not create the billing verification record.' }, 500);
-
-    const { error: subscriptionError } = await serviceClient.from('organization_subscriptions').upsert({
-      organization_id: organizationId,
-      plan_id: plan.id,
-      status: 'trial_pending',
-      provider: 'paystack',
-      provider_plan_code: plan.provider_plan_code,
-    }, { onConflict: 'organization_id' });
-    if (subscriptionError) return json({ error: 'Could not prepare the trial subscription record.' }, 500);
+    if (transactionError) return json({ error: 'Could not create the subscription payment record.' }, 500);
 
     try {
       const checkout = await paystackRequest('/transaction/initialize', paystackSecret, 'POST', {
         email: authData.user.email,
         amount: String(amount),
-        currency: 'NGN',
+        currency: plan.currency,
         reference,
         callback_url: callbackUrl,
-        metadata: { organization_id: organizationId, plan_id: plan.id, purpose: 'trial_card_verification' },
+        metadata: { organization_id: organizationId, plan_id: plan.id, purpose: 'subscription_payment' },
       });
       const { error: pendingError } = await serviceClient.from('billing_transactions')
         .update({ status: 'pending' }).eq('reference', reference);
       if (pendingError) return json({ error: 'Checkout was initialized but its status could not be saved. Do not retry; contact support with reference ' + reference }, 500);
-      return json({
-        authorizationUrl: checkout.authorization_url,
-        reference,
-        verificationAmountMinorUnits: amount,
-        disclosure,
-        trialDays: 14,
-      });
+      return json({ authorizationUrl: checkout.authorization_url, reference, amountMinorUnits: amount, currency: plan.currency });
     } catch (error) {
       await serviceClient.from('billing_transactions').update({ status: 'failed' }).eq('reference', reference);
-      return json({ error: error instanceof Error ? error.message : 'Could not initialize Paystack checkout.' }, 502);
-    }
-  }
-
-  if (action === 'verify-trial') {
-    const reference = typeof body.reference === 'string' ? body.reference : '';
-    if (!reference) return json({ error: 'A payment reference is required.' }, 400);
-    const { data: transaction, error: transactionError } = await serviceClient.from('billing_transactions')
-      .select('reference,status,amount_minor_units,currency').eq('reference', reference)
-      .eq('organization_id', organizationId).maybeSingle();
-    if (transactionError || !transaction) return json({ error: 'Billing reference was not found for this workspace.' }, 404);
-    try {
-      const verified = await paystackRequest('/transaction/verify/' + encodeURIComponent(reference), paystackSecret);
-      return json({
-        reference,
-        providerStatus: verified.status,
-        amountMatches: Number(verified.amount) === Number(transaction.amount_minor_units),
-        currencyMatches: verified.currency === transaction.currency,
-        billingStatus: transaction.status,
-        note: 'The verified webhook remains the source of truth for starting the 14-day trial.',
-      });
-    } catch (error) {
-      return json({ error: error instanceof Error ? error.message : 'Could not verify this transaction.' }, 502);
+      return json({ error: error instanceof Error ? error.message : 'Could not initialize Paystack payment.' }, 502);
     }
   }
 
   if (action === 'manage-link') {
-    const { data: subscription, error: subscriptionError } = await serviceClient.from('organization_subscriptions')
-      .select('provider_subscription_code').eq('organization_id', organizationId).maybeSingle();
+    const { data: subscriptions, error: subscriptionError } = await serviceClient.from('organization_subscriptions')
+      .select('provider_subscription_code,updated_at').in('organization_id', accountOrganizationIds)
+      .order('updated_at', { ascending: false });
+    const subscription = (subscriptions ?? []).find((row: { provider_subscription_code?: string | null }) => Boolean(row.provider_subscription_code));
     if (subscriptionError || !subscription?.provider_subscription_code) {
-      return json({ error: 'There is no active Paystack subscription to manage yet.' }, 404);
+      return json({ error: 'There is no Paystack subscription to manage for this Veyora account yet.' }, 404);
     }
     try {
       const result = await paystackRequest('/subscription/' + encodeURIComponent(subscription.provider_subscription_code) + '/manage/link', paystackSecret);

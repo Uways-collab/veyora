@@ -14,7 +14,7 @@ export const BUSINESS_TYPE_OPTIONS: { value: BusinessType; label: string; descri
   {
     value: 'distribution',
     label: 'Distribution & Logistics',
-    description: 'Multi-warehouse stock allocation and supplier procurement',
+    description: 'Warehouse stock allocation, bulk purchasing and supplier management',
   },
   {
     value: 'services',
