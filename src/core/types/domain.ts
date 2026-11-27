@@ -13,7 +13,7 @@ export type ModuleId =
   | 'settings'
   | 'dealer_stock' | 'dealer_leads' | 'dealer_test_drives' | 'dealer_deals' | 'dealer_workshop' | 'dealer_reports'
   | 'hotel_reservations' | 'hotel_rooms' | 'hotel_housekeeping' | 'hotel_reports'
-  | 'restaurant_operations';
+  | 'restaurant_operations' | 'restaurant_pos';
 
 export type ModuleGroup =
   | 'overview'
