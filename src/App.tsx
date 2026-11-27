@@ -13,7 +13,6 @@ import { DashboardView } from './modules/dashboard/DashboardView';
 import { ExpensesView } from './modules/expenses/ExpensesView';
 import { FinanceView } from './modules/finance/FinanceView';
 import { InventoryView } from './modules/inventory/InventoryView';
-import { IndustryWorkspacesView } from './modules/industry/IndustryWorkspacesView';
 import { BusinessOnboardingScreen } from './modules/onboarding/BusinessOnboardingScreen';
 import { BillingView } from './modules/billing/BillingView';
 import { PurchasesView } from './modules/purchases/PurchasesView';
@@ -25,6 +24,9 @@ import { getSupabaseClient } from './core/supabase/client';
 import { SuppliersView } from './modules/suppliers/SuppliersView';
 import { PWAInstallPrompt } from './components/shared/PWAInstallPrompt';
 import { LockedIndustryWorkspaceView } from './modules/industry/LockedIndustryWorkspaceView';
+import { DealershipWorkspaceView } from './modules/industry/DealershipWorkspaceView';
+import { HotelWorkspaceView } from './modules/industry/HotelWorkspaceView';
+import { RealEstateWorkspaceView, RestaurantWorkspaceView, LogisticsWorkspaceView, ManufacturingWorkspaceView } from './modules/industry/SpecialistIndustryDashboards';
 
 const VALID_MODULE_IDS = new Set<ModuleId>(MODULE_REGISTRY.map((m) => m.id));
 
@@ -283,9 +285,15 @@ function ProtectedWorkspaceRouter() {
   const renderModule = () => {
     switch (activeModule) {
       case 'dashboard':
-        return activeOrganisation && ['car_dealership', 'hotel', 'restaurant', 'real_estate', 'logistics', 'manufacturing'].includes(activeOrganisation.business_type ?? '')
-          ? <IndustryWorkspacesView />
-          : <DashboardView onSelectModule={handleSelectModule} />;
+        switch (activeOrganisation?.business_type) {
+          case 'car_dealership': return <DealershipWorkspaceView />;
+          case 'hotel': return <HotelWorkspaceView />;
+          case 'real_estate': return <RealEstateWorkspaceView />;
+          case 'restaurant': return <RestaurantWorkspaceView />;
+          case 'logistics': return <LogisticsWorkspaceView />;
+          case 'manufacturing': return <ManufacturingWorkspaceView />;
+          default: return <DashboardView onSelectModule={handleSelectModule} />;
+        }
       case 'inventory':
         return <InventoryView onSelectModule={handleSelectModule} />;
       case 'sales':
@@ -304,8 +312,6 @@ function ProtectedWorkspaceRouter() {
         return <ReportsView canExport={true} />;
       case 'ai_assistant':
         return <AssistantView />;
-      case 'industry':
-        return <IndustryWorkspacesView />;
       case 'billing':
         return <BillingView />;
       case 'settings':
