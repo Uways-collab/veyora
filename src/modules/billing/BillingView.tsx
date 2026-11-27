@@ -122,7 +122,7 @@ export function BillingView() {
   const paymentNeedsAttention = trialExpired || paidExpired || subscription?.status === 'past_due' || subscription?.status === 'expired' || (subscription?.status === 'cancelled' && !paidActive);
   const planFeatureLabels = [
     ['inventory','Inventory'],['sales','Sales & POS'],['purchases','Purchases'],
-    ['finance','Finance'],['industry','Business-specific workspace'],['ai_assistant','AI assistant'],
+    ['finance','Finance'],['industry','Specialist business workflows'],['ai_assistant','AI assistant'],
     ['advanced_reports','Advanced reports'],['multi_location','Multiple locations'],['advanced_analytics','Advanced analytics'],['api_exports','Data exports'],
   ] as const;
   const featureSummary = (plan: Plan) => planFeatureLabels.filter(([key]) => plan.features?.[key] === true).map(([,label]) => label);
