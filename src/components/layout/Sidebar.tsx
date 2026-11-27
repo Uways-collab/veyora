@@ -1,11 +1,9 @@
-import { LogOut, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import {
   MODULE_GROUP_LABELS,
   MODULE_REGISTRY,
 } from '../../core/modules/registry';
 import type { ModuleGroup, ModuleId } from '../../core/types/domain';
-import { useAuth } from '../../core/auth/AuthContext';
-import { formatCurrencyDisplay } from '../../core/constants/businessOptions';
 import { ModuleIcon } from '../shared/ModuleIcon';
 
 interface SidebarProps {
@@ -28,8 +26,6 @@ export function Sidebar({
   mobileOpen,
   onCloseMobile,
 }: SidebarProps) {
-  const { status, activeOrganisation, activeRole, user, profile, signOut } = useAuth();
-
   const handleSelect = (moduleId: ModuleId) => {
     onSelectModule(moduleId);
     onCloseMobile();
@@ -132,52 +128,7 @@ export function Sidebar({
         })}
       </nav>
 
-      {/* Workspace / Organisation Footer */}
-      <div className="border-t border-slate-200 p-4 shrink-0 space-y-3">
-        {status === 'authenticated' && activeOrganisation ? (
-          <>
-            <div className="space-y-1">
-              <div className="text-xs font-semibold text-slate-900 truncate">
-                {activeOrganisation.name}
-              </div>
-              <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                <span className="capitalize">{activeRole ?? 'staff'}</span>
-                <span aria-hidden="true">·</span>
-                <span>{activeOrganisation.country}</span>
-                <span aria-hidden="true">·</span>
-                <span>{formatCurrencyDisplay(activeOrganisation.base_currency)}</span>
-              </div>
-            </div>
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-              <div className="text-[11px] text-slate-500 truncate min-w-0">
-                {profile?.full_name || user?.email}
-              </div>
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                title="Sign out"
-                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:underline"
-              >
-                <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Sign Out</span>
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-slate-700">
-              {status === 'unconfigured' ? 'Backend Setup Pending' : 'Not Signed In'}
-            </div>
-            <button
-              type="button"
-              onClick={() => handleSelect('settings')}
-              className="text-xs font-medium text-blue-700 hover:text-blue-800 whitespace-nowrap"
-            >
-              {status === 'unconfigured' ? 'Configure Supabase' : 'Sign in to workspace'}
-            </button>
-          </div>
-        )}
-      </div>
+
     </div>
   );
 
