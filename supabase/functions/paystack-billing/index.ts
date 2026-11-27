@@ -85,10 +85,6 @@ Deno.serve(async (req: Request) => {
   const paystackReady = Boolean(paystackSecret?.startsWith('sk_test_') || (paystackSecret?.startsWith('sk_live_') && liveBillingAllowed));
 
   if (action === 'billing-config') {
-    const amount = Number(Deno.env.get('PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS') ?? 0);
-    const disclosure = Deno.env.get('PAYSTACK_CARD_VERIFICATION_DISCLOSURE') ?? '';
-    let appBaseUrlReady = false;
-    try { const appBase = new URL(Deno.env.get('APP_BASE_URL') ?? ''); appBaseUrlReady = appBase.protocol === 'https:'; } catch { appBaseUrlReady = false; }
     return json({
       trialDays: 7,
       currency: 'NGN',
