@@ -130,6 +130,7 @@ export function RestaurantPOSView() {
     else {
       setNotice('Payment recorded and posted through Veyora Finance.');
       setPaymentReference('');
+      setPaymentAmount('');
       await loadReceipt(activeOrder);
       await refresh();
     }
