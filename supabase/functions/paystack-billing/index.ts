@@ -171,11 +171,23 @@ Deno.serve(async (req: Request) => {
     if (!authData.user.email) return json({ error: 'Your Veyora account needs an email address before payment can start.' }, 400);
     const planId = typeof body.plan_id === 'string' ? body.plan_id : '';
     const { data: plan, error: planError } = await serviceClient.from('subscription_plans')
-      .select('id,code,name,billing_interval,currency,amount_minor_units,is_active')
+      .select('id,code,name,billing_interval,currency,amount_minor_units,provider_plan_code,is_active')
       .eq('id', planId).eq('is_active', true).maybeSingle();
     if (planError || !plan) return json({ error: 'Choose an active Veyora subscription plan.' }, 400);
     if (!Number.isSafeInteger(Number(plan.amount_minor_units)) || Number(plan.amount_minor_units) <= 0) {
       return json({ error: 'The selected plan has an invalid payment amount.' }, 503);
+    }
+    if (!plan.provider_plan_code) return json({ error: 'Sync Veyora plans with Paystack before accepting subscription payments.' }, 409);
+
+    const { data: currentSubscription, error: currentSubscriptionError } = await serviceClient.from('organization_subscriptions')
+      .select('status,current_period_ends_at,provider_subscription_code').eq('organization_id', organizationId).maybeSingle();
+    if (currentSubscriptionError) return json({ error: 'Could not verify the current subscription status.' }, 500);
+    if (currentSubscription?.provider_subscription_code) {
+      return json({ error: 'This workspace already has a Paystack subscription. Use the payment-management link to update or retry its payment.' }, 409);
+    }
+    if (currentSubscription?.status === 'active' &&
+        (!currentSubscription.current_period_ends_at || new Date(currentSubscription.current_period_ends_at).getTime() > Date.now())) {
+      return json({ error: 'This workspace already has an active paid subscription.' }, 409);
     }
 
     const appBaseUrl = Deno.env.get('APP_BASE_URL') ?? '';
