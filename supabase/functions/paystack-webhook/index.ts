@@ -269,8 +269,12 @@ Deno.serve(async (req: Request) => {
 
           const periodStart = new Date();
           const periodEnd = new Date(periodStart);
+          const startDay = periodEnd.getUTCDate();
+          periodEnd.setUTCDate(1);
           if (plan.billing_interval === 'yearly') periodEnd.setUTCFullYear(periodEnd.getUTCFullYear() + 1);
           else periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1);
+          const finalDay = new Date(Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth() + 1, 0)).getUTCDate();
+          periodEnd.setUTCDate(Math.min(startDay, finalDay));
 
           const customerCode = String(verified.customer?.customer_code ?? '');
           const authorizationCode = String(verified.authorization?.authorization_code ?? '');
