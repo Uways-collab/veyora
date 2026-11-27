@@ -15,17 +15,17 @@ const GROUP_ORDER: ModuleGroup[] = ['overview', 'operations', 'financial', 'admi
 
 const SPECIALIST_NAV: Record<string, { modules: ModuleId[]; dashboardLabel: string; operationsLabel: string }> = {
   car_dealership: {
-    modules: ['dashboard', 'expenses', 'finance', 'reports', 'ai_assistant', 'billing', 'settings'],
+    modules: ['dashboard', 'dealer_stock', 'dealer_leads', 'dealer_test_drives', 'dealer_deals', 'dealer_workshop', 'dealer_reports', 'expenses', 'finance', 'ai_assistant', 'billing', 'settings'],
     dashboardLabel: 'Dealership Dashboard',
     operationsLabel: 'Dealership',
   },
   restaurant: {
-    modules: ['dashboard', 'expenses', 'finance', 'reports', 'ai_assistant', 'billing', 'settings'],
+    modules: ['dashboard', 'restaurant_operations', 'expenses', 'finance', 'reports', 'ai_assistant', 'billing', 'settings'],
     dashboardLabel: 'Restaurant Dashboard',
     operationsLabel: 'Restaurant',
   },
   hotel: {
-    modules: ['dashboard', 'expenses', 'finance', 'reports', 'ai_assistant', 'billing', 'settings'],
+    modules: ['dashboard', 'hotel_reservations', 'hotel_rooms', 'hotel_housekeeping', 'hotel_reports', 'expenses', 'finance', 'ai_assistant', 'billing', 'settings'],
     dashboardLabel: 'Hotel Dashboard',
     operationsLabel: 'Hotel Operations',
   },
