@@ -78,7 +78,7 @@ function ProtectedWorkspaceRouter() {
       }
       setSubscriptionLoading(true);
       const { data: sub, error: subError } = await db.from('organization_subscriptions')
-        .select('status,trial_ends_at,current_period_ends_at,card_verified_at,cancel_at_period_end,plan_id')
+        .select('status,trial_ends_at,current_period_ends_at,cancel_at_period_end,plan_id')
         .eq('organization_id', activeOrganisation.id).maybeSingle();
       let plan: any = null;
       if (!subError && sub?.plan_id) {
@@ -87,7 +87,7 @@ function ProtectedWorkspaceRouter() {
         plan = data;
       }
       const now = Date.now();
-      const trialValid = sub?.status === 'trialing' && Boolean(sub.card_verified_at) &&
+      const trialValid = sub?.status === 'trialing' &&
         Boolean(sub.trial_ends_at) && new Date(sub.trial_ends_at).getTime() > now;
       const paidValid = sub?.status === 'active' &&
         (!sub.current_period_ends_at || new Date(sub.current_period_ends_at).getTime() > now);
