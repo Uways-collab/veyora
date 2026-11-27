@@ -26,6 +26,15 @@ type AdminOverview = {
 };
 
 const numberFormat = new Intl.NumberFormat('en');
+function formatRevenue(amountMinorUnits: number, currency: string) {
+  const amount = Number(amountMinorUnits) / 100;
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+  } catch {
+    return `${currency} ${numberFormat.format(amount)}`;
+  }
+}
+
 const dateFormat = (value: string | null) => value
   ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
   : 'Never';
@@ -169,7 +178,7 @@ export function PlatformAdminView({ onOpenBusiness }: { onOpenBusiness: () => vo
               <div className="mt-4 space-y-3">
                 {overview.revenue_by_currency.map((item) => <div key={item.currency} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
                   <div><p className="text-xs font-semibold text-slate-800">{item.currency}</p><p className="mt-1 text-[11px] text-slate-500">{numberFormat.format(item.transactions)} verified payments</p></div>
-                  <p className="text-sm font-semibold text-slate-950">{new Intl.NumberFormat(undefined, { style: 'currency', currency: item.currency }).format(Number(item.total_minor_units) / 100)}</p>
+                  <p className="text-sm font-semibold text-slate-950">{formatRevenue(item.total_minor_units, item.currency)}</p>
                 </div>)}
                 {!overview.revenue_by_currency.length && <p className="text-xs text-slate-500">No successful subscription payments recorded yet.</p>}
               </div>
