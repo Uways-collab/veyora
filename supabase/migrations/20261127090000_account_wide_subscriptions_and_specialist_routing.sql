@@ -306,9 +306,11 @@ begin
     insert into public.organization_subscriptions(
       organization_id,plan_id,status,provider,trial_starts_at,trial_ends_at,card_verified_at
     )
-    values(
-      v_organization_id,v_plan_id,'trialing','paystack',v_started_at,v_started_at + interval '7 days',null
-    );
+    select
+      m.organization_id,v_plan_id,'trialing','paystack',v_started_at,v_started_at + interval '7 days',null
+    from public.organization_memberships m
+    where m.user_id = v_user_id and m.role = 'owner'
+    on conflict (organization_id) do nothing;
   end if;
 
   insert into public.finance_accounts(organization_id,account_name,account_type,currency_code,ledger_account_id,created_by)
