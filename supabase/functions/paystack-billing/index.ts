@@ -54,7 +54,7 @@ Deno.serve(async (req: Request) => {
   const serviceKey = getSecretKey();
   if (!supabaseUrl || !anonKey || !serviceKey) return json({ error: 'Billing server configuration is incomplete.' }, 503);
 
-  let body: { action?: unknown; organization_id?: unknown; plan_id?: unknown; reference?: unknown; consent?: unknown };
+  let body: { action?: unknown; organization_id?: unknown; plan_id?: unknown };
   try { body = await req.json(); } catch { return json({ error: 'Request body must be valid JSON.' }, 400); }
 
   const action = typeof body.action === 'string' ? body.action : '';
