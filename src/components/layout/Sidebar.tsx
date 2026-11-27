@@ -20,7 +20,7 @@ const SPECIALIST_NAV: Record<string, { modules: ModuleId[]; dashboardLabel: stri
     operationsLabel: 'Dealership',
   },
   restaurant: {
-    modules: ['dashboard', 'restaurant_operations', 'expenses', 'finance', 'reports', 'ai_assistant', 'billing', 'settings'],
+    modules: ['dashboard', 'restaurant_pos', 'restaurant_operations', 'expenses', 'finance', 'reports', 'ai_assistant', 'billing', 'settings'],
     dashboardLabel: 'Restaurant Dashboard',
     operationsLabel: 'Restaurant',
   },
