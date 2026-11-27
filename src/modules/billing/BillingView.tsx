@@ -104,7 +104,8 @@ export function BillingView() {
   const trialExpired = Boolean(subscription?.status === 'trialing' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() <= Date.now());
   const trialActive = Boolean(subscription?.status === 'trialing' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() > Date.now());
   const paidActive = Boolean(subscription?.status === 'active' && (!subscription.current_period_ends_at || new Date(subscription.current_period_ends_at).getTime() > Date.now()));
-  const paymentNeedsAttention = trialExpired || subscription?.status === 'past_due' || subscription?.status === 'expired';
+  const paidExpired = Boolean(subscription?.status === 'active' && subscription.current_period_ends_at && new Date(subscription.current_period_ends_at).getTime() <= Date.now());
+  const paymentNeedsAttention = trialExpired || paidExpired || subscription?.status === 'past_due' || subscription?.status === 'expired' || (subscription?.status === 'cancelled' && !paidActive);
   const planFeatureLabels = [
     ['inventory','Inventory'],['sales','Sales & POS'],['purchases','Purchases'],
     ['finance','Finance'],['industry','Business-specific workspace'],['ai_assistant','AI assistant'],
