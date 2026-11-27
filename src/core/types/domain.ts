@@ -10,7 +10,10 @@ export type ModuleId =
   | 'reports'
   | 'ai_assistant'
   | 'billing'
-  | 'settings';
+  | 'settings'
+  | 'dealer_stock' | 'dealer_leads' | 'dealer_test_drives' | 'dealer_deals' | 'dealer_workshop' | 'dealer_reports'
+  | 'hotel_reservations' | 'hotel_rooms' | 'hotel_housekeeping' | 'hotel_reports'
+  | 'restaurant_operations';
 
 export type ModuleGroup =
   | 'overview'
