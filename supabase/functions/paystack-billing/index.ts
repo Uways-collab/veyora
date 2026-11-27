@@ -192,7 +192,7 @@ Deno.serve(async (req: Request) => {
     if (!plan.provider_plan_code) return json({ error: 'Sync Veyora plans with Paystack before accepting subscription payments.' }, 409);
 
     const { data: accountSubscriptions, error: currentSubscriptionError } = await serviceClient.from('organization_subscriptions')
-      .select('organization_id,status,current_period_ends_at,trial_ends_at,provider_subscription_code,updated_at')
+      .select('organization_id,status,current_period_ends_at,trial_ends_at,cancel_at_period_end,provider_subscription_code,updated_at')
       .in('organization_id', accountOrganizationIds).order('updated_at', { ascending: false });
     if (currentSubscriptionError) return json({ error: 'Could not verify the Veyora account subscription status.' }, 500);
     const now = Date.now();
@@ -201,7 +201,8 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'This Veyora account already has a Paystack subscription. Use the payment-management link instead of starting another subscription.' }, 409);
     }
     const activePaidSubscription = (accountSubscriptions ?? []).find((row: Record<string, unknown>) =>
-      row.status === 'active' && (!row.current_period_ends_at || new Date(String(row.current_period_ends_at)).getTime() > now));
+      (row.status === 'active' && (!row.current_period_ends_at || new Date(String(row.current_period_ends_at)).getTime() > now)) ||
+      (row.status === 'cancelled' && row.cancel_at_period_end === true && Boolean(row.current_period_ends_at) && new Date(String(row.current_period_ends_at)).getTime() > now));
     if (activePaidSubscription) {
       return json({ error: 'Your Veyora account already has an active paid subscription. It covers all businesses you own.' }, 409);
     }
