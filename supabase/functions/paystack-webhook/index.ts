@@ -360,11 +360,11 @@ Deno.serve(async (req: Request) => {
       let transaction: Record<string, any> | null = null;
       if (reference) {
         const lookup = await serviceClient.from('billing_transactions')
-          .select('id,organization_id,provider_subscription_code').eq('reference', reference).maybeSingle();
+          .select('id,organization_id,provider_subscription_code,purpose').eq('reference', reference).maybeSingle();
         transaction = lookup.data;
       } else if (transactionId !== null) {
         const lookup = await serviceClient.from('billing_transactions')
-          .select('id,organization_id,provider_subscription_code').eq('provider_transaction_id', transactionId).maybeSingle();
+          .select('id,organization_id,provider_subscription_code,purpose').eq('provider_transaction_id', transactionId).maybeSingle();
         transaction = lookup.data;
       }
       if (transaction) {
@@ -373,7 +373,27 @@ Deno.serve(async (req: Request) => {
           refunded_at: eventType === 'refund.processed' ? new Date().toISOString() : null,
           provider_refund_id: data.id ? Number(data.id) : null,
         }).eq('id', transaction.id);
-        if (eventType === 'refund.processed') {
+        if (transaction.purpose === 'subscription_payment') {
+          const { data: accountOwnerRows } = await serviceClient.from('organization_memberships')
+            .select('user_id').eq('organization_id', transaction.organization_id)
+            .eq('role', 'owner').order('created_at', { ascending: true }).limit(1);
+          const accountOwnerId = accountOwnerRows?.[0]?.user_id;
+          if (accountOwnerId) {
+            const { data: accountBusinessRows } = await serviceClient.from('organization_memberships')
+              .select('organization_id').eq('user_id', accountOwnerId).eq('role', 'owner');
+            const accountOrganizationIds = Array.from(new Set([
+              transaction.organization_id,
+              ...(accountBusinessRows ?? []).map((row: { organization_id: string }) => row.organization_id),
+            ]));
+            if (eventType === 'refund.processed') {
+              await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
+                .in('organization_id', accountOrganizationIds);
+            } else if (!transaction.provider_subscription_code) {
+              await serviceClient.from('organization_subscriptions').update({ status: 'expired' })
+                .in('organization_id', accountOrganizationIds);
+            }
+          }
+        } else if (eventType === 'refund.processed') {
           await serviceClient.from('organization_subscriptions').update({
             status: transaction.provider_subscription_code ? 'trialing' : 'expired',
           }).eq('organization_id', transaction.organization_id);
