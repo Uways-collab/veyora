@@ -104,7 +104,7 @@ export function BillingView() {
   const trialExpired = Boolean(subscription?.status === 'trialing' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() <= Date.now());
   const trialActive = Boolean(subscription?.status === 'trialing' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() > Date.now());
   const paidActive = Boolean(subscription?.status === 'active' && (!subscription.current_period_ends_at || new Date(subscription.current_period_ends_at).getTime() > Date.now()));
-  const paymentNeedsAttention = trialExpired || subscription?.status === 'past_due' || subscription?.status === 'expired' || (!subscription && false);
+  const paymentNeedsAttention = trialExpired || subscription?.status === 'past_due' || subscription?.status === 'expired';
   const planFeatureLabels = [
     ['inventory','Inventory'],['sales','Sales & POS'],['purchases','Purchases'],
     ['finance','Finance'],['industry','Business-specific workspace'],['ai_assistant','AI assistant'],
@@ -117,7 +117,7 @@ export function BillingView() {
     <p className="mt-2 text-xs text-slate-500">{plan.included_users ?? '—'} users · {plan.included_locations ?? '—'} locations</p>
     <p className="mt-1 text-[11px] text-slate-500">{plan.ai_invoice_scans} invoice scans · {plan.ai_assistant_requests} AI assistant requests / month</p>
     <p className="mt-3 text-[11px] leading-5 text-slate-600">{featureSummary(plan).join(' · ')}</p>
-    <button type="button" onClick={() => void payForPlan(plan.id)} disabled={busy || !config?.paystackConfigured || (!config?.liveBillingEnabled && config?.paystackMode === 'live')} className="mt-4 w-full rounded-lg bg-blue-700 px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50">{busy ? 'Please wait…' : paidActive ? 'Change plan & pay' : 'Pay & activate'}</button>
+    <button type="button" onClick={() => void payForPlan(plan.id)} disabled={busy || !config?.paystackConfigured || !plan.provider_plan_code || (!config?.liveBillingEnabled && config?.paystackMode === 'live') || paidActive} className="mt-4 w-full rounded-lg bg-blue-700 px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50">{busy ? 'Please wait…' : paidActive ? 'Plan active' : !plan.provider_plan_code ? 'Sync plans to enable payment' : 'Pay & activate'}</button>
   </article>;
 
   return <div className="mx-auto max-w-6xl space-y-6">
