@@ -1,29 +1,27 @@
-# Paystack billing integration
+# Paystack billing and seven-day free trial
 
-## What the billing release provides
+## Trial experience
 
-- Owner-only plan synchronization to Paystack's plan API.
-- 14-day trial checkout with card verification.
-- A server-side webhook that verifies Paystack's modern `Paystack-Signature` header (timestamped HMAC-SHA512 using the `whsec_` signing secret), with compatibility for the deprecated `x-paystack-signature` header while Paystack still sends it.
-- Server-side transaction verification before creating a recurring subscription.
-- A subscription is created with its first debit date 14 days after card verification.
-- The card-verification amount is refunded automatically. Veyora does not mark the trial active until the refund is confirmed by Paystack's `refund.processed` webhook.
-- Idempotent webhook event storage, retry handling and subscription lifecycle updates.
-- Billing transaction history and a Paystack-hosted subscription management link.
+- Every newly created business workspace starts with a seven-day free trial automatically.
+- The trial does not require a credit card, card verification, a refundable charge, or payment details.
+- The trial uses the Premium feature entitlement so customers can evaluate the complete Veyora workspace.
+- Existing workspaces without a subscription can start the same trial from Subscription & Billing. A workspace with an existing trial or subscription record cannot restart the trial.
+- Trial expiry is enforced in the application and at the Supabase database boundary. Once `trial_ends_at` is reached, business reads and writes are blocked by the existing subscription RLS policies and write guards.
+- Only the workspace Owner can manage billing. After expiry, the Owner can choose a paid plan; other members remain locked until Paystack confirms payment.
+
+The database migration creates the trial subscription in the same transaction as workspace creation. It also removes the former card-verification requirement from the subscription access helpers. The browser never decides whether a payment succeeded.
+
+## Paid subscription checkout
+
+- The Owner chooses a monthly or annual plan and pays the full plan amount through Paystack Checkout.
+- Checkout is initialized by the JWT-protected `paystack-billing` Edge Function.
+- The `paystack-webhook` Edge Function verifies the signed webhook and then verifies the transaction directly with Paystack, including amount, currency, workspace and plan metadata.
+- Workspace access is restored only after the signed webhook confirms a successful payment and the subscription record is activated.
+- When Paystack returns a reusable authorization and the corresponding Paystack plan is synced, Veyora schedules recurring renewal for the end of the paid period. If recurring setup is unavailable after a successful charge, the paid period remains active and the Owner can renew manually.
 
 ## Safety defaults
 
-No Paystack charge can start until all of the following are explicitly configured:
-- `PAYSTACK_SECRET_KEY` with a Paystack test key for testing.
-- `PAYSTACK_WEBHOOK_SECRET` (the modern `whsec_` signing secret) or, temporarily, the legacy signature header verified with the Paystack secret key.
-- `APP_BASE_URL` set to the HTTPS Veyora application origin.
-- `PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS` set to the approved amount in kobo. The code has no default verification charge.
-- `PAYSTACK_CARD_VERIFICATION_DISCLOSURE` set to the exact customer-facing explanation of the temporary charge and refund.
-- A successful Paystack plan sync.
-
-The NGN transaction minimum documented by Paystack is ₦50 (5,000 kobo). Veyora refuses a lower configured verification amount. The Owner must still explicitly approve the amount and disclosure; no amount is preselected in code.
-
-Live keys are additionally blocked unless `PAYSTACK_ENABLE_LIVE_BILLING=true` is deliberately configured after test-mode checkout, refund and webhook verification. Do not enable live billing before those tests pass.
+Live billing remains disabled unless `PAYSTACK_ENABLE_LIVE_BILLING=true` is deliberately configured after test-mode checkout and webhook verification.
 
 ## Supabase Edge Function secrets
 
@@ -34,31 +32,30 @@ Set these in Supabase Dashboard → Edge Functions → Secrets. Never place secr
 | `PAYSTACK_SECRET_KEY` | Paystack API calls; use `sk_test_...` during testing |
 | `PAYSTACK_WEBHOOK_SECRET` | Modern Paystack webhook signature secret (`whsec_...`) |
 | `APP_BASE_URL` | HTTPS Veyora app URL used for checkout return |
-| `PAYSTACK_CARD_VERIFICATION_AMOUNT_MINOR_UNITS` | Explicitly approved verification amount in kobo |
-| `PAYSTACK_CARD_VERIFICATION_DISCLOSURE` | Exact text displayed before checkout |
-| `PAYSTACK_ENABLE_LIVE_BILLING` | Must remain unset/false until production is explicitly approved |
+| `PAYSTACK_ENABLE_LIVE_BILLING` | Must remain unset/false until production billing is explicitly approved |
 
 The Supabase server-side secret/service-role key is read only by Edge Functions for trusted billing records. It is never returned to the browser.
 
 ## Paystack Dashboard
 
-After deploying `paystack-webhook`, register this URL in Paystack Dashboard → Developers → API configuration:
+Register this URL in Paystack Dashboard → Developers → API configuration:
 
 `https://xxeqgrrlainmwdcnpqvs.supabase.co/functions/v1/paystack-webhook`
 
-Use the test-mode webhook signing secret first. Confirm that Paystack sends `Paystack-Signature`; until then, the handler also supports `x-paystack-signature`.
+Use the test-mode webhook signing secret first. The handler verifies Paystack's modern timestamped `Paystack-Signature` header and retains compatibility with the legacy signature header.
 
 ## Required test sequence before live mode
 
-1. Set test-mode Paystack credentials and a test webhook signing secret.
-2. Configure the approved test card-verification amount and disclosure.
-3. Sync the six Starter/Standard/Premium monthly/yearly plans.
-4. Start one trial in a dedicated test workspace.
-5. Confirm the verification charge succeeds, the reusable authorization is returned, the recurring subscription has a first debit date 14 days ahead, and the verification charge is refunded.
-6. Confirm the trial remains pending until `refund.processed`, then changes to `trialing`.
-7. Test invalid signatures, duplicate webhook delivery, failed charges, failed refunds, subscription cancellation and invoice payment failure.
-8. Only after all tests pass should the Owner explicitly enable live billing.
+1. Configure Paystack test credentials and the webhook signing secret.
+2. Apply the no-card seven-day trial migration to a non-production test database.
+3. Create a test business workspace and confirm the Premium trial subscription is created with a start time and an end time exactly seven days later.
+4. Confirm that no card-verification checkout or charge is initiated during signup or trial activation.
+5. Test access before expiry and confirm business RLS reads and writes are allowed.
+6. Test at and after expiry and confirm business data access is denied while the Owner can still reach Subscription & Billing.
+7. Sync Paystack plans, complete a paid monthly checkout, and confirm the workspace is restored only after the signed webhook and server-side transaction verification.
+8. Test annual checkout, duplicate webhook delivery, invalid signatures, failed payments, subscription renewal and cancellation.
+9. Only after all tests pass should the Owner explicitly enable live billing.
 
 ## Important
 
-A successful browser callback is not proof of payment. Veyora verifies the transaction server-side and uses signed Paystack webhooks as the source of truth. No card authorization code is stored in Veyora's database. A failed reusable-card check or subscription setup triggers a refund attempt instead of activating a trial.
+A successful browser callback is not proof of payment. Veyora uses signed Paystack webhooks and server-side transaction verification as the source of truth. No card details or authorization codes are stored in Veyora's database.
