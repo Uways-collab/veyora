@@ -58,7 +58,7 @@ export function TopBar({
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [deletingWorkspace, setDeletingWorkspace] = useState(false);
-  const [workspaceLimit, setWorkspaceLimit] = useState<number | null>(null);
+  const [workspaceUsage, setWorkspaceUsage] = useState<{ active: number; limit: number } | null>(null);
 
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const notifRef = useRef<HTMLDivElement | null>(null);
@@ -94,17 +94,18 @@ export function TopBar({
 
   useEffect(() => {
     let cancelled = false;
-    const loadWorkspaceLimit = async () => {
+    const loadWorkspaceUsage = async () => {
       const db = getSupabaseClient() as any;
-      if (!db || !activeOrganisation) { setWorkspaceLimit(null); return; }
-      const { data: subscription } = await db.from('organization_subscriptions').select('plan_id').eq('organization_id', activeOrganisation.id).maybeSingle();
-      if (!subscription?.plan_id) { if (!cancelled) setWorkspaceLimit(1); return; }
-      const { data: plan } = await db.from('subscription_plans').select('included_workspaces').eq('id', subscription.plan_id).maybeSingle();
-      if (!cancelled) setWorkspaceLimit(Number.isFinite(Number(plan?.included_workspaces)) ? Number(plan.included_workspaces) : null);
+      if (!db || activeRole !== 'owner') { setWorkspaceUsage(null); return; }
+      const { data, error } = await db.rpc('get_account_workspace_usage');
+      if (cancelled) return;
+      const usage = Array.isArray(data) ? data[0] : data;
+      if (error || !usage) { setWorkspaceUsage(null); return; }
+      setWorkspaceUsage({ active: Number(usage.active_workspaces) || 0, limit: Number(usage.included_workspaces) || 1 });
     };
-    void loadWorkspaceLimit();
+    void loadWorkspaceUsage();
     return () => { cancelled = true; };
-  }, [activeOrganisation?.id]);
+  }, [activeOrganisation?.id, activeRole]);
 
   const handleDeleteWorkspace = async () => {
     if (!activeOrganisation || activeRole !== 'owner' || deletingWorkspace) return;
@@ -185,7 +186,7 @@ export function TopBar({
                     Business Workspaces
                   </span>
                   <span className="text-[11px] font-mono text-slate-500">
-                    {activeRole === 'owner' && workspaceLimit !== null ? `${memberships.length} / ${workspaceLimit} workspaces` : `${memberships.length} ${memberships.length === 1 ? 'workspace' : 'workspaces'}`}
+                    {activeRole === 'owner' && workspaceUsage ? `${workspaceUsage.active} / ${workspaceUsage.limit} workspaces` : `${memberships.length} ${memberships.length === 1 ? 'workspace' : 'workspaces'}`}
                   </span>
                 </div>
 
