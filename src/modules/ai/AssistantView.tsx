@@ -134,7 +134,7 @@ export function AssistantView() {
     try {
       let conversationId = activeConversationId;
       if (!conversationId) {
-        const { data: created, error: createError } = await supabase
+        const { data: created, error: createError } = await (supabase as any)
           .from('ai_conversations')
           .insert({
             organization_id: activeOrganisation.id,
