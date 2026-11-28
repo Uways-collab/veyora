@@ -213,3 +213,155 @@ revoke all on function private.organization_has_access(uuid,text) from public, a
 grant execute on function private.organization_has_access(uuid,text) to authenticated;
 revoke all on function public.reserve_ai_usage(uuid,uuid,text) from public, anon, authenticated;
 grant execute on function public.reserve_ai_usage(uuid,uuid,text) to service_role;
+
+
+-- Preserve normal tenant membership checks while exempting the verified platform
+-- owner from plan-based team-member and location caps.
+create or replace function private.organization_subscription_is_active(p_organization_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $function$
+  select
+    (
+      public.is_platform_admin()
+      and exists (
+        select 1
+        from public.organization_memberships m
+        join public.organizations o on o.id = m.organization_id
+        where m.organization_id = p_organization_id
+          and m.user_id = auth.uid()
+          and m.is_active = true
+          and o.deleted_at is null
+      )
+    )
+    or exists (
+      select 1
+      from public.organization_memberships target_membership
+      join lateral (
+        select owner_membership.user_id
+        from public.organization_memberships owner_membership
+        where owner_membership.organization_id = target_membership.organization_id
+          and owner_membership.role = 'owner'
+        order by owner_membership.created_at asc
+        limit 1
+      ) target_owner on true
+      join lateral (
+        select s.status, s.trial_ends_at, s.current_period_ends_at, s.cancel_at_period_end
+        from public.organization_memberships account_business
+        join public.organization_subscriptions s on s.organization_id = account_business.organization_id
+        where account_business.user_id = target_owner.user_id
+          and account_business.role = 'owner'
+        order by
+          case
+            when s.status = 'active' and (s.current_period_ends_at is null or s.current_period_ends_at > pg_catalog.now()) then 1
+            when s.status = 'cancelled' and s.cancel_at_period_end = true and s.current_period_ends_at > pg_catalog.now() then 2
+            when s.status = 'active' then 3
+            when s.status = 'cancelled' then 4
+            when s.status = 'past_due' then 5
+            when s.status = 'trial_pending' then 6
+            when s.status = 'trialing' then 7
+            when s.status = 'expired' then 8
+            else 9
+          end,
+          coalesce(s.current_period_ends_at, s.trial_ends_at, s.updated_at) desc
+        limit 1
+      ) account_subscription on true
+      where target_membership.organization_id = p_organization_id
+        and (
+          (account_subscription.status = 'trialing' and account_subscription.trial_ends_at is not null and account_subscription.trial_ends_at > pg_catalog.now())
+          or (account_subscription.status = 'active' and (account_subscription.current_period_ends_at is null or account_subscription.current_period_ends_at > pg_catalog.now()))
+          or (account_subscription.status = 'cancelled' and account_subscription.cancel_at_period_end = true and account_subscription.current_period_ends_at is not null and account_subscription.current_period_ends_at > pg_catalog.now())
+        )
+    );
+$function$;
+
+create or replace function private.enforce_membership_plan_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  member_count integer;
+  member_limit integer;
+begin
+  if public.is_platform_admin() and exists (
+    select 1 from public.organization_memberships m
+    where m.organization_id = new.organization_id
+      and m.user_id = auth.uid()
+      and m.is_active = true
+  ) then
+    return new;
+  end if;
+
+  select count(*) into member_count
+  from public.organization_memberships m
+  where m.organization_id = new.organization_id;
+
+  if member_count = 0 and new.role = 'owner' then return new; end if;
+
+  if not private.organization_subscription_is_active(new.organization_id) then
+    raise exception 'An active subscription is required before adding team members.'
+      using errcode = '42501';
+  end if;
+
+  select p.included_users into member_limit
+  from public.organization_subscriptions s
+  join public.subscription_plans p on p.id = s.plan_id
+  where s.organization_id = new.organization_id;
+
+  if member_limit is not null and member_count >= member_limit then
+    raise exception 'This plan includes % team members. Upgrade the plan to add more.', member_limit
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$function$;
+
+create or replace function private.enforce_location_plan_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  location_count integer;
+  location_limit integer;
+begin
+  if public.is_platform_admin() and exists (
+    select 1 from public.organization_memberships m
+    where m.organization_id = new.organization_id
+      and m.user_id = auth.uid()
+      and m.is_active = true
+  ) then
+    return new;
+  end if;
+
+  if not private.organization_subscription_is_active(new.organization_id) then
+    raise exception 'An active subscription is required before adding business locations.'
+      using errcode = '42501';
+  end if;
+
+  select p.included_locations into location_limit
+  from public.organization_subscriptions s
+  join public.subscription_plans p on p.id = s.plan_id
+  where s.organization_id = new.organization_id;
+
+  select count(*) into location_count
+  from public.inventory_locations l
+  where l.organization_id = new.organization_id;
+
+  if location_limit is not null and location_count >= location_limit then
+    raise exception 'This plan includes % location(s). Upgrade the plan to add more.', location_limit
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$function$;
+
+revoke all on function private.organization_subscription_is_active(uuid) from public, anon, authenticated;
+revoke all on function private.enforce_membership_plan_limit() from public, anon, authenticated;
+revoke all on function private.enforce_location_plan_limit() from public, anon, authenticated;
