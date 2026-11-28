@@ -328,7 +328,28 @@ function ProtectedWorkspaceRouter() {
   }
 
   // Gate 5: Authenticated & Organisation Member -> Protected Workspace Routes
+  const moduleFeature: Partial<Record<ModuleId, string>> = {
+    inventory: 'inventory', sales: 'sales', customers: 'customers',
+    purchases: 'purchases', suppliers: 'suppliers', expenses: 'expenses',
+    finance: 'finance', reports: 'reports', ai_assistant: 'ai_assistant',
+    dealer_stock: 'industry', dealer_leads: 'industry', dealer_test_drives: 'industry',
+    dealer_deals: 'industry', dealer_workshop: 'industry', dealer_reports: 'industry',
+    hotel_reservations: 'industry', hotel_rooms: 'industry', hotel_housekeeping: 'industry', hotel_reports: 'industry',
+    restaurant_operations: 'industry', restaurant_pos: 'industry',
+    real_estate_leases: 'industry', real_estate_reports: 'industry',
+    logistics_dispatch: 'industry', logistics_tracking: 'industry', logistics_reports: 'industry',
+    manufacturing_orders: 'industry', manufacturing_quality: 'industry', manufacturing_reports: 'industry',
+  };
+
   const renderModule = () => {
+    const requiredFeature = moduleFeature[activeModule];
+    if (requiredFeature && subscriptionAccess.features[requiredFeature] !== true) {
+      return <div className="mx-auto max-w-xl rounded-xl border border-amber-200 bg-amber-50 p-6">
+        <h2 className="text-lg font-semibold text-slate-900">Feature not included in this plan</h2>
+        <p className="mt-2 text-sm text-slate-700">Your current subscription does not include this feature. Contact the account Owner to review or upgrade the plan.</p>
+        {activeRole === 'owner' && <button type="button" onClick={() => handleSelectModule('billing')} className="mt-4 rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white">Review subscription</button>}
+      </div>;
+    }
     switch (activeModule) {
       case 'dashboard':
         switch (activeOrganisation?.business_type) {
@@ -352,6 +373,14 @@ function ProtectedWorkspaceRouter() {
       case 'hotel_reports': return <HotelWorkspaceView activeModule={activeModule} />;
       case 'restaurant_operations': return <RestaurantWorkspaceView activeModule={activeModule} />;
       case 'restaurant_pos': return <RestaurantPOSView />;
+      case 'real_estate_leases':
+      case 'real_estate_reports': return <RealEstateWorkspaceView />;
+      case 'logistics_dispatch':
+      case 'logistics_tracking':
+      case 'logistics_reports': return <LogisticsWorkspaceView />;
+      case 'manufacturing_orders':
+      case 'manufacturing_quality':
+      case 'manufacturing_reports': return <ManufacturingWorkspaceView />;
       case 'inventory':
         return <InventoryView onSelectModule={handleSelectModule} />;
       case 'sales':
@@ -367,7 +396,7 @@ function ProtectedWorkspaceRouter() {
       case 'finance':
         return <FinanceView />;
       case 'reports':
-        return <ReportsView canExport={true} />;
+        return <ReportsView canExport={subscriptionAccess.features.api_exports === true} />;
       case 'ai_assistant':
         return <AssistantView />;
       case 'billing':
