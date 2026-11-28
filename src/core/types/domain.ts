@@ -13,32 +13,19 @@ export type ModuleId =
   | 'settings'
   | 'dealer_stock' | 'dealer_leads' | 'dealer_test_drives' | 'dealer_deals' | 'dealer_workshop' | 'dealer_reports'
   | 'hotel_reservations' | 'hotel_rooms' | 'hotel_housekeeping' | 'hotel_reports'
-  | 'restaurant_operations' | 'restaurant_pos';
+  | 'restaurant_operations' | 'restaurant_pos'
+  | 'real_estate_leases' | 'real_estate_reports'
+  | 'logistics_dispatch' | 'logistics_tracking' | 'logistics_reports'
+  | 'manufacturing_orders' | 'manufacturing_quality' | 'manufacturing_reports';
 
-export type ModuleGroup =
-  | 'overview'
-  | 'operations'
-  | 'financial'
-  | 'administration';
-
+export type ModuleGroup = 'overview' | 'operations' | 'financial' | 'administration';
 export type ModuleStage = 'foundation_active' | 'planned_module';
-
 export type OrganisationRole = 'owner' | 'admin' | 'manager' | 'staff';
-
 export type BusinessType = BusinessCategory;
 
 export type BusinessCategory =
-  | 'retail'
-  | 'wholesale'
-  | 'distribution'
-  | 'services'
-  | 'hybrid'
-  | 'hotel'
-  | 'car_dealership'
-  | 'real_estate'
-  | 'restaurant'
-  | 'logistics'
-  | 'manufacturing';
+  | 'retail' | 'wholesale' | 'distribution' | 'services' | 'hybrid'
+  | 'hotel' | 'car_dealership' | 'real_estate' | 'restaurant' | 'logistics' | 'manufacturing';
 
 export interface OrganisationRoleDefinition {
   key: OrganisationRole;
@@ -46,7 +33,6 @@ export interface OrganisationRoleDefinition {
   description: string;
   rank: number;
 }
-
 export interface Organisation {
   id: string;
   name: string;
@@ -62,7 +48,6 @@ export interface Organisation {
   created_at: string;
   updated_at: string;
 }
-
 export interface OrganisationMembership {
   id: string;
   organisation_id: string;
@@ -72,7 +57,6 @@ export interface OrganisationMembership {
   created_at: string;
   organisation: Organisation;
 }
-
 export interface OrganisationMemberRecord {
   id: string;
   organisation_id: string;
@@ -80,13 +64,8 @@ export interface OrganisationMemberRecord {
   role: OrganisationRole;
   is_active: boolean;
   created_at: string;
-  profile: {
-    id: string;
-    email: string;
-    full_name: string | null;
-  } | null;
+  profile: { id: string; email: string; full_name: string | null } | null;
 }
-
 export interface UserProfile {
   id: string;
   email: string;
@@ -95,7 +74,6 @@ export interface UserProfile {
   created_at: string;
   updated_at: string;
 }
-
 export interface AuditLogEntry {
   id: string;
   organisation_id: string;
@@ -107,7 +85,6 @@ export interface AuditLogEntry {
   metadata: Record<string, unknown>;
   created_at: string;
 }
-
 export interface ModuleDefinition {
   id: ModuleId;
   label: string;
