@@ -11,6 +11,10 @@ import {
   ShoppingCart,
   Sparkles,
   Users,
+  Home,
+  Truck,
+  Factory,
+  ClipboardCheck,
 } from 'lucide-react';
 import type { ModuleId } from '../../core/types/domain';
 
@@ -29,6 +33,18 @@ export function ModuleIcon({ moduleId, className = 'h-4 w-4' }: ModuleIconProps)
       return <ShoppingBag className={className} aria-hidden="true" />;
     case 'restaurant_pos':
       return <ShoppingCart className={className} aria-hidden="true" />;
+    case 'real_estate_leases':
+    case 'real_estate_reports':
+      return <Home className={className} aria-hidden="true" />;
+    case 'logistics_dispatch':
+    case 'logistics_tracking':
+    case 'logistics_reports':
+      return <Truck className={className} aria-hidden="true" />;
+    case 'manufacturing_orders':
+    case 'manufacturing_reports':
+      return <Factory className={className} aria-hidden="true" />;
+    case 'manufacturing_quality':
+      return <ClipboardCheck className={className} aria-hidden="true" />;
     case 'customers':
       return <Users className={className} aria-hidden="true" />;
     case 'purchases':
