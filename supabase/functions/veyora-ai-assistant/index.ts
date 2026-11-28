@@ -109,8 +109,6 @@ Deno.serve(async (req: Request) => {
 
   const { data: platformAdmin, error: platformAdminError } = await userClient.rpc('is_platform_admin');
   const isPlatformAdmin = !platformAdminError && platformAdmin === true;
-  let requestLimit = Number.POSITIVE_INFINITY;
-
   if (!isPlatformAdmin) {
     const { data: subscription, error: subscriptionError } = await userClient
       .from('organization_subscriptions')
@@ -134,8 +132,7 @@ Deno.serve(async (req: Request) => {
     if (plan.features?.ai_assistant !== true) {
       return json({ error: 'The AI assistant is not included in this plan. Ask the Owner to upgrade.' }, 403);
     }
-  
-      requestLimit = Number(plan.ai_assistant_requests) || 0;
+    const requestLimit = Number(plan.ai_assistant_requests) || 0;
     if (requestLimit < 1) return json({ error: 'This plan has no AI assistant requests available.' }, 403);
   }
 
