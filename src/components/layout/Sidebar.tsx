@@ -24,6 +24,9 @@ const SPECIALIST_NAV: Record<string, { modules: ModuleId[]; dashboardLabel: stri
 export function Sidebar({ activeModule, onSelectModule, mobileOpen, onCloseMobile }: SidebarProps) {
   const { activeRole, activeOrganisation } = useAuth();
   const specialist = SPECIALIST_NAV[activeOrganisation?.business_type ?? ''];
+  // Generic workspaces must not inherit every specialist module in the registry.
+  const standardModules: ModuleId[] = ['dashboard','inventory','sales','customers','purchases','suppliers','expenses','finance','reports','ai_assistant','billing','settings'];
+  const visibleModules = specialist?.modules ?? standardModules;
   const handleSelect = (moduleId: ModuleId) => { onSelectModule(moduleId); onCloseMobile(); };
   const navContent = (
     <div className="flex h-full flex-col border-r border-slate-200 bg-white">
@@ -36,7 +39,7 @@ export function Sidebar({ activeModule, onSelectModule, mobileOpen, onCloseMobil
       </div>
       <nav aria-label="Main Navigation" className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
         {GROUP_ORDER.map((group) => {
-          const items = MODULE_REGISTRY.filter((module) => module.group === group && !(module.id === 'billing' && activeRole !== 'owner') && (!specialist || specialist.modules.includes(module.id)));
+          const items = MODULE_REGISTRY.filter((module) => module.group === group && !(module.id === 'billing' && activeRole !== 'owner') && visibleModules.includes(module.id));
           if (!items.length) return null;
           const groupLabel = group === 'overview' && specialist ? specialist.operationsLabel : MODULE_GROUP_LABELS[group];
           return <div key={group}>

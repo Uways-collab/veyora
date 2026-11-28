@@ -111,6 +111,26 @@ function ProtectedWorkspaceRouter() {
         setSubscriptionLoading(false);
         return;
       }
+      // Platform Admin is a trusted, database-verified role. It bypasses customer
+      // subscription and plan-feature gates for platform testing, not membership/RLS.
+      if (platformAdminAccess === 'granted') {
+        setSubscriptionAccess({
+          allowed: true,
+          status: 'platform_admin',
+          features: {
+            dashboard: true, inventory: true, sales: true, customers: true,
+            purchases: true, suppliers: true, expenses: true, finance: true,
+            reports: true, ai_assistant: true, invoice_scanner: true,
+            industry: true, advanced_reports: true, multi_location: true,
+            advanced_analytics: true, api_exports: true,
+          },
+          planName: 'Platform Admin',
+          trialEndsAt: null,
+          periodEndsAt: null,
+        });
+        setSubscriptionLoading(false);
+        return;
+      }
       const db = getSupabaseClient() as any;
       if (!db) {
         setSubscriptionAccess({ allowed: false, status: null, features: {}, planName: null, trialEndsAt: null, periodEndsAt: null });
@@ -164,7 +184,7 @@ function ProtectedWorkspaceRouter() {
       window.removeEventListener('focus', refreshOnReturn);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
-  }, [activeOrganisation?.id]);
+  }, [activeOrganisation?.id, platformAdminAccess]);
 
 
 
