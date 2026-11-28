@@ -83,7 +83,7 @@ export function AssistantView() {
     if (!supabase) return;
     setLoadingHistory(true);
     setError(null);
-    const { data, error: loadError } = await supabase
+    const { data, error: loadError } = await (supabase as any)
       .from('ai_conversation_messages')
       .select('role,content')
       .eq('conversation_id', conversationId)
@@ -103,7 +103,7 @@ export function AssistantView() {
     if (busy || !user) return;
     const supabase = getSupabaseClient();
     if (!supabase) return;
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await (supabase as any)
       .from('ai_conversations')
       .delete()
       .eq('id', conversationId)
