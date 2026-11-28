@@ -53,7 +53,7 @@ export function AssistantView() {
       setHistoryError(null);
       setMessages([]);
       setActiveConversationId(null);
-      const { data, error: loadError } = await supabase
+      const { data, error: loadError } = await (supabase as any)
         .from('ai_conversations')
         .select('id,title,updated_at')
         .eq('organization_id', activeOrganisation.id)
@@ -149,7 +149,7 @@ export function AssistantView() {
         setConversations((current) => [created as Conversation, ...current]);
       }
 
-      const { error: userSaveError } = await supabase
+      const { error: userSaveError } = await (supabase as any)
         .from('ai_conversation_messages')
         .insert({
           conversation_id: conversationId,
@@ -173,7 +173,7 @@ export function AssistantView() {
       }
 
       setMessages((current) => [...current, { role: 'assistant', content: data.answer }]);
-      const { error: assistantSaveError } = await supabase
+      const { error: assistantSaveError } = await (supabase as any)
         .from('ai_conversation_messages')
         .insert({
           conversation_id: conversationId,
