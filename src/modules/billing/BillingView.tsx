@@ -40,7 +40,14 @@ export function BillingView() {
       supabase.from('billing_transactions').select('reference,amount_minor_units,currency,status,purpose,created_at').in('organization_id', ownerOrganizationIds).order('created_at', { ascending: false }).limit(20),
       supabase.functions.invoke('paystack-billing', { body: { action: 'billing-config', organization_id: activeOrganisation.id } }),
     ]);
-    if (p.error) setError('Could not load plans: ' + p.error.message); else setPlans((p.data ?? []) as Plan[]);
+    if (p.error) {
+      // Preview deployments may run before the workspace-quota migration is applied.
+      const legacyPlans = await supabase.from('subscription_plans')
+        .select('id,code,name,billing_interval,currency,amount_minor_units,included_users,included_locations,ai_invoice_scans,ai_assistant_requests,features,provider_plan_code')
+        .eq('is_active', true).order('amount_minor_units');
+      if (legacyPlans.error) setError('Could not load plans: ' + legacyPlans.error.message);
+      else setPlans((legacyPlans.data ?? []).map((plan: any) => ({ ...plan, included_workspaces: plan.included_locations })) as Plan[]);
+    } else setPlans((p.data ?? []) as Plan[]);
     if (s.error) setError('Could not load account subscription: ' + s.error.message);
     else {
       const rows = (s.data ?? []) as Subscription[];
