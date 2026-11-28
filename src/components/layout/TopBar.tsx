@@ -114,10 +114,15 @@ export function TopBar({
     const db = getSupabaseClient() as any;
     if (!db) { window.alert('Veyora could not connect to the workspace service. Please try again.'); return; }
     setDeletingWorkspace(true);
-    const { error } = await db.rpc('delete_business_workspace', { p_organization_id: activeOrganisation.id, p_confirmation_name: typedName });
-    if (error) window.alert(error.message || 'Workspace deletion failed.');
-    else { await refreshMemberships(); setSwitcherOpen(false); }
-    setDeletingWorkspace(false);
+    try {
+      const { error } = await db.rpc('delete_business_workspace', { p_organization_id: activeOrganisation.id, p_confirmation_name: typedName });
+      if (error) window.alert(error.message || 'Workspace deletion failed.');
+      else { await refreshMemberships(); setSwitcherOpen(false); }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Workspace deletion failed. Please try again.');
+    } finally {
+      setDeletingWorkspace(false);
+    }
   };
 
   const displayName = profile?.full_name?.trim() || user?.email || 'Account';
