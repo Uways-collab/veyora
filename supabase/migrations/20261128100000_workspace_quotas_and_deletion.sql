@@ -33,6 +33,7 @@ declare
   v_limit integer := 1;
   v_has_owner_history boolean := false;
   v_subscription_active boolean := false;
+  v_subscription_status text;
 begin
   -- Trusted server-side provisioning is not subject to the end-user quota trigger.
   if v_user_id is null then
@@ -50,12 +51,13 @@ begin
   if v_has_owner_history then
     select
       p.included_workspaces,
+      s.status,
       (
         (s.status = 'trialing' and s.trial_ends_at is not null and s.trial_ends_at > pg_catalog.now())
         or (s.status = 'active' and (s.current_period_ends_at is null or s.current_period_ends_at > pg_catalog.now()))
         or (s.status = 'cancelled' and s.cancel_at_period_end and s.current_period_ends_at is not null and s.current_period_ends_at > pg_catalog.now())
       )
-    into v_limit, v_subscription_active
+    into v_limit, v_subscription_status, v_subscription_active
     from public.organization_memberships owner_membership
     join public.organization_subscriptions s on s.organization_id = owner_membership.organization_id
     join public.subscription_plans p on p.id = s.plan_id
@@ -79,6 +81,10 @@ begin
     if v_limit is null or not coalesce(v_subscription_active, false) then
       raise exception 'An active Veyora subscription is required to create another workspace. Renew your plan to continue.'
         using errcode = '42501';
+    end if;
+    -- Trial access is for one primary workspace; paid tiers unlock their purchased quota.
+    if v_subscription_status = 'trialing' then
+      v_limit := 1;
     end if;
   end if;
 
@@ -233,3 +239,70 @@ $function$;
 
 revoke all on function private.organization_has_access(uuid, text) from public, anon;
 grant execute on function private.organization_has_access(uuid, text) to authenticated;
+
+
+create or replace function public.get_account_workspace_usage()
+returns table(active_workspaces integer, included_workspaces integer)
+language sql
+stable
+security definer
+set search_path = ''
+as $function$
+  select
+    (
+      select count(distinct o.id)::integer
+      from public.organization_memberships m
+      join public.organizations o on o.id = m.organization_id
+      where m.user_id = auth.uid()
+        and m.role = 'owner'
+        and m.is_active = true
+        and o.deleted_at is null
+    ),
+    coalesce((
+      select case when s.status = 'trialing' then 1 else p.included_workspaces end
+      from public.organization_memberships owner_membership
+      join public.organization_subscriptions s on s.organization_id = owner_membership.organization_id
+      join public.subscription_plans p on p.id = s.plan_id
+      where owner_membership.user_id = auth.uid()
+        and owner_membership.role = 'owner'
+      order by
+        case
+          when s.status = 'active' and (s.current_period_ends_at is null or s.current_period_ends_at > pg_catalog.now()) then 1
+          when s.status = 'cancelled' and s.cancel_at_period_end and s.current_period_ends_at > pg_catalog.now() then 2
+          when s.status = 'active' then 3
+          when s.status = 'cancelled' then 4
+          when s.status = 'past_due' then 5
+          when s.status = 'trial_pending' then 6
+          when s.status = 'trialing' then 7
+          when s.status = 'expired' then 8
+          else 9
+        end,
+        coalesce(s.current_period_ends_at, s.trial_ends_at, s.updated_at) desc
+      limit 1
+    ), 1)::integer
+  where auth.uid() is not null;
+$function$;
+
+revoke all on function public.get_account_workspace_usage() from public, anon;
+grant execute on function public.get_account_workspace_usage() to authenticated;
+
+create or replace function public.is_organization_member_metadata(p_organization_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $function$
+  select exists (
+    select 1
+    from public.organization_memberships m
+    join public.organizations o on o.id = m.organization_id
+    where m.organization_id = p_organization_id
+      and m.user_id = auth.uid()
+      and m.is_active = true
+      and o.deleted_at is null
+  );
+$function$;
+
+revoke all on function public.is_organization_member_metadata(uuid) from public, anon;
+grant execute on function public.is_organization_member_metadata(uuid) to authenticated;
