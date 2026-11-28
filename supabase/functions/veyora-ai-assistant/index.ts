@@ -100,40 +100,48 @@ Deno.serve(async (req: Request) => {
 
   const { data: membership, error: membershipError } = await userClient
     .from('organization_memberships')
-    .select('role')
+    .select('role,is_active')
     .eq('organization_id', organizationId)
     .eq('user_id', authData.user.id)
+    .eq('is_active', true)
     .maybeSingle();
   if (membershipError || !membership) return json({ error: 'You do not have access to this workspace.' }, 403);
 
-  const { data: subscription, error: subscriptionError } = await userClient
-    .from('organization_subscriptions')
-    .select('status,trial_ends_at,current_period_ends_at,card_verified_at,cancel_at_period_end,plan_id')
-    .eq('organization_id', organizationId).maybeSingle();
-  if (subscriptionError || !subscription?.plan_id) return json({ error: 'This business needs an active Veyora subscription before AI can be used.' }, 402);
-  const { data: plan, error: planError } = await userClient
-    .from('subscription_plans').select('features,ai_assistant_requests')
-    .eq('id', subscription.plan_id).maybeSingle();
-  if (planError || !plan) return json({ error: 'The workspace plan could not be verified.' }, 503);
-  const now = Date.now();
-  const trialValid = subscription.status === 'trialing' && Boolean(subscription.card_verified_at) &&
-    Boolean(subscription.trial_ends_at) && new Date(subscription.trial_ends_at).getTime() > now;
-  const paidValid = subscription.status === 'active' &&
-    (!subscription.current_period_ends_at || new Date(subscription.current_period_ends_at).getTime() > now);
-  const cancellationValid = subscription.status === 'cancelled' && subscription.cancel_at_period_end === true &&
-    Boolean(subscription.current_period_ends_at) && new Date(subscription.current_period_ends_at).getTime() > now;
-  if (!trialValid && !paidValid && !cancellationValid) {
-    return json({ error: 'This workspace subscription has expired or payment is overdue. The Owner must restore billing before AI access can resume.' }, 402);
-  }
-  if (plan.features?.ai_assistant !== true) {
-    return json({ error: 'The AI assistant is not included in this plan. Ask the Owner to upgrade.' }, 403);
+  const { data: platformAdmin, error: platformAdminError } = await userClient.rpc('is_platform_admin');
+  const isPlatformAdmin = !platformAdminError && platformAdmin === true;
+  let requestLimit = Number.POSITIVE_INFINITY;
+
+  if (!isPlatformAdmin) {
+    const { data: subscription, error: subscriptionError } = await userClient
+      .from('organization_subscriptions')
+      .select('status,trial_ends_at,current_period_ends_at,card_verified_at,cancel_at_period_end,plan_id')
+      .eq('organization_id', organizationId).maybeSingle();
+    if (subscriptionError || !subscription?.plan_id) return json({ error: 'This business needs an active Veyora subscription before AI can be used.' }, 402);
+    const { data: plan, error: planError } = await userClient
+      .from('subscription_plans').select('features,ai_assistant_requests')
+      .eq('id', subscription.plan_id).maybeSingle();
+    if (planError || !plan) return json({ error: 'The workspace plan could not be verified.' }, 503);
+    const now = Date.now();
+    const trialValid = subscription.status === 'trialing' && Boolean(subscription.card_verified_at) &&
+      Boolean(subscription.trial_ends_at) && new Date(subscription.trial_ends_at).getTime() > now;
+    const paidValid = subscription.status === 'active' &&
+      (!subscription.current_period_ends_at || new Date(subscription.current_period_ends_at).getTime() > now);
+    const cancellationValid = subscription.status === 'cancelled' && subscription.cancel_at_period_end === true &&
+      Boolean(subscription.current_period_ends_at) && new Date(subscription.current_period_ends_at).getTime() > now;
+    if (!trialValid && !paidValid && !cancellationValid) {
+      return json({ error: 'This workspace subscription has expired or payment is overdue. The Owner must restore billing before AI access can resume.' }, 402);
+    }
+    if (plan.features?.ai_assistant !== true) {
+      return json({ error: 'The AI assistant is not included in this plan. Ask the Owner to upgrade.' }, 403);
+    }
+  
+      requestLimit = Number(plan.ai_assistant_requests) || 0;
+    if (requestLimit < 1) return json({ error: 'This plan has no AI assistant requests available.' }, 403);
   }
 
   const serviceClient = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const requestLimit = Number(plan.ai_assistant_requests) || 0;
-  if (requestLimit < 1) return json({ error: 'This plan has no AI assistant requests available.' }, 403);
   const { data: usageReservation, error: reservationError } = await serviceClient.rpc('reserve_ai_usage', {
     p_organization_id: organizationId,
     p_user_id: authData.user.id,
