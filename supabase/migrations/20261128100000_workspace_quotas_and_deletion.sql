@@ -14,6 +14,9 @@ set included_workspaces = case
 end
 where included_workspaces = 1;
 
+alter table public.organization_memberships
+  add column if not exists is_active boolean not null default true;
+
 alter table public.organizations
   add column if not exists deleted_at timestamptz,
   add column if not exists deleted_by uuid references auth.users(id) on delete set null;
