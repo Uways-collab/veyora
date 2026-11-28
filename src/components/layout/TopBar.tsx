@@ -10,8 +10,10 @@ import {
   Settings,
   UserCircle2,
   Users,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../core/auth/AuthContext';
+import { getSupabaseClient } from '../../core/supabase/client';
 import { formatCurrencyDisplay } from '../../core/constants/businessOptions';
 import { getModuleById } from '../../core/modules/registry';
 import type { ModuleId } from '../../core/types/domain';
@@ -47,6 +49,7 @@ export function TopBar({
     activeOrganisation,
     activeRole,
     switchOrganisation,
+    refreshMemberships,
     signOut,
   } = useAuth();
 
@@ -54,6 +57,8 @@ export function TopBar({
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [deletingWorkspace, setDeletingWorkspace] = useState(false);
+  const [workspaceLimit, setWorkspaceLimit] = useState<number | null>(null);
 
   const switcherRef = useRef<HTMLDivElement | null>(null);
   const notifRef = useRef<HTMLDivElement | null>(null);
@@ -86,6 +91,33 @@ export function TopBar({
       document.removeEventListener('keydown', onKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadWorkspaceLimit = async () => {
+      const db = getSupabaseClient() as any;
+      if (!db || !activeOrganisation) { setWorkspaceLimit(null); return; }
+      const { data: subscription } = await db.from('organization_subscriptions').select('plan_id').eq('organization_id', activeOrganisation.id).maybeSingle();
+      if (!subscription?.plan_id) { if (!cancelled) setWorkspaceLimit(1); return; }
+      const { data: plan } = await db.from('subscription_plans').select('included_workspaces').eq('id', subscription.plan_id).maybeSingle();
+      if (!cancelled) setWorkspaceLimit(Number.isFinite(Number(plan?.included_workspaces)) ? Number(plan.included_workspaces) : null);
+    };
+    void loadWorkspaceLimit();
+    return () => { cancelled = true; };
+  }, [activeOrganisation?.id]);
+
+  const handleDeleteWorkspace = async () => {
+    if (!activeOrganisation || activeRole !== 'owner' || deletingWorkspace) return;
+    const typedName = window.prompt(`This will remove access to “${activeOrganisation.name}”. Its records will be retained for audit/recovery. Type the exact workspace name to continue:`);
+    if (typedName !== activeOrganisation.name) return;
+    const db = getSupabaseClient() as any;
+    if (!db) { window.alert('Veyora could not connect to the workspace service. Please try again.'); return; }
+    setDeletingWorkspace(true);
+    const { error } = await db.rpc('delete_business_workspace', { p_organization_id: activeOrganisation.id, p_confirmation_name: typedName });
+    if (error) window.alert(error.message || 'Workspace deletion failed.');
+    else { await refreshMemberships(); setSwitcherOpen(false); }
+    setDeletingWorkspace(false);
+  };
 
   const displayName = profile?.full_name?.trim() || user?.email || 'Account';
   const initials = getUserInitials(profile?.full_name, user?.email);
@@ -153,7 +185,7 @@ export function TopBar({
                     Business Workspaces
                   </span>
                   <span className="text-[11px] font-mono text-slate-500">
-                    {memberships.length} {memberships.length === 1 ? 'workspace' : 'workspaces'}
+                    {activeRole === 'owner' && workspaceLimit !== null ? `${memberships.length} / ${workspaceLimit} workspaces` : `${memberships.length} ${memberships.length === 1 ? 'workspace' : 'workspaces'}`}
                   </span>
                 </div>
 
@@ -196,7 +228,9 @@ export function TopBar({
                   })}
                 </div>
 
-                <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <div className="space-y-2 px-4 py-2.5 bg-slate-50 border-t border-slate-200">
+                  {activeRole === 'owner' && <button type="button" disabled={deletingWorkspace} onClick={() => void handleDeleteWorkspace()} className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />{deletingWorkspace ? 'Deleting workspace…' : 'Delete current workspace'}</button>}
+                  <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => {
@@ -207,6 +241,7 @@ export function TopBar({
                   >
                     Manage workspaces
                   </button>
+                  </div>
                 </div>
               </div>
             )}
